@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:river/app/app_dependencies.dart';
 import 'package:river/core/network/riverside_api_client.dart';
 import 'package:river/core/network/riverside_topic_models.dart';
+import 'package:river/features/posts/topic_detail_page.dart';
 
 enum _FloatingActionMode { hidden, backToTop, refresh }
 
@@ -45,7 +46,6 @@ class _PostsPageState extends State<PostsPage> {
         widget.dependencies.accountStore.activeRiverSideUsername;
     widget.dependencies.accountStore.addListener(_onAccountStoreChanged);
     _scrollController.addListener(_onScroll);
-    _loadCategories();
     _loadFirstPage(clearExisting: true);
   }
 
@@ -480,6 +480,17 @@ class _PostsPageState extends State<PostsPage> {
     _loadFirstPage(clearExisting: true);
   }
 
+  Future<void> _openTopicDetail(int topicId) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => TopicDetailPage(
+          dependencies: widget.dependencies,
+          topicId: topicId,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -643,7 +654,11 @@ class _PostsPageState extends State<PostsPage> {
           }
 
           final topic = _topics[index];
-          return _TopicCard(topic: topic, showHotIcon: showHotIcon);
+          return _TopicCard(
+            topic: topic,
+            showHotIcon: showHotIcon,
+            onTap: () => _openTopicDetail(topic.id),
+          );
         },
       ),
     );
@@ -756,10 +771,15 @@ class _CategoryGroupCard extends StatelessWidget {
 }
 
 class _TopicCard extends StatelessWidget {
-  const _TopicCard({required this.topic, required this.showHotIcon});
+  const _TopicCard({
+    required this.topic,
+    required this.showHotIcon,
+    required this.onTap,
+  });
 
   final RiverSideTopicSummary topic;
   final bool showHotIcon;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -769,92 +789,95 @@ class _TopicCard extends StatelessWidget {
     return Card(
       clipBehavior: Clip.antiAlias,
       margin: const EdgeInsets.only(bottom: 10),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 18,
-                  backgroundImage: topic.authorAvatarUrl.isEmpty
-                      ? null
-                      : NetworkImage(topic.authorAvatarUrl),
-                  child: topic.authorAvatarUrl.isEmpty
-                      ? const Icon(Icons.person_outline, size: 18)
-                      : null,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    topic.authorDisplayName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: textTheme.titleSmall,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 18,
+                    backgroundImage: topic.authorAvatarUrl.isEmpty
+                        ? null
+                        : NetworkImage(topic.authorAvatarUrl),
+                    child: topic.authorAvatarUrl.isEmpty
+                        ? const Icon(Icons.person_outline, size: 18)
+                        : null,
                   ),
-                ),
-                if (showHotIcon || topic.isHot)
-                  const Icon(
-                    Icons.local_fire_department_outlined,
-                    color: Colors.deepOrange,
-                    size: 18,
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      topic.authorDisplayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: textTheme.titleSmall,
+                    ),
                   ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Text(
-              topic.title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
+                  if (showHotIcon || topic.isHot)
+                    const Icon(
+                      Icons.local_fire_department_outlined,
+                      color: Colors.deepOrange,
+                      size: 18,
+                    ),
+                ],
               ),
-            ),
-            if (topic.excerpt.isNotEmpty) ...[
-              const SizedBox(height: 6),
+              const SizedBox(height: 10),
               Text(
-                topic.excerpt,
+                topic.title,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: textTheme.bodyMedium?.copyWith(color: subtitleColor),
+                style: textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-            ],
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Flexible(
-                  child: _CategoryPill(
-                    label: topic.categoryName,
+              if (topic.excerpt.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  topic.excerpt,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: textTheme.bodyMedium?.copyWith(color: subtitleColor),
+                ),
+              ],
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Flexible(
+                    child: _CategoryPill(
+                      label: topic.categoryName,
+                      color: subtitleColor,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  _MetaInfo(
+                    icon: Icons.schedule_outlined,
+                    text: _formatDateTime(topic.createdAt),
                     color: subtitleColor,
                   ),
-                ),
-                const SizedBox(width: 10),
-                _MetaInfo(
-                  icon: Icons.schedule_outlined,
-                  text: _formatDateTime(topic.createdAt),
-                  color: subtitleColor,
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 12,
-              runSpacing: 6,
-              children: [
-                _MetaInfo(
-                  icon: Icons.chat_bubble_outline,
-                  text: topic.replyCount.toString(),
-                  color: subtitleColor,
-                ),
-                _MetaInfo(
-                  icon: Icons.visibility_outlined,
-                  text: topic.viewCount.toString(),
-                  color: subtitleColor,
-                ),
-              ],
-            ),
-          ],
+                ],
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 12,
+                runSpacing: 6,
+                children: [
+                  _MetaInfo(
+                    icon: Icons.chat_bubble_outline,
+                    text: topic.replyCount.toString(),
+                    color: subtitleColor,
+                  ),
+                  _MetaInfo(
+                    icon: Icons.visibility_outlined,
+                    text: topic.viewCount.toString(),
+                    color: subtitleColor,
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -66,7 +66,7 @@ class _RiverSideLoginWebViewPageState extends State<RiverSideLoginWebViewPage> {
               return;
             }
 
-            unawaited(_switchToExternalBrowserLogin());
+            unawaited(_switchToCredentialLogin());
           },
         ),
       );
@@ -88,21 +88,21 @@ class _RiverSideLoginWebViewPageState extends State<RiverSideLoginWebViewPage> {
     await _controller.loadRequest(Uri.parse(riverSideLoginUrl));
   }
 
-  Future<void> _switchToExternalBrowserLogin() async {
+  Future<void> _switchToCredentialLogin() async {
     if (!mounted || _openingExternalFallback) {
       return;
     }
 
     _openingExternalFallback = true;
     try {
-      final completed = await Navigator.of(context).push<bool>(
-        MaterialPageRoute<bool>(
+      final profile = await Navigator.of(context).push<UserAccount>(
+        MaterialPageRoute<UserAccount>(
           builder: (_) =>
               RiverSideExternalFallbackPage(dependencies: widget.dependencies),
         ),
       );
 
-      if (!mounted || completed != true || _completedFlow) {
+      if (!mounted || profile == null || _completedFlow) {
         return;
       }
 
@@ -117,14 +117,10 @@ class _RiverSideLoginWebViewPageState extends State<RiverSideLoginWebViewPage> {
         return;
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'External browser login completed. Please re-open add account to sync account data.',
-          ),
-        ),
-      );
-      Navigator.of(context).pop();
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('账号密码登录成功，已添加账号。')));
+      Navigator.of(context).pop(profile);
     } finally {
       _openingExternalFallback = false;
     }
@@ -258,15 +254,13 @@ class _RiverSideLoginWebViewPageState extends State<RiverSideLoginWebViewPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(title),
-        actions: widget.flowMode == RiverSideLoginFlowMode.initialLogin
-            ? <Widget>[
-                IconButton(
-                  tooltip: 'Use external browser login',
-                  onPressed: _switchToExternalBrowserLogin,
-                  icon: const Icon(Icons.open_in_browser_outlined),
-                ),
-              ]
-            : null,
+        actions: <Widget>[
+          IconButton(
+            tooltip: '账号密码登录',
+            onPressed: _switchToCredentialLogin,
+            icon: const Icon(Icons.password_outlined),
+          ),
+        ],
       ),
       body: Stack(
         children: [

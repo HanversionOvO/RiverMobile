@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:river/app/app_dependencies.dart';
-import 'package:river/core/constants.dart';
-import 'package:river/features/home/home_shell_page.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:river/core/account/account_models.dart';
+import 'package:river/features/login/riverside_password_login_service.dart';
 
-class RiverSideExternalFallbackPage extends StatelessWidget {
+class RiverSideExternalFallbackPage extends StatefulWidget {
   const RiverSideExternalFallbackPage({
     super.key,
     required this.dependencies,
@@ -14,72 +13,161 @@ class RiverSideExternalFallbackPage extends StatelessWidget {
   final AppDependencies dependencies;
   final String? detectedWebViewVersion;
 
-  Future<void> _openExternalBrowser(BuildContext context) async {
-    final launched = await launchUrl(
-      Uri.parse(riverSideLoginUrl),
-      mode: LaunchMode.externalApplication,
-    );
+  @override
+  State<RiverSideExternalFallbackPage> createState() =>
+      _RiverSideExternalFallbackPageState();
+}
 
-    if (!launched && context.mounted) {
+class _RiverSideExternalFallbackPageState
+    extends State<RiverSideExternalFallbackPage> {
+  final TextEditingController _accountController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+
+  bool _submitting = false;
+  bool _obscurePassword = true;
+
+  @override
+  void dispose() {
+    _accountController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submitLogin() async {
+    if (_submitting) {
+      return;
+    }
+
+    final account = _accountController.text.trim();
+    final password = _passwordController.text;
+    if (account.isEmpty || password.isEmpty) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('无法打开外部浏览器')));
+      ).showSnackBar(const SnackBar(content: Text('请输入账号和密码')));
+      return;
+    }
+
+    setState(() {
+      _submitting = true;
+    });
+
+    final service = RiverSidePasswordLoginService(
+      apiClient: widget.dependencies.accountStore.riverSideApiClient,
+    );
+
+    try {
+      final result = await service.login(login: account, password: password);
+      final profile = result.profile;
+
+      await widget.dependencies.accountStore.upsertRiverSideAccount(profile);
+      await widget.dependencies.accountStore.upsertRiverSideCookieHeader(
+        username: profile.username,
+        cookieHeader: result.cookieHeader,
+      );
+      await widget.dependencies.accountStore.switchActiveRiverSideAccount(
+        profile.username,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      Navigator.of(context).pop<UserAccount>(profile);
+    } on RiverSidePasswordLoginException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('登录失败，请稍后重试')));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _submitting = false;
+        });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final versionTip =
-        detectedWebViewVersion == null || detectedWebViewVersion!.isEmpty
+        widget.detectedWebViewVersion == null ||
+            widget.detectedWebViewVersion!.isEmpty
         ? ''
-        : '\n\nWebView: $detectedWebViewVersion';
+        : '\nWebView: ${widget.detectedWebViewVersion}';
 
     return Scaffold(
-      appBar: AppBar(title: const Text('RiverSide')),
-      body: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Spacer(),
-            Text(
-              '检测到设备内置 WebView 版本过低或不可用，已自动切换到外部浏览器登录。$versionTip',
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 16),
+      appBar: AppBar(title: const Text('RiverSide 登录')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+        children: [
+          Text(
+            '当前设备内置 WebView 不可用，请直接输入 RiverSide 账号密码登录。$versionTip',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 20),
+          TextField(
+            controller: _accountController,
+            enabled: !_submitting,
+            textInputAction: TextInputAction.next,
+            decoration: const InputDecoration(
+              labelText: '账号',
+              hintText: '用户名或邮箱',
+              border: OutlineInputBorder(),
             ),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: () => _openExternalBrowser(context),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF12457A),
-                foregroundColor: Colors.white,
-                minimumSize: const Size(double.infinity, 50),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _passwordController,
+            enabled: !_submitting,
+            obscureText: _obscurePassword,
+            onSubmitted: (_) => _submitLogin(),
+            decoration: InputDecoration(
+              labelText: '密码',
+              border: const OutlineInputBorder(),
+              suffixIcon: IconButton(
+                onPressed: _submitting
+                    ? null
+                    : () {
+                        setState(() {
+                          _obscurePassword = !_obscurePassword;
+                        });
+                      },
+                icon: Icon(
+                  _obscurePassword
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined,
+                ),
               ),
-              child: const Text('使用系统浏览器登录'),
             ),
-            const SizedBox(height: 12),
-            OutlinedButton(
-              onPressed: () {
-                final navigator = Navigator.of(context);
-                if (navigator.canPop()) {
-                  navigator.pop(true);
-                  return;
-                }
-                navigator.pushAndRemoveUntil(
-                  MaterialPageRoute<void>(
-                    builder: (_) => HomeShellPage(dependencies: dependencies),
-                  ),
-                  (_) => false,
-                );
-              },
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size(double.infinity, 50),
-              ),
-              child: const Text('我已登录，进入主页'),
-            ),
-            const Spacer(),
-          ],
-        ),
+          ),
+          const SizedBox(height: 16),
+          FilledButton(
+            onPressed: _submitting ? null : _submitLogin,
+            style: FilledButton.styleFrom(minimumSize: const Size(0, 48)),
+            child: _submitting
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('登录'),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton(
+            onPressed: _submitting ? null : () => Navigator.of(context).pop(),
+            style: OutlinedButton.styleFrom(minimumSize: const Size(0, 48)),
+            child: const Text('返回'),
+          ),
+        ],
       ),
     );
   }

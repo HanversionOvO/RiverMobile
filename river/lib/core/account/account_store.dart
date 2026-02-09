@@ -18,6 +18,8 @@ class AccountStore extends ChangeNotifier {
       'river.active.riverside.username';
   static const String _storageKeyRiverSideCookies =
       'river.riverside.cookies.v1';
+  static const String _legacyStorageKeyRiverSideUserApiCredentials =
+      'river.riverside.user_api_credentials.v1';
 
   final RiverSideApiClient _riverSideApiClient;
   final RiverSideCookieBridge _riverSideCookieBridge;
@@ -74,6 +76,7 @@ class AccountStore extends ChangeNotifier {
 
     _activeRiverSideUsername = _prefs?.getString(_storageKeyActiveRiverSide);
     _ensureValidActiveAccount();
+    await _prefs?.remove(_legacyStorageKeyRiverSideUserApiCredentials);
     notifyListeners();
   }
 
@@ -117,6 +120,25 @@ class AccountStore extends ChangeNotifier {
       return null;
     }
     return _riverSideCookiesByUsername[normalized];
+  }
+
+  Future<void> upsertRiverSideCookieHeader({
+    required String username,
+    required String cookieHeader,
+    bool applyToWebView = false,
+  }) async {
+    final normalized = _normalizeUsername(username);
+    final cookie = cookieHeader.trim();
+    if (normalized.isEmpty || cookie.isEmpty) {
+      return;
+    }
+
+    _riverSideCookiesByUsername[normalized] = cookie;
+    await _persist();
+
+    if (applyToWebView) {
+      await _applyRiverSideCookiesForUsername(username);
+    }
   }
 
   Future<bool> switchActiveRiverSideAccount(String username) async {

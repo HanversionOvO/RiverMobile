@@ -87,3 +87,59 @@ class RiverSideTopicPage {
   final bool hasMore;
   final int page;
 }
+
+class RiverSideTopicPostDetail {
+  const RiverSideTopicPostDetail({
+    required this.id,
+    required this.topicId,
+    required this.postNumber,
+    required this.authorUsername,
+    required this.authorDisplayName,
+    required this.authorAvatarUrl,
+    required this.authorTitle,
+    required this.isOnline,
+    required this.contentMarkdown,
+    required this.createdAt,
+    required this.editCount,
+    required this.likeCount,
+  });
+
+  final int id;
+  final int topicId;
+  final int postNumber;
+  final String authorUsername;
+  final String authorDisplayName;
+  final String authorAvatarUrl;
+  final String authorTitle;
+  final bool? isOnline;
+  final String contentMarkdown;
+  final DateTime? createdAt;
+  final int editCount;
+  final int likeCount;
+}
+
+class RiverSideTopicDetail {
+  const RiverSideTopicDetail({
+    required this.topicId,
+    required this.title,
+    required this.viewCount,
+    required this.replyCount,
+    required this.likeCount,
+    required this.createdAt,
+    required this.mainPost,
+    required this.comments,
+    required this.streamPostIds,
+    required this.loadedPostIds,
+  });
+
+  final int topicId;
+  final String title;
+  final int viewCount;
+  final int replyCount;
+  final int likeCount;
+  final DateTime? createdAt;
+  final RiverSideTopicPostDetail mainPost;
+  final List<RiverSideTopicPostDetail> comments;
+  final List<int> streamPostIds;
+  final Set<int> loadedPostIds;
+}

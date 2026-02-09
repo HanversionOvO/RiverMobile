@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:lottie/lottie.dart';
 import 'package:river/app/app_dependencies.dart';
+import 'package:river/core/account/account_models.dart';
 import 'package:river/core/platform/riverside_webview_support.dart';
 import 'package:river/features/home/home_shell_page.dart';
 import 'package:river/features/login/riverside_external_fallback_page.dart';
@@ -18,11 +19,9 @@ class LoginPage extends StatefulWidget {
 class _LoginPageState extends State<LoginPage> {
   bool _checkingWebView = false;
 
-  Future<void> _openExternalBrowserLogin({
-    String? detectedWebViewVersion,
-  }) async {
-    final completed = await Navigator.of(context).push<bool>(
-      MaterialPageRoute<bool>(
+  Future<void> _openCredentialLogin({String? detectedWebViewVersion}) async {
+    final profile = await Navigator.of(context).push<UserAccount>(
+      MaterialPageRoute<UserAccount>(
         builder: (_) => RiverSideExternalFallbackPage(
           dependencies: widget.dependencies,
           detectedWebViewVersion: detectedWebViewVersion,
@@ -30,7 +29,7 @@ class _LoginPageState extends State<LoginPage> {
       ),
     );
 
-    if (!mounted || completed != true) {
+    if (!mounted || profile == null) {
       return;
     }
 
@@ -70,9 +69,7 @@ class _LoginPageState extends State<LoginPage> {
       return;
     }
 
-    await _openExternalBrowserLogin(
-      detectedWebViewVersion: support.detectedVersion,
-    );
+    await _openCredentialLogin(detectedWebViewVersion: support.detectedVersion);
   }
 
   @override

@@ -3,6 +3,7 @@ import 'package:river/app/app_dependencies.dart';
 import 'package:river/core/account/account_models.dart';
 import 'package:river/core/constants.dart';
 import 'package:river/core/platform/riverside_webview_support.dart';
+import 'package:river/features/login/riverside_external_fallback_page.dart';
 import 'package:river/features/login/riverside_login_flow_mode.dart';
 import 'package:river/features/login/riverside_login_webview_page.dart';
 import 'package:river/features/mine/about_page.dart';
@@ -26,6 +27,33 @@ class _MinePageState extends State<MinePage> {
   bool _deletingAccounts = false;
   final Set<String> _selectedDeleteUsernames = <String>{};
 
+  Future<void> _openCredentialAddFlow({String? detectedWebViewVersion}) async {
+    setState(() {
+      _addingRiverSideAccount = true;
+    });
+
+    final profile = await Navigator.of(context).push<UserAccount>(
+      MaterialPageRoute<UserAccount>(
+        builder: (_) => RiverSideExternalFallbackPage(
+          dependencies: widget.dependencies,
+          detectedWebViewVersion: detectedWebViewVersion,
+        ),
+      ),
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _addingRiverSideAccount = false;
+    });
+
+    if (profile != null) {
+      _showMessage('Added RiverSide account: ${profile.displayName}');
+    }
+  }
+
   Future<void> _onAddRiverSideAccountPressed() async {
     if (_addingRiverSideAccount || _deletingMode) {
       return;
@@ -37,12 +65,8 @@ class _MinePageState extends State<MinePage> {
     }
 
     if (!support.canUseEmbeddedWebView) {
-      final version = support.detectedVersion;
-      final suffix = version == null || version.isEmpty
-          ? '.'
-          : ' (WebView: $version).';
-      _showMessage(
-        'Current device WebView is too old to add account in-app$suffix',
+      await _openCredentialAddFlow(
+        detectedWebViewVersion: support.detectedVersion,
       );
       return;
     }
