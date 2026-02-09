@@ -1,16 +1,39 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class RiverImageViewerItem {
   const RiverImageViewerItem({
     required this.url,
     this.headers,
     required this.heroTag,
+    this.imageProvider,
   });
 
   final String url;
   final Map<String, String>? headers;
   final String heroTag;
+  final ImageProvider<Object>? imageProvider;
+}
+
+typedef RiverImageViewerActionHandler =
+    Future<void> Function(BuildContext context, RiverImageViewerItem item);
+
+class RiverImageViewerAction {
+  const RiverImageViewerAction({
+    required this.id,
+    required this.label,
+    this.icon,
+    required this.onSelected,
+  });
+
+  final String id;
+  final String label;
+  final IconData? icon;
+  final RiverImageViewerActionHandler onSelected;
 }
 
 class RiverImageViewerPage extends StatefulWidget {
@@ -18,15 +41,19 @@ class RiverImageViewerPage extends StatefulWidget {
     super.key,
     required this.items,
     this.initialIndex = 0,
+    this.extraActions = const <RiverImageViewerAction>[],
   });
 
   final List<RiverImageViewerItem> items;
   final int initialIndex;
+  final List<RiverImageViewerAction> extraActions;
 
   static Future<void> open(
     BuildContext context, {
     required List<RiverImageViewerItem> items,
     int initialIndex = 0,
+    List<RiverImageViewerAction> extraActions =
+        const <RiverImageViewerAction>[],
   }) async {
     if (items.isEmpty) {
       return;
@@ -34,8 +61,11 @@ class RiverImageViewerPage extends StatefulWidget {
     final safeIndex = initialIndex.clamp(0, items.length - 1);
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) =>
-            RiverImageViewerPage(items: items, initialIndex: safeIndex),
+        builder: (_) => RiverImageViewerPage(
+          items: items,
+          initialIndex: safeIndex,
+          extraActions: extraActions,
+        ),
       ),
     );
   }
@@ -45,6 +75,8 @@ class RiverImageViewerPage extends StatefulWidget {
 }
 
 class _RiverImageViewerPageState extends State<RiverImageViewerPage> {
+  static const String _actionSaveOriginal = 'save_original';
+
   late final PageController _pageController;
   late int _currentIndex;
   bool _showOverlay = true;
@@ -66,6 +98,153 @@ class _RiverImageViewerPageState extends State<RiverImageViewerPage> {
     setState(() {
       _showOverlay = !_showOverlay;
     });
+  }
+
+  Future<void> _showImageActions(RiverImageViewerItem item) async {
+    final actions = <RiverImageViewerAction>[
+      RiverImageViewerAction(
+        id: _actionSaveOriginal,
+        label: '保存原图',
+        icon: Icons.download_outlined,
+        onSelected: (context, selected) => _saveOriginalImage(selected),
+      ),
+      ...widget.extraActions,
+    ];
+    if (actions.isEmpty) {
+      return;
+    }
+
+    final selected = await showModalBottomSheet<RiverImageViewerAction>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: ListView.separated(
+            shrinkWrap: true,
+            itemCount: actions.length + 1,
+            separatorBuilder: (context, index) => const Divider(height: 1),
+            itemBuilder: (context, index) {
+              if (index == actions.length) {
+                return ListTile(
+                  title: const Text('取消'),
+                  onTap: () => Navigator.of(sheetContext).pop(),
+                );
+              }
+              final action = actions[index];
+              return ListTile(
+                leading: action.icon == null ? null : Icon(action.icon),
+                title: Text(action.label),
+                onTap: () => Navigator.of(sheetContext).pop(action),
+              );
+            },
+          ),
+        );
+      },
+    );
+    if (!mounted || selected == null) {
+      return;
+    }
+
+    try {
+      await selected.onSelected(context, item);
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('操作失败，请稍后重试')));
+    }
+  }
+
+  Future<void> _saveOriginalImage(RiverImageViewerItem item) async {
+    final uri = Uri.tryParse(item.url);
+    if (uri == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('图片地址无效')));
+      return;
+    }
+
+    final granted = await _ensureStoragePermission();
+    if (!mounted) {
+      return;
+    }
+    if (!granted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('未获得存储权限，无法保存图片')));
+      return;
+    }
+
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('正在保存原图...')));
+    var response = await http.get(uri, headers: item.headers);
+    if (response.statusCode != 200) {
+      final retryHeaders = _headersWithoutCookie(item.headers);
+      final didStripCookie =
+          retryHeaders != null &&
+          retryHeaders.length != (item.headers?.length ?? 0);
+      if (didStripCookie) {
+        response = await http.get(uri, headers: retryHeaders);
+      }
+    }
+    if (response.statusCode != 200) {
+      throw StateError('HTTP ${response.statusCode}');
+    }
+
+    final name = _guessImageFileName(uri);
+    final result = await ImageGallerySaverPlus.saveImage(
+      response.bodyBytes,
+      quality: 100,
+      name: name,
+    );
+
+    final saved =
+        (result['isSuccess'] == true) ||
+        (result['success'] == true) ||
+        (result['filePath'] != null);
+    if (!saved) {
+      throw StateError('save failed');
+    }
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('原图已保存到系统相册')));
+  }
+
+  Future<bool> _ensureStoragePermission() async {
+    if (kIsWeb) {
+      return false;
+    }
+
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      final status = await Permission.photosAddOnly.request();
+      return status.isGranted || status.isLimited;
+    }
+
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return true;
+    }
+
+    final photos = await Permission.photos.request();
+    if (photos.isGranted || photos.isLimited) {
+      return true;
+    }
+    final storage = await Permission.storage.request();
+    return storage.isGranted;
+  }
+
+  String _guessImageFileName(Uri uri) {
+    final last = uri.pathSegments.isEmpty ? '' : uri.pathSegments.last;
+    final sanitized = last.split('?').first.trim();
+    if (sanitized.isNotEmpty) {
+      return sanitized;
+    }
+    return 'river_${DateTime.now().millisecondsSinceEpoch}.jpg';
   }
 
   @override
@@ -94,7 +273,10 @@ class _RiverImageViewerPageState extends State<RiverImageViewerPage> {
                   return Center(
                     child: Hero(
                       tag: item.heroTag,
-                      child: _ViewerZoomableImage(item: item),
+                      child: _ViewerZoomableImage(
+                        item: item,
+                        onLongPress: () => _showImageActions(item),
+                      ),
                     ),
                   );
                 },
@@ -195,9 +377,10 @@ class _PageIndicator extends StatelessWidget {
 }
 
 class _ViewerZoomableImage extends StatefulWidget {
-  const _ViewerZoomableImage({required this.item});
+  const _ViewerZoomableImage({required this.item, required this.onLongPress});
 
   final RiverImageViewerItem item;
+  final VoidCallback onLongPress;
 
   @override
   State<_ViewerZoomableImage> createState() => _ViewerZoomableImageState();
@@ -212,6 +395,7 @@ class _ViewerZoomableImageState extends State<_ViewerZoomableImage>
 
   bool _retryWithoutCookie = false;
   bool _fallbackToDirectImage = false;
+  bool _useProvidedImage = true;
   final TransformationController _transformController =
       TransformationController();
   late final AnimationController _matrixAnimationController;
@@ -269,6 +453,7 @@ class _ViewerZoomableImageState extends State<_ViewerZoomableImage>
             _doubleTapDetails = details;
           },
           onDoubleTap: _onDoubleTap,
+          onLongPress: widget.onLongPress,
           child: AnimatedBuilder(
             animation: _transformController,
             child: imageChild,
@@ -422,12 +607,42 @@ class _ViewerZoomableImageState extends State<_ViewerZoomableImage>
     return matrix;
   }
 
+  Widget _buildProvidedImage() {
+    final provider = widget.item.imageProvider;
+    if (provider == null) {
+      return const SizedBox.shrink();
+    }
+    return Image(
+      image: provider,
+      fit: BoxFit.contain,
+      errorBuilder: (context, error, stackTrace) {
+        if (_useProvidedImage) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) {
+              return;
+            }
+            setState(() {
+              _useProvidedImage = false;
+            });
+          });
+        }
+        return _buildErrorPlaceholder();
+      },
+    );
+  }
+
   Widget _buildCachedImage(Map<String, String>? headers, bool hasCookie) {
+    if (_useProvidedImage && widget.item.imageProvider != null) {
+      return _buildProvidedImage();
+    }
     return CachedNetworkImage(
       imageUrl: widget.item.url,
       httpHeaders: headers,
       cacheKey: _buildImageCacheKey(widget.item.url, headers),
       fit: BoxFit.contain,
+      // Disable fade animation to avoid a visual "reload" after Hero transition.
+      fadeInDuration: Duration.zero,
+      fadeOutDuration: Duration.zero,
       placeholder: (context, imageUrl) => _buildLoadingPlaceholder(),
       errorWidget: (context, imageUrl, error) {
         if (!_retryWithoutCookie && hasCookie) {

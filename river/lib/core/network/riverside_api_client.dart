@@ -12,6 +12,8 @@ class RiverSideApiClient {
   final Map<String, Map<int, RiverSideCategoryOption>>
   _categoryOptionCacheByCookieKey =
       <String, Map<int, RiverSideCategoryOption>>{};
+  final Map<String, Map<String, String>> _emojiUrlCacheByCookieKey =
+      <String, Map<String, String>>{};
 
   Future<UserAccount> fetchUserProfile(
     String username, {
@@ -561,6 +563,75 @@ class RiverSideApiClient {
     return ordered;
   }
 
+  Future<Map<String, String>> fetchEmojiUrlMap({
+    String? cookieHeader,
+    String? userApiKey,
+    String? userApiClientId,
+  }) async {
+    final cacheKey = _categoryCacheKey(
+      cookieHeader: cookieHeader,
+      userApiKey: userApiKey,
+      userApiClientId: userApiClientId,
+    );
+    final cached = _emojiUrlCacheByCookieKey[cacheKey];
+    if (cached != null && cached.isNotEmpty) {
+      return cached;
+    }
+
+    final response = await http.get(
+      Uri.parse('$riverSideBaseUrl/emojis.json'),
+      headers: _buildJsonHeaders(
+        cookieHeader: cookieHeader,
+        userApiKey: userApiKey,
+        userApiClientId: userApiClientId,
+      ),
+    );
+    if (response.statusCode != 200) {
+      throw RiverSideApiException(
+        'Failed to load emojis, HTTP ${response.statusCode}',
+      );
+    }
+
+    final body = utf8.decode(response.bodyBytes);
+    final decoded = jsonDecode(body);
+    if (decoded is! Map) {
+      throw const RiverSideApiException('Invalid emojis response format');
+    }
+
+    final result = <String, String>{};
+    for (final entry in decoded.entries) {
+      final list = entry.value;
+      if (list is! List) {
+        continue;
+      }
+      for (final rawEmoji in list) {
+        final emoji = _toStringMap(rawEmoji);
+        final name = (emoji['name'] ?? '').toString().trim();
+        final url = _normalizeEmojiUrl((emoji['url'] ?? '').toString());
+        if (name.isEmpty || url.isEmpty) {
+          continue;
+        }
+        result[name] = url;
+        result[name.toLowerCase()] = url;
+
+        final aliases = emoji['search_aliases'];
+        if (aliases is List) {
+          for (final rawAlias in aliases) {
+            final alias = '$rawAlias'.trim();
+            if (alias.isEmpty) {
+              continue;
+            }
+            result.putIfAbsent(alias, () => url);
+            result.putIfAbsent(alias.toLowerCase(), () => url);
+          }
+        }
+      }
+    }
+
+    _emojiUrlCacheByCookieKey[cacheKey] = result;
+    return result;
+  }
+
   Future<Map<int, RiverSideCategoryOption>> _loadCategoryOptionMap({
     String? cookieHeader,
     String? userApiKey,
@@ -1090,6 +1161,23 @@ class RiverSideApiClient {
   }
 
   String _normalizeUploadUrl(String source) {
+    final raw = source.trim();
+    if (raw.isEmpty) {
+      return '';
+    }
+    if (raw.startsWith('https://') || raw.startsWith('http://')) {
+      return raw;
+    }
+    if (raw.startsWith('//')) {
+      return 'https:$raw';
+    }
+    if (raw.startsWith('/')) {
+      return '$riverSideBaseUrl$raw';
+    }
+    return '$riverSideBaseUrl/$raw';
+  }
+
+  String _normalizeEmojiUrl(String source) {
     final raw = source.trim();
     if (raw.isEmpty) {
       return '';

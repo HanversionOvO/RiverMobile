@@ -5,6 +5,7 @@ import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:markdown/markdown.dart' as md;
 import 'package:river/app/app_dependencies.dart';
 import 'package:river/core/constants.dart';
 import 'package:river/core/network/riverside_api_client.dart';
@@ -61,10 +62,13 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
   RiverSideTopicDetail? _detail;
   List<RiverSideTopicPostDetail> _comments = const <RiverSideTopicPostDetail>[];
   final Set<int> _loadedPostIds = <int>{};
+  Map<String, String> _emojiUrls = const <String, String>{};
 
   bool _loadingInitial = true;
   bool _loadingMore = false;
-  bool _showBackToTopButton = false;
+  final ValueNotifier<bool> _showBackToTopButtonNotifier = ValueNotifier<bool>(
+    false,
+  );
   String? _error;
 
   @override
@@ -78,6 +82,7 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
   void dispose() {
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
+    _showBackToTopButtonNotifier.dispose();
     super.dispose();
   }
 
@@ -92,11 +97,8 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
     }
 
     final nextShow = offset >= _showBackToTopOffset;
-
-    if (nextShow != _showBackToTopButton && mounted) {
-      setState(() {
-        _showBackToTopButton = nextShow;
-      });
+    if (_showBackToTopButtonNotifier.value != nextShow) {
+      _showBackToTopButtonNotifier.value = nextShow;
     }
   }
 
@@ -155,16 +157,22 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
     setState(() {
       _loadingInitial = true;
       _loadingMore = false;
-      _showBackToTopButton = false;
       _error = null;
     });
+    _showBackToTopButtonNotifier.value = false;
 
     try {
-      final detail = await widget.dependencies.accountStore.riverSideApiClient
-          .fetchTopicDetail(
-            topicId: widget.topicId,
-            cookieHeader: _activeCookieHeader(),
-          );
+      final cookieHeader = _activeCookieHeader();
+      final apiClient = widget.dependencies.accountStore.riverSideApiClient;
+      final detailFuture = apiClient.fetchTopicDetail(
+        topicId: widget.topicId,
+        cookieHeader: cookieHeader,
+      );
+      final emojiFuture = apiClient
+          .fetchEmojiUrlMap(cookieHeader: cookieHeader)
+          .catchError((_) => const <String, String>{});
+      final detail = await detailFuture;
+      final emojiUrls = await emojiFuture;
       if (!mounted) {
         return;
       }
@@ -178,6 +186,7 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
         _loadedPostIds
           ..clear()
           ..addAll(detail.loadedPostIds);
+        _emojiUrls = emojiUrls;
         _loadingInitial = false;
       });
       _maybeAutoLoadMore();
@@ -427,7 +436,7 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '\u56de\u590d @${quote.ref.username} 路 #${quote.ref.postNumber}',
+                  '\u56de\u590d @${quote.ref.username} 的 #${quote.ref.postNumber}',
                   style: Theme.of(sheetContext).textTheme.titleSmall,
                 ),
                 const SizedBox(height: 10),
@@ -437,6 +446,7 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
                     child: _MarkdownContent(
                       markdown: quote.contentMarkdown,
                       cookieHeader: _activeCookieHeader(),
+                      emojiUrls: _emojiUrls,
                     ),
                   ),
                 ),
@@ -504,15 +514,20 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
         ),
       ),
       body: _buildBody(),
-      floatingActionButton: AnimatedScale(
-        duration: const Duration(milliseconds: 180),
-        scale: _showBackToTopButton ? 1 : 0,
-        child: _showBackToTopButton
-            ? FloatingActionButton.small(
-                onPressed: _scrollToTop,
-                child: const Icon(Icons.vertical_align_top),
-              )
-            : const SizedBox.shrink(),
+      floatingActionButton: ValueListenableBuilder<bool>(
+        valueListenable: _showBackToTopButtonNotifier,
+        builder: (context, visible, _) {
+          return AnimatedScale(
+            duration: const Duration(milliseconds: 180),
+            scale: visible ? 1 : 0,
+            child: visible
+                ? FloatingActionButton.small(
+                    onPressed: _scrollToTop,
+                    child: const Icon(Icons.vertical_align_top),
+                  )
+                : const SizedBox.shrink(),
+          );
+        },
       ),
     );
   }
@@ -564,6 +579,7 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
             key: _keyForPostNumber(1),
             detail: detail,
             cookieHeader: cookieHeader,
+            emojiUrls: _emojiUrls,
             onQuoteTap: _showQuoteBottomSheet,
           ),
           const SizedBox(height: 10),
@@ -582,6 +598,7 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
                 key: _keyForPostNumber(post.postNumber),
                 post: post,
                 cookieHeader: cookieHeader,
+                emojiUrls: _emojiUrls,
                 onQuoteTap: _showQuoteBottomSheet,
               ),
             ),
@@ -640,11 +657,13 @@ class _MainPostCard extends StatefulWidget {
     super.key,
     required this.detail,
     required this.cookieHeader,
+    required this.emojiUrls,
     required this.onQuoteTap,
   });
 
   final RiverSideTopicDetail detail;
   final String? cookieHeader;
+  final Map<String, String> emojiUrls;
   final ValueChanged<_QuoteBlock> onQuoteTap;
 
   @override
@@ -654,11 +673,11 @@ class _MainPostCard extends StatefulWidget {
 class _MainPostCardState extends State<_MainPostCard>
     with AutomaticKeepAliveClientMixin {
   @override
-  bool get wantKeepAlive => true; // 淇濇寔鐘舵€侊紝闃叉鍥炴敹
+  bool get wantKeepAlive => true;
 
   @override
   Widget build(BuildContext context) {
-    super.build(context); // 蹇呴』璋冪敤
+    super.build(context);
     final post = widget.detail.mainPost;
     final subtitleColor = Theme.of(context).colorScheme.onSurfaceVariant;
 
@@ -702,6 +721,7 @@ class _MainPostCardState extends State<_MainPostCard>
               markdown: post.contentMarkdown,
               topicId: post.topicId,
               cookieHeader: widget.cookieHeader,
+              emojiUrls: widget.emojiUrls,
               onQuoteTap: widget.onQuoteTap,
             ),
           ],
@@ -716,11 +736,13 @@ class _CommentCard extends StatefulWidget {
     super.key,
     required this.post,
     required this.cookieHeader,
+    required this.emojiUrls,
     required this.onQuoteTap,
   });
 
   final RiverSideTopicPostDetail post;
   final String? cookieHeader;
+  final Map<String, String> emojiUrls;
   final ValueChanged<_QuoteBlock> onQuoteTap;
 
   @override
@@ -730,11 +752,11 @@ class _CommentCard extends StatefulWidget {
 class _CommentCardState extends State<_CommentCard>
     with AutomaticKeepAliveClientMixin {
   @override
-  bool get wantKeepAlive => true; // 淇濇寔鐘舵€侊紝闃叉鍥炴敹
+  bool get wantKeepAlive => true;
 
   @override
   Widget build(BuildContext context) {
-    super.build(context); // 蹇呴』璋冪敤
+    super.build(context);
     final subtitleColor = Theme.of(context).colorScheme.onSurfaceVariant;
 
     return Card(
@@ -767,6 +789,7 @@ class _CommentCardState extends State<_CommentCard>
               markdown: widget.post.contentMarkdown,
               topicId: widget.post.topicId,
               cookieHeader: widget.cookieHeader,
+              emojiUrls: widget.emojiUrls,
               onQuoteTap: widget.onQuoteTap,
             ),
           ],
@@ -781,12 +804,14 @@ class _PostContent extends StatelessWidget {
     required this.markdown,
     required this.topicId,
     required this.cookieHeader,
+    required this.emojiUrls,
     required this.onQuoteTap,
   });
 
   final String markdown;
   final int topicId;
   final String? cookieHeader;
+  final Map<String, String> emojiUrls;
   final ValueChanged<_QuoteBlock> onQuoteTap;
 
   @override
@@ -806,6 +831,7 @@ class _PostContent extends StatelessWidget {
             _MarkdownContent(
               markdown: (blocks[i] as _MarkdownBlock).markdown,
               cookieHeader: cookieHeader,
+              emojiUrls: emojiUrls,
             )
           else
             _QuotePreviewCard(
@@ -850,7 +876,7 @@ class _QuotePreviewCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '\u56de\u590d @${quote.ref.username} 路 #${quote.ref.postNumber}',
+                      '\u56de\u590d @${quote.ref.username} 的 #${quote.ref.postNumber}',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
@@ -877,10 +903,15 @@ class _QuotePreviewCard extends StatelessWidget {
 }
 
 class _MarkdownContent extends StatelessWidget {
-  const _MarkdownContent({required this.markdown, this.cookieHeader});
+  const _MarkdownContent({
+    required this.markdown,
+    this.cookieHeader,
+    this.emojiUrls = const <String, String>{},
+  });
 
   final String markdown;
   final String? cookieHeader;
+  final Map<String, String> emojiUrls;
 
   @override
   Widget build(BuildContext context) {
@@ -898,6 +929,14 @@ class _MarkdownContent extends StatelessWidget {
     return MarkdownBody(
       data: data,
       selectable: true,
+      inlineSyntaxes: emojiUrls.isEmpty
+          ? null
+          : <md.InlineSyntax>[_EmojiInlineSyntax(emojiUrls)],
+      builders: emojiUrls.isEmpty
+          ? const <String, MarkdownElementBuilder>{}
+          : <String, MarkdownElementBuilder>{
+              'emoji': _EmojiBuilder(headers: headers),
+            },
       sizedImageBuilder: (config) {
         final resolvedUrl = _resolveForumUrl('${config.uri}');
         final imageIndex = imageBuilderIndex++;
@@ -981,10 +1020,11 @@ class _MarkdownImageState extends State<_MarkdownImage> {
 
   @override
   Widget build(BuildContext context) {
-    final hasCookie = (widget.headers?['Cookie'] ?? '').trim().isNotEmpty;
+    final baseHeaders = _headersForImageUrl(widget.url, widget.headers);
+    final hasCookie = (baseHeaders?['Cookie'] ?? '').trim().isNotEmpty;
     final requestHeaders = _retryWithoutCookie
-        ? const <String, String>{'Referer': riverSideBaseUrl}
-        : widget.headers;
+        ? _stripCookieHeader(baseHeaders)
+        : baseHeaders;
 
     final image = _fallbackToDirectImage
         ? _buildDirectImage(context, requestHeaders, hasCookie)
@@ -997,19 +1037,35 @@ class _MarkdownImageState extends State<_MarkdownImage> {
   }
 
   void _openPreview(Map<String, String>? headers) {
-    final items = widget.viewerItems
-        .map(
-          (item) => RiverImageViewerItem(
-            url: item.url,
-            headers: headers ?? item.headers,
-            heroTag: item.heroTag,
-          ),
-        )
-        .toList(growable: false);
+    final items = List<RiverImageViewerItem>.from(widget.viewerItems);
+    if (widget.initialIndex >= 0 && widget.initialIndex < items.length) {
+      final current = items[widget.initialIndex];
+      final effectiveHeaders = headers ?? current.headers;
+      items[widget.initialIndex] = RiverImageViewerItem(
+        url: current.url,
+        headers: effectiveHeaders,
+        heroTag: current.heroTag,
+        imageProvider: _buildPreviewImageProvider(effectiveHeaders),
+      );
+    }
+
     RiverImageViewerPage.open(
       context,
       items: items,
       initialIndex: widget.initialIndex,
+    );
+  }
+
+  ImageProvider<Object> _buildPreviewImageProvider(
+    Map<String, String>? headers,
+  ) {
+    if (_fallbackToDirectImage) {
+      return NetworkImage(widget.url, headers: headers);
+    }
+    return CachedNetworkImageProvider(
+      widget.url,
+      headers: headers,
+      cacheKey: _buildImageCacheKey(widget.url, headers),
     );
   }
 
@@ -1025,6 +1081,8 @@ class _MarkdownImageState extends State<_MarkdownImage> {
         httpHeaders: requestHeaders,
         cacheKey: _buildImageCacheKey(widget.url, requestHeaders),
         fit: BoxFit.contain,
+        fadeInDuration: Duration.zero,
+        fadeOutDuration: Duration.zero,
         placeholder: (context, url) => _buildLoadingPlaceholder(context),
         errorWidget: (context, url, error) {
           if (!_retryWithoutCookie && hasCookie) {
@@ -1339,12 +1397,94 @@ String _toPlainPreview(String markdown) {
       .trim();
 }
 
+class _EmojiInlineSyntax extends md.InlineSyntax {
+  _EmojiInlineSyntax(this.emojiUrls) : super(r':([a-zA-Z0-9_+\-]+):');
+
+  final Map<String, String> emojiUrls;
+
+  @override
+  bool onMatch(md.InlineParser parser, Match match) {
+    final key = (match.group(1) ?? '').trim();
+    if (key.isEmpty) {
+      return false;
+    }
+    final url = emojiUrls[key] ?? emojiUrls[key.toLowerCase()];
+    if (url == null || url.isEmpty) {
+      return false;
+    }
+
+    final element = md.Element.text('emoji', key);
+    element.attributes['data-url'] = url;
+    parser.addNode(element);
+    return true;
+  }
+}
+
+class _EmojiBuilder extends MarkdownElementBuilder {
+  _EmojiBuilder({required this.headers});
+
+  final Map<String, String>? headers;
+
+  @override
+  Widget? visitElementAfter(md.Element element, TextStyle? preferredStyle) {
+    final url = (element.attributes['data-url'] ?? '').trim();
+    if (url.isEmpty) {
+      return Text(':${element.textContent}:', style: preferredStyle);
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 1),
+      child: CachedNetworkImage(
+        imageUrl: _resolveForumUrl(url),
+        httpHeaders: headers,
+        width: 20,
+        height: 20,
+        fit: BoxFit.contain,
+        fadeInDuration: Duration.zero,
+        fadeOutDuration: Duration.zero,
+        errorWidget: (context, imageUrl, error) =>
+            Text(':${element.textContent}:', style: preferredStyle),
+      ),
+    );
+  }
+}
+
 Map<String, String>? _buildImageHeaders(String? cookieHeader) {
   final cookie = cookieHeader?.trim();
   if (cookie == null || cookie.isEmpty) {
     return const <String, String>{'Referer': riverSideBaseUrl};
   }
   return <String, String>{'Cookie': cookie, 'Referer': riverSideBaseUrl};
+}
+
+Map<String, String>? _headersForImageUrl(
+  String url,
+  Map<String, String>? headers,
+) {
+  if (headers == null || headers.isEmpty) {
+    return headers;
+  }
+  final uri = Uri.tryParse(url);
+  final host = (uri?.host ?? '').trim().toLowerCase();
+  if (host.isEmpty ||
+      host == 'river-side.cc' ||
+      host.endsWith('.river-side.cc')) {
+    return headers;
+  }
+  return null;
+}
+
+Map<String, String>? _stripCookieHeader(Map<String, String>? headers) {
+  if (headers == null || headers.isEmpty) {
+    return headers;
+  }
+  final next = <String, String>{};
+  headers.forEach((key, value) {
+    if (key.toLowerCase() == 'cookie') {
+      return;
+    }
+    next[key] = value;
+  });
+  return next.isEmpty ? null : next;
 }
 
 String _buildImageCacheKey(String url, Map<String, String>? headers) {
@@ -1373,7 +1513,7 @@ List<RiverImageViewerItem> _buildMarkdownGalleryItems({
     items.add(
       RiverImageViewerItem(
         url: resolved,
-        headers: headers,
+        headers: _headersForImageUrl(resolved, headers),
         heroTag: _buildMarkdownHeroTag(
           markdown: markdown,
           index: i,
