@@ -3,6 +3,7 @@ import 'package:river/app/app_dependencies.dart';
 import 'package:river/app/app_settings_controller.dart';
 import 'package:river/core/account/account_store.dart';
 import 'package:river/core/network/riverside_api_client.dart';
+import 'package:river/core/platform/riverside_cookie_bridge.dart';
 import 'package:river/features/home/home_shell_page.dart';
 import 'package:river/features/login/login_page.dart';
 
@@ -22,7 +23,10 @@ class _RiverAppState extends State<RiverApp> {
     super.initState();
     _dependencies = AppDependencies(
       settingsController: AppSettingsController(),
-      accountStore: AccountStore(riverSideApiClient: RiverSideApiClient()),
+      accountStore: AccountStore(
+        riverSideApiClient: RiverSideApiClient(),
+        riverSideCookieBridge: RiverSideCookieBridge(),
+      ),
     );
 
     _bootstrap();
@@ -30,6 +34,7 @@ class _RiverAppState extends State<RiverApp> {
 
   Future<void> _bootstrap() async {
     await _dependencies.accountStore.initialize();
+    await _dependencies.accountStore.syncActiveRiverSideCookieToWebView();
     if (!mounted) {
       return;
     }

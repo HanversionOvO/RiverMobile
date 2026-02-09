@@ -1,0 +1,1 @@
+enum RiverSideLoginFlowMode { initialLogin, addAccount }

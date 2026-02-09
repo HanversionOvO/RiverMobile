@@ -1,5 +1,6 @@
-﻿package com.example.river
+package com.example.river
 
+import android.webkit.CookieManager
 import androidx.webkit.WebViewCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -18,6 +19,42 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "river/webview_cookies",
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "getCookies" -> {
+                    val url = call.argument<String>("url")
+                    if (url.isNullOrBlank()) {
+                        result.success(null)
+                        return@setMethodCallHandler
+                    }
+                    result.success(getCookies(url))
+                }
+
+                "setCookies" -> {
+                    val url = call.argument<String>("url")
+                    val cookieHeader = call.argument<String>("cookieHeader")
+                    if (url.isNullOrBlank() || cookieHeader.isNullOrBlank()) {
+                        result.success(false)
+                        return@setMethodCallHandler
+                    }
+                    setCookies(url, cookieHeader) { ok ->
+                        result.success(ok)
+                    }
+                }
+
+                "clearAllCookies" -> {
+                    clearAllCookies { ok ->
+                        result.success(ok)
+                    }
+                }
+
+                else -> result.notImplemented()
+            }
+        }
     }
 
     private fun getWebViewVersion(): String? {
@@ -25,6 +62,64 @@ class MainActivity : FlutterActivity() {
             WebViewCompat.getCurrentWebViewPackage(this)?.versionName
         } catch (_: Throwable) {
             null
+        }
+    }
+
+    private fun getCookies(url: String): String? {
+        return try {
+            CookieManager.getInstance().getCookie(url)
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun setCookies(
+        url: String,
+        cookieHeader: String,
+        done: (Boolean) -> Unit,
+    ) {
+        try {
+            val manager = CookieManager.getInstance()
+            manager.setAcceptCookie(true)
+
+            val cookiePairs = cookieHeader
+                .split(";")
+                .map { it.trim() }
+                .filter { it.contains("=") }
+
+            for (pair in cookiePairs) {
+                val index = pair.indexOf('=')
+                if (index <= 0) {
+                    continue
+                }
+                val name = pair.substring(0, index).trim()
+                val value = pair.substring(index + 1).trim()
+                if (name.isEmpty()) {
+                    continue
+                }
+                val attributes = when {
+                    name.startsWith("__Host-") -> "Path=/; Secure"
+                    else -> "Domain=river-side.cc; Path=/; Secure"
+                }
+                manager.setCookie(url, "$name=$value; $attributes")
+            }
+
+            manager.flush()
+            done(true)
+        } catch (_: Throwable) {
+            done(false)
+        }
+    }
+
+    private fun clearAllCookies(done: (Boolean) -> Unit) {
+        try {
+            val manager = CookieManager.getInstance()
+            manager.removeAllCookies { cleared ->
+                manager.flush()
+                done(cleared)
+            }
+        } catch (_: Throwable) {
+            done(false)
         }
     }
 }

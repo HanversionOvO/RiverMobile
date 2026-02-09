@@ -6,13 +6,19 @@ import 'package:river/core/account/account_models.dart';
 import 'package:river/core/constants.dart';
 import 'package:river/features/home/home_shell_page.dart';
 import 'package:river/features/login/riverside_external_fallback_page.dart';
+import 'package:river/features/login/riverside_login_flow_mode.dart';
 import 'package:river/features/login/riverside_session_reader.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 class RiverSideLoginWebViewPage extends StatefulWidget {
-  const RiverSideLoginWebViewPage({super.key, required this.dependencies});
+  const RiverSideLoginWebViewPage({
+    super.key,
+    required this.dependencies,
+    this.flowMode = RiverSideLoginFlowMode.initialLogin,
+  });
 
   final AppDependencies dependencies;
+  final RiverSideLoginFlowMode flowMode;
 
   @override
   State<RiverSideLoginWebViewPage> createState() =>
@@ -22,7 +28,7 @@ class RiverSideLoginWebViewPage extends StatefulWidget {
 class _RiverSideLoginWebViewPageState extends State<RiverSideLoginWebViewPage> {
   late final WebViewController _controller;
   bool _isLoading = true;
-  bool _navigatedHome = false;
+  bool _completedFlow = false;
   bool _syncingAccount = false;
 
   @override
@@ -46,6 +52,19 @@ class _RiverSideLoginWebViewPageState extends State<RiverSideLoginWebViewPage> {
             if (error.isForMainFrame != true || !mounted) {
               return;
             }
+
+            if (widget.flowMode == RiverSideLoginFlowMode.addAccount) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Load failed. Please retry in a newer WebView environment.',
+                  ),
+                ),
+              );
+              Navigator.of(context).pop();
+              return;
+            }
+
             Navigator.of(context).pushReplacement(
               MaterialPageRoute<void>(
                 builder: (_) => RiverSideExternalFallbackPage(
@@ -55,8 +74,23 @@ class _RiverSideLoginWebViewPageState extends State<RiverSideLoginWebViewPage> {
             );
           },
         ),
-      )
-      ..loadRequest(Uri.parse(riverSideLoginUrl));
+      );
+
+    unawaited(_prepareAndLoad());
+  }
+
+  Future<void> _prepareAndLoad() async {
+    if (widget.flowMode == RiverSideLoginFlowMode.addAccount) {
+      await widget.dependencies.accountStore
+          .captureAndPersistActiveRiverSideCookies();
+      await widget.dependencies.accountStore.clearWebViewCookies();
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    await _controller.loadRequest(Uri.parse(riverSideLoginUrl));
   }
 
   Future<void> _onPageFinished(String url) async {
@@ -72,7 +106,7 @@ class _RiverSideLoginWebViewPageState extends State<RiverSideLoginWebViewPage> {
   }
 
   Future<void> _checkLoginSuccess(String url) async {
-    if (_navigatedHome || _syncingAccount) {
+    if (_completedFlow || _syncingAccount) {
       return;
     }
 
@@ -90,10 +124,16 @@ class _RiverSideLoginWebViewPageState extends State<RiverSideLoginWebViewPage> {
     }
 
     _syncingAccount = true;
+    UserAccount? profile;
     try {
-      final profile = await _resolveProfile(path);
+      profile = await _resolveProfile(path);
       if (profile != null) {
         await widget.dependencies.accountStore.upsertRiverSideAccount(profile);
+        await widget.dependencies.accountStore
+            .captureAndPersistCurrentRiverSideCookies(profile.username);
+        await widget.dependencies.accountStore.switchActiveRiverSideAccount(
+          profile.username,
+        );
       }
     } finally {
       _syncingAccount = false;
@@ -102,7 +142,25 @@ class _RiverSideLoginWebViewPageState extends State<RiverSideLoginWebViewPage> {
     if (!mounted) {
       return;
     }
-    _navigatedHome = true;
+
+    if (widget.flowMode == RiverSideLoginFlowMode.addAccount) {
+      if (profile == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Login detected but account profile was not resolved. Please retry.',
+            ),
+          ),
+        );
+        return;
+      }
+
+      _completedFlow = true;
+      Navigator.of(context).pop(profile);
+      return;
+    }
+
+    _completedFlow = true;
 
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute<void>(
@@ -156,8 +214,12 @@ class _RiverSideLoginWebViewPageState extends State<RiverSideLoginWebViewPage> {
 
   @override
   Widget build(BuildContext context) {
+    final title = widget.flowMode == RiverSideLoginFlowMode.initialLogin
+        ? 'RiverSide Login'
+        : 'Add RiverSide Account';
+
     return Scaffold(
-      appBar: AppBar(title: const Text('RiverSide')),
+      appBar: AppBar(title: Text(title)),
       body: Stack(
         children: [
           WebViewWidget(controller: _controller),
