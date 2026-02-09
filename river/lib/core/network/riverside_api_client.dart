@@ -242,11 +242,13 @@ class RiverSideApiClient {
     final usersById = _extractUsersById(decoded['users']);
     var categoryNamesById = _extractCategoryNamesFromTopicPayload(decoded);
     if (categoryNamesById.isEmpty) {
-      categoryNamesById = await _loadCategoryNameMap(
-        cookieHeader: cookieHeader,
-        userApiKey: userApiKey,
-        userApiClientId: userApiClientId,
-      );
+      categoryNamesById =
+          _categoryNameCacheByCookieKey[_categoryCacheKey(
+            cookieHeader: cookieHeader,
+            userApiKey: userApiKey,
+            userApiClientId: userApiClientId,
+          )] ??
+          const <int, String>{};
     }
 
     final result = <RiverSideTopicSummary>[];
@@ -479,15 +481,22 @@ class RiverSideApiClient {
       }
     }
 
-    for (final subId in missingSubCategoryIds) {
-      final detail = await _fetchCategoryDetail(
-        categoryId: subId,
-        cookieHeader: cookieHeader,
-        userApiKey: userApiKey,
-        userApiClientId: userApiClientId,
-      );
-      if (detail != null) {
-        rawById[subId] = detail;
+    if (missingSubCategoryIds.isNotEmpty) {
+      final detailFutures = missingSubCategoryIds.map((subId) async {
+        final detail = await _fetchCategoryDetail(
+          categoryId: subId,
+          cookieHeader: cookieHeader,
+          userApiKey: userApiKey,
+          userApiClientId: userApiClientId,
+        );
+        return MapEntry(subId, detail);
+      });
+      final details = await Future.wait(detailFutures);
+      for (final entry in details) {
+        final detail = entry.value;
+        if (detail != null) {
+          rawById[entry.key] = detail;
+        }
       }
     }
 
@@ -575,29 +584,6 @@ class RiverSideApiClient {
     return <int, RiverSideCategoryOption>{
       for (final item in options) item.id: item,
     };
-  }
-
-  Future<Map<int, String>> _loadCategoryNameMap({
-    String? cookieHeader,
-    String? userApiKey,
-    String? userApiClientId,
-  }) async {
-    final cache =
-        _categoryNameCacheByCookieKey[_categoryCacheKey(
-          cookieHeader: cookieHeader,
-          userApiKey: userApiKey,
-          userApiClientId: userApiClientId,
-        )];
-    if (cache != null && cache.isNotEmpty) {
-      return cache;
-    }
-
-    final options = await fetchCategories(
-      cookieHeader: cookieHeader,
-      userApiKey: userApiKey,
-      userApiClientId: userApiClientId,
-    );
-    return _buildCategoryNameMap(options);
   }
 
   Map<int, String> _buildCategoryNameMap(
@@ -737,6 +723,11 @@ class RiverSideApiClient {
     final editCount = version > 1 ? version - 1 : 0;
     final rawMarkdown = (post['raw'] ?? '').toString().trim();
     final cooked = (post['cooked'] ?? '').toString();
+    final resolvedRawMarkdown = _resolveUploadMarkdown(
+      rawMarkdown: rawMarkdown,
+      cookedHtml: cooked,
+      uploadsRaw: post['uploads'],
+    );
 
     final onlineValue = post['online'];
     final isOnline = onlineValue is bool
@@ -752,8 +743,8 @@ class RiverSideApiClient {
       authorAvatarUrl: _normalizeAvatarUrl(avatarTemplate),
       authorTitle: authorTitle,
       isOnline: isOnline,
-      contentMarkdown: rawMarkdown.isNotEmpty
-          ? rawMarkdown
+      contentMarkdown: resolvedRawMarkdown.isNotEmpty
+          ? resolvedRawMarkdown
           : _cookHtmlToMarkdown(cooked),
       createdAt: createdAt,
       editCount: editCount,
@@ -986,6 +977,160 @@ class RiverSideApiClient {
     }
 
     return markdown.replaceAll(RegExp(r'\n{3,}'), '\n\n').trim();
+  }
+
+  String _resolveUploadMarkdown({
+    required String rawMarkdown,
+    required String cookedHtml,
+    required dynamic uploadsRaw,
+  }) {
+    if (rawMarkdown.isEmpty || !rawMarkdown.contains('upload://')) {
+      return rawMarkdown;
+    }
+
+    final replacements = _extractUploadReplacementMap(uploadsRaw);
+    if (replacements.isEmpty) {
+      replacements.addAll(
+        _extractUploadReplacementMapFromCooked(
+          rawMarkdown: rawMarkdown,
+          cookedHtml: cookedHtml,
+        ),
+      );
+    }
+    if (replacements.isEmpty) {
+      return rawMarkdown;
+    }
+
+    return rawMarkdown.replaceAllMapped(
+      RegExp(r'upload://[^\s)>\]]+', caseSensitive: false),
+      (match) {
+        final source = (match.group(0) ?? '').trim();
+        if (source.isEmpty) {
+          return source;
+        }
+        return replacements[source] ?? source;
+      },
+    );
+  }
+
+  Map<String, String> _extractUploadReplacementMap(dynamic uploadsRaw) {
+    if (uploadsRaw is! List) {
+      return <String, String>{};
+    }
+
+    final replacements = <String, String>{};
+    for (final rawItem in uploadsRaw) {
+      final item = _toStringMap(rawItem);
+      if (item.isEmpty) {
+        continue;
+      }
+
+      final url = _normalizeUploadUrl(
+        (item['url'] ?? item['short_url'] ?? '').toString(),
+      );
+      if (url.isEmpty) {
+        continue;
+      }
+
+      final shortUrl = (item['short_url'] ?? '').toString().trim();
+      if (shortUrl.startsWith('upload://')) {
+        replacements[shortUrl] = url;
+        continue;
+      }
+
+      final token = _extractUploadToken(shortUrl);
+      if (token.isNotEmpty) {
+        replacements['upload://$token'] = url;
+      }
+    }
+    return replacements;
+  }
+
+  Map<String, String> _extractUploadReplacementMapFromCooked({
+    required String rawMarkdown,
+    required String cookedHtml,
+  }) {
+    if (rawMarkdown.isEmpty || cookedHtml.isEmpty) {
+      return <String, String>{};
+    }
+
+    final uploadTokens = RegExp(r'upload://[^\s)>\]]+', caseSensitive: false)
+        .allMatches(rawMarkdown)
+        .map((match) => match.group(0) ?? '')
+        .where((it) {
+          return it.trim().isNotEmpty;
+        })
+        .toList();
+    if (uploadTokens.isEmpty) {
+      return <String, String>{};
+    }
+
+    final cookedImageUrls =
+        RegExp(r'<img[^>]+src\s*=\s*"([^"]+)"', caseSensitive: false)
+            .allMatches(cookedHtml)
+            .map((match) {
+              return _normalizeUploadUrl(match.group(1) ?? '');
+            })
+            .where((it) {
+              return it.isNotEmpty;
+            })
+            .toList();
+    if (cookedImageUrls.isEmpty) {
+      return <String, String>{};
+    }
+
+    final count = uploadTokens.length < cookedImageUrls.length
+        ? uploadTokens.length
+        : cookedImageUrls.length;
+    final replacements = <String, String>{};
+    for (var i = 0; i < count; i++) {
+      replacements[uploadTokens[i]] = cookedImageUrls[i];
+    }
+    return replacements;
+  }
+
+  String _normalizeUploadUrl(String source) {
+    final raw = source.trim();
+    if (raw.isEmpty) {
+      return '';
+    }
+    if (raw.startsWith('https://') || raw.startsWith('http://')) {
+      return raw;
+    }
+    if (raw.startsWith('//')) {
+      return 'https:$raw';
+    }
+    if (raw.startsWith('/')) {
+      return '$riverSideBaseUrl$raw';
+    }
+    return '$riverSideBaseUrl/$raw';
+  }
+
+  String _extractUploadToken(String source) {
+    final raw = source.trim();
+    if (raw.isEmpty) {
+      return '';
+    }
+    if (raw.startsWith('upload://')) {
+      return raw.substring('upload://'.length);
+    }
+    const marker = '/uploads/short-url/';
+    final markerIndex = raw.indexOf(marker);
+    if (markerIndex >= 0) {
+      return raw.substring(markerIndex + marker.length);
+    }
+
+    final uri = Uri.tryParse(raw);
+    if (uri == null || uri.path.isEmpty) {
+      return '';
+    }
+    final paths = uri.pathSegments;
+    if (paths.length >= 3 &&
+        paths[paths.length - 3] == 'uploads' &&
+        paths[paths.length - 2] == 'short-url') {
+      return paths.last;
+    }
+    return '';
   }
 
   String _sanitizeCookedAsPlainText(String source) {

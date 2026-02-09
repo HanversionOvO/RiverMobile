@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:river/app/app_dependencies.dart';
 import 'package:river/app/app_settings_controller.dart';
@@ -34,7 +36,6 @@ class _RiverAppState extends State<RiverApp> {
 
   Future<void> _bootstrap() async {
     await _dependencies.accountStore.initialize();
-    await _dependencies.accountStore.syncActiveRiverSideCookieToWebView();
     if (!mounted) {
       return;
     }
@@ -42,6 +43,7 @@ class _RiverAppState extends State<RiverApp> {
     setState(() {
       _initialized = true;
     });
+    unawaited(_dependencies.accountStore.syncActiveRiverSideCookieToWebView());
   }
 
   @override

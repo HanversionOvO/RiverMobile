@@ -601,7 +601,7 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-class _MainPostCard extends StatelessWidget {
+class _MainPostCard extends StatefulWidget {
   const _MainPostCard({
     super.key,
     required this.detail,
@@ -614,8 +614,18 @@ class _MainPostCard extends StatelessWidget {
   final ValueChanged<_QuoteBlock> onQuoteTap;
 
   @override
+  State<_MainPostCard> createState() => _MainPostCardState();
+}
+
+class _MainPostCardState extends State<_MainPostCard>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true; // 保持状态，防止回收
+
+  @override
   Widget build(BuildContext context) {
-    final post = detail.mainPost;
+    super.build(context); // 必须调用
+    final post = widget.detail.mainPost;
     final subtitleColor = Theme.of(context).colorScheme.onSurfaceVariant;
 
     return Card(
@@ -643,7 +653,7 @@ class _MainPostCard extends StatelessWidget {
                 ),
                 _MetaItem(
                   icon: Icons.visibility_outlined,
-                  text: '\u6d4f\u89c8 ${detail.viewCount}',
+                  text: '\u6d4f\u89c8 ${widget.detail.viewCount}',
                   color: subtitleColor,
                 ),
                 _MetaItem(
@@ -657,8 +667,8 @@ class _MainPostCard extends StatelessWidget {
             _PostContent(
               markdown: post.contentMarkdown,
               topicId: post.topicId,
-              cookieHeader: cookieHeader,
-              onQuoteTap: onQuoteTap,
+              cookieHeader: widget.cookieHeader,
+              onQuoteTap: widget.onQuoteTap,
             ),
           ],
         ),
@@ -667,7 +677,7 @@ class _MainPostCard extends StatelessWidget {
   }
 }
 
-class _CommentCard extends StatelessWidget {
+class _CommentCard extends StatefulWidget {
   const _CommentCard({
     super.key,
     required this.post,
@@ -680,7 +690,17 @@ class _CommentCard extends StatelessWidget {
   final ValueChanged<_QuoteBlock> onQuoteTap;
 
   @override
+  State<_CommentCard> createState() => _CommentCardState();
+}
+
+class _CommentCardState extends State<_CommentCard>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true; // 保持状态，防止回收
+
+  @override
   Widget build(BuildContext context) {
+    super.build(context); // 必须调用
     final subtitleColor = Theme.of(context).colorScheme.onSurfaceVariant;
 
     return Card(
@@ -690,7 +710,7 @@ class _CommentCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _PostAuthorHeader(post: post),
+            _PostAuthorHeader(post: widget.post),
             const SizedBox(height: 8),
             Wrap(
               spacing: 12,
@@ -698,22 +718,22 @@ class _CommentCard extends StatelessWidget {
               children: [
                 _MetaItem(
                   icon: Icons.schedule_outlined,
-                  text: _formatDateTime(post.createdAt),
+                  text: _formatDateTime(widget.post.createdAt),
                   color: subtitleColor,
                 ),
                 _MetaItem(
                   icon: Icons.thumb_up_alt_outlined,
-                  text: '\u70b9\u8d5e ${post.likeCount}',
+                  text: '\u70b9\u8d5e ${widget.post.likeCount}',
                   color: subtitleColor,
                 ),
               ],
             ),
             const SizedBox(height: 10),
             _PostContent(
-              markdown: post.contentMarkdown,
-              topicId: post.topicId,
-              cookieHeader: cookieHeader,
-              onQuoteTap: onQuoteTap,
+              markdown: widget.post.contentMarkdown,
+              topicId: widget.post.topicId,
+              cookieHeader: widget.cookieHeader,
+              onQuoteTap: widget.onQuoteTap,
             ),
           ],
         ),

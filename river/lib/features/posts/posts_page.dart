@@ -46,6 +46,7 @@ class _PostsPageState extends State<PostsPage> {
         widget.dependencies.accountStore.activeRiverSideUsername;
     widget.dependencies.accountStore.addListener(_onAccountStoreChanged);
     _scrollController.addListener(_onScroll);
+    _loadCategories();
     _loadFirstPage(clearExisting: true);
   }
 
@@ -138,6 +139,7 @@ class _PostsPageState extends State<PostsPage> {
         _loadingCategories = false;
       });
       _refreshSelectedCategoryName();
+      _refreshTopicCategoryNames();
     } catch (_) {
       if (!mounted) {
         return;
@@ -171,6 +173,61 @@ class _PostsPageState extends State<PostsPage> {
         }
         return;
       }
+    }
+  }
+
+  void _refreshTopicCategoryNames() {
+    if (_topics.isEmpty || _categories.isEmpty) {
+      return;
+    }
+
+    final byId = <int, RiverSideCategoryOption>{
+      for (final item in _categories) item.id: item,
+    };
+    var changed = false;
+    final next = <RiverSideTopicSummary>[];
+    for (final topic in _topics) {
+      final categoryId = topic.categoryId;
+      if (categoryId == null) {
+        next.add(topic);
+        continue;
+      }
+
+      final category = byId[categoryId];
+      if (category == null) {
+        next.add(topic);
+        continue;
+      }
+
+      final nextName = _displayCategoryName(category);
+      if (nextName == topic.categoryName) {
+        next.add(topic);
+        continue;
+      }
+
+      changed = true;
+      next.add(
+        RiverSideTopicSummary(
+          id: topic.id,
+          title: topic.title,
+          excerpt: topic.excerpt,
+          categoryId: topic.categoryId,
+          categoryName: nextName,
+          replyCount: topic.replyCount,
+          viewCount: topic.viewCount,
+          createdAt: topic.createdAt,
+          authorDisplayName: topic.authorDisplayName,
+          authorUsername: topic.authorUsername,
+          authorAvatarUrl: topic.authorAvatarUrl,
+          isHot: topic.isHot,
+        ),
+      );
+    }
+
+    if (changed && mounted) {
+      setState(() {
+        _topics = next;
+      });
     }
   }
 
