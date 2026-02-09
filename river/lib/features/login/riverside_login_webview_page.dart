@@ -30,6 +30,7 @@ class _RiverSideLoginWebViewPageState extends State<RiverSideLoginWebViewPage> {
   bool _isLoading = true;
   bool _completedFlow = false;
   bool _syncingAccount = false;
+  bool _openingExternalFallback = false;
 
   @override
   void initState() {
@@ -65,13 +66,7 @@ class _RiverSideLoginWebViewPageState extends State<RiverSideLoginWebViewPage> {
               return;
             }
 
-            Navigator.of(context).pushReplacement(
-              MaterialPageRoute<void>(
-                builder: (_) => RiverSideExternalFallbackPage(
-                  dependencies: widget.dependencies,
-                ),
-              ),
-            );
+            unawaited(_switchToExternalBrowserLogin());
           },
         ),
       );
@@ -91,6 +86,48 @@ class _RiverSideLoginWebViewPageState extends State<RiverSideLoginWebViewPage> {
     }
 
     await _controller.loadRequest(Uri.parse(riverSideLoginUrl));
+  }
+
+  Future<void> _switchToExternalBrowserLogin() async {
+    if (!mounted || _openingExternalFallback) {
+      return;
+    }
+
+    _openingExternalFallback = true;
+    try {
+      final completed = await Navigator.of(context).push<bool>(
+        MaterialPageRoute<bool>(
+          builder: (_) =>
+              RiverSideExternalFallbackPage(dependencies: widget.dependencies),
+        ),
+      );
+
+      if (!mounted || completed != true || _completedFlow) {
+        return;
+      }
+
+      if (widget.flowMode == RiverSideLoginFlowMode.initialLogin) {
+        _completedFlow = true;
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute<void>(
+            builder: (_) => HomeShellPage(dependencies: widget.dependencies),
+          ),
+          (_) => false,
+        );
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'External browser login completed. Please re-open add account to sync account data.',
+          ),
+        ),
+      );
+      Navigator.of(context).pop();
+    } finally {
+      _openingExternalFallback = false;
+    }
   }
 
   Future<void> _onPageFinished(String url) async {
@@ -219,7 +256,18 @@ class _RiverSideLoginWebViewPageState extends State<RiverSideLoginWebViewPage> {
         : 'Add RiverSide Account';
 
     return Scaffold(
-      appBar: AppBar(title: Text(title)),
+      appBar: AppBar(
+        title: Text(title),
+        actions: widget.flowMode == RiverSideLoginFlowMode.initialLogin
+            ? <Widget>[
+                IconButton(
+                  tooltip: 'Use external browser login',
+                  onPressed: _switchToExternalBrowserLogin,
+                  icon: const Icon(Icons.open_in_browser_outlined),
+                ),
+              ]
+            : null,
+      ),
       body: Stack(
         children: [
           WebViewWidget(controller: _controller),

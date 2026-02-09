@@ -60,7 +60,12 @@ class RiverSideExternalFallbackPage extends StatelessWidget {
             const SizedBox(height: 12),
             OutlinedButton(
               onPressed: () {
-                Navigator.of(context).pushAndRemoveUntil(
+                final navigator = Navigator.of(context);
+                if (navigator.canPop()) {
+                  navigator.pop(true);
+                  return;
+                }
+                navigator.pushAndRemoveUntil(
                   MaterialPageRoute<void>(
                     builder: (_) => HomeShellPage(dependencies: dependencies),
                   ),

@@ -821,29 +821,21 @@ class _TopicCard extends StatelessWidget {
               ),
             ],
             const SizedBox(height: 10),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.label_outline, size: 15, color: subtitleColor),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      topic.categoryName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: textTheme.bodySmall?.copyWith(
-                        color: subtitleColor,
-                      ),
-                    ),
+            Row(
+              children: [
+                Flexible(
+                  child: _CategoryPill(
+                    label: topic.categoryName,
+                    color: subtitleColor,
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 10),
+                _MetaInfo(
+                  icon: Icons.schedule_outlined,
+                  text: _formatDateTime(topic.createdAt),
+                  color: subtitleColor,
+                ),
+              ],
             ),
             const SizedBox(height: 8),
             Wrap(
@@ -858,11 +850,6 @@ class _TopicCard extends StatelessWidget {
                 _MetaInfo(
                   icon: Icons.visibility_outlined,
                   text: topic.viewCount.toString(),
-                  color: subtitleColor,
-                ),
-                _MetaInfo(
-                  icon: Icons.schedule_outlined,
-                  text: _formatDateTime(topic.createdAt),
                   color: subtitleColor,
                 ),
               ],
@@ -882,6 +869,41 @@ class _TopicCard extends StatelessWidget {
     String two(int n) => n < 10 ? '0$n' : '$n';
     return '${local.year}-${two(local.month)}-${two(local.day)} '
         '${two(local.hour)}:${two(local.minute)}';
+  }
+}
+
+class _CategoryPill extends StatelessWidget {
+  const _CategoryPill({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.label_outline, size: 15, color: color),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: color),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

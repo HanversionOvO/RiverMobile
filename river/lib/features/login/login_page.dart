@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:lottie/lottie.dart';
 import 'package:river/app/app_dependencies.dart';
 import 'package:river/core/platform/riverside_webview_support.dart';
+import 'package:river/features/home/home_shell_page.dart';
 import 'package:river/features/login/riverside_external_fallback_page.dart';
 import 'package:river/features/login/riverside_login_webview_page.dart';
 
@@ -16,6 +17,30 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> {
   bool _checkingWebView = false;
+
+  Future<void> _openExternalBrowserLogin({
+    String? detectedWebViewVersion,
+  }) async {
+    final completed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => RiverSideExternalFallbackPage(
+          dependencies: widget.dependencies,
+          detectedWebViewVersion: detectedWebViewVersion,
+        ),
+      ),
+    );
+
+    if (!mounted || completed != true) {
+      return;
+    }
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute<void>(
+        builder: (_) => HomeShellPage(dependencies: widget.dependencies),
+      ),
+      (_) => false,
+    );
+  }
 
   Future<void> _onRiverSideLoginPressed() async {
     if (_checkingWebView) {
@@ -45,13 +70,8 @@ class _LoginPageState extends State<LoginPage> {
       return;
     }
 
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => RiverSideExternalFallbackPage(
-          dependencies: widget.dependencies,
-          detectedWebViewVersion: support.detectedVersion,
-        ),
-      ),
+    await _openExternalBrowserLogin(
+      detectedWebViewVersion: support.detectedVersion,
     );
   }
 
