@@ -9,6 +9,7 @@ import 'package:river/app/app_dependencies.dart';
 import 'package:river/core/constants.dart';
 import 'package:river/core/network/riverside_api_client.dart';
 import 'package:river/core/network/riverside_topic_models.dart';
+import 'package:river/core/widgets/river_image_viewer.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class TopicDetailPage extends StatefulWidget {
@@ -426,7 +427,7 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '\u56de\u590d @${quote.ref.username} · #${quote.ref.postNumber}',
+                  '\u56de\u590d @${quote.ref.username} 路 #${quote.ref.postNumber}',
                   style: Theme.of(sheetContext).textTheme.titleSmall,
                 ),
                 const SizedBox(height: 10),
@@ -653,11 +654,11 @@ class _MainPostCard extends StatefulWidget {
 class _MainPostCardState extends State<_MainPostCard>
     with AutomaticKeepAliveClientMixin {
   @override
-  bool get wantKeepAlive => true; // 保持状态，防止回收
+  bool get wantKeepAlive => true; // 淇濇寔鐘舵€侊紝闃叉鍥炴敹
 
   @override
   Widget build(BuildContext context) {
-    super.build(context); // 必须调用
+    super.build(context); // 蹇呴』璋冪敤
     final post = widget.detail.mainPost;
     final subtitleColor = Theme.of(context).colorScheme.onSurfaceVariant;
 
@@ -729,11 +730,11 @@ class _CommentCard extends StatefulWidget {
 class _CommentCardState extends State<_CommentCard>
     with AutomaticKeepAliveClientMixin {
   @override
-  bool get wantKeepAlive => true; // 保持状态，防止回收
+  bool get wantKeepAlive => true; // 淇濇寔鐘舵€侊紝闃叉鍥炴敹
 
   @override
   Widget build(BuildContext context) {
-    super.build(context); // 必须调用
+    super.build(context); // 蹇呴』璋冪敤
     final subtitleColor = Theme.of(context).colorScheme.onSurfaceVariant;
 
     return Card(
@@ -849,7 +850,7 @@ class _QuotePreviewCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '\u56de\u590d @${quote.ref.username} · #${quote.ref.postNumber}',
+                      '\u56de\u590d @${quote.ref.username} 路 #${quote.ref.postNumber}',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
@@ -886,15 +887,50 @@ class _MarkdownContent extends StatelessWidget {
     final data = markdown.trim().isEmpty
         ? _TopicDetailPageState._labelEmpty
         : markdown;
+    final headers = _buildImageHeaders(cookieHeader);
+    final galleryItems = _buildMarkdownGalleryItems(
+      markdown: data,
+      headers: headers,
+    );
+    var imageBuilderIndex = 0;
     final textTheme = Theme.of(context).textTheme;
     final baseStyle = textTheme.bodyMedium;
     return MarkdownBody(
       data: data,
       selectable: true,
-      sizedImageBuilder: (config) => _MarkdownImage(
-        url: _resolveForumUrl('${config.uri}'),
-        headers: _buildImageHeaders(cookieHeader),
-      ),
+      sizedImageBuilder: (config) {
+        final resolvedUrl = _resolveForumUrl('${config.uri}');
+        final imageIndex = imageBuilderIndex++;
+        final fallbackHeroTag = _buildMarkdownHeroTag(
+          markdown: data,
+          index: imageIndex,
+          imageUrl: resolvedUrl,
+        );
+        final viewerItems = galleryItems.isNotEmpty
+            ? galleryItems
+            : <RiverImageViewerItem>[
+                RiverImageViewerItem(
+                  url: resolvedUrl,
+                  headers: headers,
+                  heroTag: fallbackHeroTag,
+                ),
+              ];
+        final initialIndex = galleryItems.isNotEmpty
+            ? _resolveGalleryInitialIndex(
+                items: galleryItems,
+                url: resolvedUrl,
+                preferredIndex: imageIndex,
+              )
+            : 0;
+
+        return _MarkdownImage(
+          url: resolvedUrl,
+          headers: headers,
+          viewerItems: viewerItems,
+          initialIndex: initialIndex,
+          heroTag: viewerItems[initialIndex].heroTag,
+        );
+      },
       onTapLink: (_, href, _) {
         _openLink(href == null ? null : _resolveForumUrl(href));
       },
@@ -921,10 +957,19 @@ class _MarkdownContent extends StatelessWidget {
 }
 
 class _MarkdownImage extends StatefulWidget {
-  const _MarkdownImage({required this.url, this.headers});
+  const _MarkdownImage({
+    required this.url,
+    this.headers,
+    required this.viewerItems,
+    required this.initialIndex,
+    required this.heroTag,
+  });
 
   final String url;
   final Map<String, String>? headers;
+  final List<RiverImageViewerItem> viewerItems;
+  final int initialIndex;
+  final String heroTag;
 
   @override
   State<_MarkdownImage> createState() => _MarkdownImageState();
@@ -933,25 +978,6 @@ class _MarkdownImage extends StatefulWidget {
 class _MarkdownImageState extends State<_MarkdownImage> {
   bool _retryWithoutCookie = false;
   bool _fallbackToDirectImage = false;
-  late String _heroTag;
-
-  @override
-  void initState() {
-    super.initState();
-    _heroTag = _buildHeroTag(widget.url);
-  }
-
-  @override
-  void didUpdateWidget(covariant _MarkdownImage oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.url != widget.url) {
-      _heroTag = _buildHeroTag(widget.url);
-    }
-  }
-
-  String _buildHeroTag(String url) {
-    return 'topic-md-image-${url.hashCode}-${identityHashCode(this)}';
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -966,19 +992,24 @@ class _MarkdownImageState extends State<_MarkdownImage> {
 
     return GestureDetector(
       onTap: () => _openPreview(requestHeaders),
-      child: Hero(tag: _heroTag, child: image),
+      child: Hero(tag: widget.heroTag, child: image),
     );
   }
 
   void _openPreview(Map<String, String>? headers) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => _ImagePreviewPage(
-          imageUrl: widget.url,
-          headers: headers,
-          heroTag: _heroTag,
-        ),
-      ),
+    final items = widget.viewerItems
+        .map(
+          (item) => RiverImageViewerItem(
+            url: item.url,
+            headers: headers ?? item.headers,
+            heroTag: item.heroTag,
+          ),
+        )
+        .toList(growable: false);
+    RiverImageViewerPage.open(
+      context,
+      items: items,
+      initialIndex: widget.initialIndex,
     );
   }
 
@@ -1086,98 +1117,6 @@ class _MarkdownImageState extends State<_MarkdownImage> {
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _ImagePreviewPage extends StatefulWidget {
-  const _ImagePreviewPage({
-    required this.imageUrl,
-    required this.headers,
-    required this.heroTag,
-  });
-
-  final String imageUrl;
-  final Map<String, String>? headers;
-  final String heroTag;
-
-  @override
-  State<_ImagePreviewPage> createState() => _ImagePreviewPageState();
-}
-
-class _ImagePreviewPageState extends State<_ImagePreviewPage> {
-  bool _retryWithoutCookie = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final hasCookie = (widget.headers?['Cookie'] ?? '').trim().isNotEmpty;
-    final requestHeaders = _retryWithoutCookie
-        ? const <String, String>{'Referer': riverSideBaseUrl}
-        : widget.headers;
-
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-        elevation: 0,
-      ),
-      body: SafeArea(
-        child: Center(
-          child: Hero(
-            tag: widget.heroTag,
-            child: InteractiveViewer(
-              minScale: 1,
-              maxScale: 4,
-              child: Image.network(
-                widget.imageUrl,
-                headers: requestHeaders,
-                fit: BoxFit.contain,
-                loadingBuilder: (context, child, loadingProgress) {
-                  if (loadingProgress == null) {
-                    return child;
-                  }
-                  return const SizedBox(
-                    height: 180,
-                    child: Center(
-                      child: CircularProgressIndicator(color: Colors.white),
-                    ),
-                  );
-                },
-                errorBuilder: (context, error, stackTrace) {
-                  if (!_retryWithoutCookie && hasCookie) {
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (!mounted) {
-                        return;
-                      }
-                      setState(() {
-                        _retryWithoutCookie = true;
-                      });
-                    });
-                    return const SizedBox(
-                      height: 180,
-                      child: Center(
-                        child: CircularProgressIndicator(color: Colors.white),
-                      ),
-                    );
-                  }
-
-                  return const SizedBox(
-                    height: 180,
-                    child: Center(
-                      child: Icon(
-                        Icons.broken_image_outlined,
-                        color: Colors.white70,
-                        size: 36,
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -1414,6 +1353,109 @@ String _buildImageCacheKey(String url, Map<String, String>? headers) {
     return url;
   }
   return '$url#auth';
+}
+
+List<RiverImageViewerItem> _buildMarkdownGalleryItems({
+  required String markdown,
+  required Map<String, String>? headers,
+}) {
+  final rawUrls = _extractMarkdownImageUrls(markdown);
+  if (rawUrls.isEmpty) {
+    return const <RiverImageViewerItem>[];
+  }
+
+  final items = <RiverImageViewerItem>[];
+  for (var i = 0; i < rawUrls.length; i++) {
+    final resolved = _resolveForumUrl(rawUrls[i]);
+    if (resolved.isEmpty) {
+      continue;
+    }
+    items.add(
+      RiverImageViewerItem(
+        url: resolved,
+        headers: headers,
+        heroTag: _buildMarkdownHeroTag(
+          markdown: markdown,
+          index: i,
+          imageUrl: resolved,
+        ),
+      ),
+    );
+  }
+  return items;
+}
+
+int _resolveGalleryInitialIndex({
+  required List<RiverImageViewerItem> items,
+  required String url,
+  required int preferredIndex,
+}) {
+  if (items.isEmpty) {
+    return 0;
+  }
+  if (preferredIndex >= 0 &&
+      preferredIndex < items.length &&
+      items[preferredIndex].url == url) {
+    return preferredIndex;
+  }
+
+  for (var i = preferredIndex; i < items.length; i++) {
+    if (items[i].url == url) {
+      return i;
+    }
+  }
+  for (var i = 0; i < preferredIndex && i < items.length; i++) {
+    if (items[i].url == url) {
+      return i;
+    }
+  }
+  if (preferredIndex < 0) {
+    return 0;
+  }
+  if (preferredIndex >= items.length) {
+    return items.length - 1;
+  }
+  return preferredIndex;
+}
+
+String _buildMarkdownHeroTag({
+  required String markdown,
+  required int index,
+  required String imageUrl,
+}) {
+  return 'topic-md-gallery-${markdown.hashCode}-$index-${imageUrl.hashCode}';
+}
+
+List<String> _extractMarkdownImageUrls(String markdown) {
+  if (markdown.trim().isEmpty) {
+    return const <String>[];
+  }
+
+  final urls = <String>[];
+  final pattern = RegExp(
+    r'''!\[[^\]]*\]\(([^)]+)\)|<img[^>]+src\s*=\s*["']([^"']+)["']''',
+    caseSensitive: false,
+  );
+  for (final match in pattern.allMatches(markdown)) {
+    var raw = (match.group(1) ?? match.group(2) ?? '').trim();
+    if (raw.isEmpty) {
+      continue;
+    }
+
+    if (raw.startsWith('<') && raw.endsWith('>') && raw.length > 2) {
+      raw = raw.substring(1, raw.length - 1).trim();
+    }
+    final spaceIndex = raw.indexOf(RegExp(r'\s'));
+    if (spaceIndex > 0) {
+      raw = raw.substring(0, spaceIndex).trim();
+    }
+    if (raw.isEmpty) {
+      continue;
+    }
+    urls.add(raw);
+  }
+
+  return urls;
 }
 
 String _resolveForumUrl(String source) {
