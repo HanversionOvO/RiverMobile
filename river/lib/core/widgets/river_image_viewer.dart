@@ -214,13 +214,29 @@ class _ViewerZoomableImageState extends State<_ViewerZoomableImage>
   bool _fallbackToDirectImage = false;
   final TransformationController _transformController =
       TransformationController();
-  AnimationController? _matrixAnimationController;
+  late final AnimationController _matrixAnimationController;
+  Animation<Matrix4>? _matrixAnimation;
   TapDownDetails? _doubleTapDetails;
   Size _viewportSize = Size.zero;
 
   @override
+  void initState() {
+    super.initState();
+    _matrixAnimationController =
+        AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 180),
+        )..addListener(() {
+          final animation = _matrixAnimation;
+          if (animation != null) {
+            _transformController.value = animation.value;
+          }
+        });
+  }
+
+  @override
   void dispose() {
-    _matrixAnimationController?.dispose();
+    _matrixAnimationController.dispose();
     _transformController.dispose();
     super.dispose();
   }
@@ -333,29 +349,15 @@ class _ViewerZoomableImageState extends State<_ViewerZoomableImage>
   }
 
   void _animateToMatrix(Matrix4 target) {
-    _matrixAnimationController?.dispose();
-    final controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 180),
-    );
-    final animation = Matrix4Tween(
-      begin: _transformController.value,
-      end: target,
-    ).animate(CurvedAnimation(parent: controller, curve: Curves.easeOutCubic));
-    animation.addListener(() {
-      _transformController.value = animation.value;
-    });
-    controller.addStatusListener((status) {
-      if (status == AnimationStatus.completed ||
-          status == AnimationStatus.dismissed) {
-        controller.dispose();
-        if (_matrixAnimationController == controller) {
-          _matrixAnimationController = null;
-        }
-      }
-    });
-    _matrixAnimationController = controller;
-    controller.forward();
+    _matrixAnimationController.stop();
+    _matrixAnimation =
+        Matrix4Tween(begin: _transformController.value, end: target).animate(
+          CurvedAnimation(
+            parent: _matrixAnimationController,
+            curve: Curves.easeOutCubic,
+          ),
+        );
+    _matrixAnimationController.forward(from: 0);
   }
 
   void _onMiniMapPanUpdate(Offset delta, Size miniMapSize) {
