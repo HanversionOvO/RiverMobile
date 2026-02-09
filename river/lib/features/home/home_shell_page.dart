@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:river/app/app_dependencies.dart';
 import 'package:river/features/home/tab_placeholder_page.dart';
 import 'package:river/features/mine/mine_page.dart';
+import 'package:river/features/posts/posts_page.dart';
 
 class HomeShellPage extends StatefulWidget {
   const HomeShellPage({super.key, required this.dependencies});
@@ -15,12 +16,17 @@ class HomeShellPage extends StatefulWidget {
 class _HomeShellPageState extends State<HomeShellPage> {
   int _selectedTabIndex = 0;
 
-  static const List<String> _titles = <String>['帖子', '发帖', '聊天', '我的'];
+  static const List<String> _titles = <String>[
+    '\u5e16\u5b50',
+    '\u53d1\u5e16',
+    '\u804a\u5929',
+    '\u6211\u7684',
+  ];
 
   late final List<Widget> _pages = <Widget>[
-    const TabPlaceholderPage(label: '帖子页占位'),
-    const TabPlaceholderPage(label: '发帖页占位'),
-    const TabPlaceholderPage(label: '聊天页占位'),
+    PostsPage(dependencies: widget.dependencies),
+    const TabPlaceholderPage(label: '\u53d1\u5e16\u9875\u5360\u4f4d'),
+    const TabPlaceholderPage(label: '\u804a\u5929\u9875\u5360\u4f4d'),
     MinePage(dependencies: widget.dependencies),
   ];
 
@@ -40,22 +46,22 @@ class _HomeShellPageState extends State<HomeShellPage> {
           NavigationDestination(
             icon: Icon(Icons.forum_outlined),
             selectedIcon: Icon(Icons.forum),
-            label: '帖子',
+            label: '\u5e16\u5b50',
           ),
           NavigationDestination(
             icon: Icon(Icons.edit_note_outlined),
             selectedIcon: Icon(Icons.edit_note),
-            label: '发帖',
+            label: '\u53d1\u5e16',
           ),
           NavigationDestination(
             icon: Icon(Icons.chat_bubble_outline),
             selectedIcon: Icon(Icons.chat_bubble),
-            label: '聊天',
+            label: '\u804a\u5929',
           ),
           NavigationDestination(
             icon: Icon(Icons.person_outline),
             selectedIcon: Icon(Icons.person),
-            label: '我的',
+            label: '\u6211\u7684',
           ),
         ],
       ),
