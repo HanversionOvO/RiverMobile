@@ -28,6 +28,7 @@ class TopicDetailPage extends StatefulWidget {
 class _TopicDetailPageState extends State<TopicDetailPage> {
   static const int _loadMoreBatchSize = 20;
   static const double _loadMoreTriggerOffset = 280;
+  static const double _showBackToTopOffset = 420;
 
   static const String _labelTopicDetail = '\u5e16\u5b50\u8be6\u60c5';
   static const String _labelMainPost = '\u4e3b\u8d34\u5185\u5bb9';
@@ -62,6 +63,7 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
 
   bool _loadingInitial = true;
   bool _loadingMore = false;
+  bool _showBackToTopButton = false;
   String? _error;
 
   @override
@@ -83,8 +85,17 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
       return;
     }
     final position = _scrollController.position;
-    if (position.pixels >= position.maxScrollExtent - _loadMoreTriggerOffset) {
+    final offset = position.pixels;
+    if (offset >= position.maxScrollExtent - _loadMoreTriggerOffset) {
       _loadMoreComments();
+    }
+
+    final nextShow = offset >= _showBackToTopOffset;
+
+    if (nextShow != _showBackToTopButton && mounted) {
+      setState(() {
+        _showBackToTopButton = nextShow;
+      });
     }
   }
 
@@ -143,6 +154,7 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
     setState(() {
       _loadingInitial = true;
       _loadingMore = false;
+      _showBackToTopButton = false;
       _error = null;
     });
 
@@ -468,6 +480,17 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
     await _loadInitial();
   }
 
+  Future<void> _scrollToTop() async {
+    if (!_scrollController.hasClients) {
+      return;
+    }
+    await _scrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final title = _detail?.title;
@@ -480,6 +503,16 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
         ),
       ),
       body: _buildBody(),
+      floatingActionButton: AnimatedScale(
+        duration: const Duration(milliseconds: 180),
+        scale: _showBackToTopButton ? 1 : 0,
+        child: _showBackToTopButton
+            ? FloatingActionButton.small(
+                onPressed: _scrollToTop,
+                child: const Icon(Icons.vertical_align_top),
+              )
+            : const SizedBox.shrink(),
+      ),
     );
   }
 
@@ -900,6 +933,25 @@ class _MarkdownImage extends StatefulWidget {
 class _MarkdownImageState extends State<_MarkdownImage> {
   bool _retryWithoutCookie = false;
   bool _fallbackToDirectImage = false;
+  late String _heroTag;
+
+  @override
+  void initState() {
+    super.initState();
+    _heroTag = _buildHeroTag(widget.url);
+  }
+
+  @override
+  void didUpdateWidget(covariant _MarkdownImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.url != widget.url) {
+      _heroTag = _buildHeroTag(widget.url);
+    }
+  }
+
+  String _buildHeroTag(String url) {
+    return 'topic-md-image-${url.hashCode}-${identityHashCode(this)}';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -908,10 +960,33 @@ class _MarkdownImageState extends State<_MarkdownImage> {
         ? const <String, String>{'Referer': riverSideBaseUrl}
         : widget.headers;
 
-    if (_fallbackToDirectImage) {
-      return _buildDirectImage(context, requestHeaders, hasCookie);
-    }
+    final image = _fallbackToDirectImage
+        ? _buildDirectImage(context, requestHeaders, hasCookie)
+        : _buildCachedImage(context, requestHeaders, hasCookie);
 
+    return GestureDetector(
+      onTap: () => _openPreview(requestHeaders),
+      child: Hero(tag: _heroTag, child: image),
+    );
+  }
+
+  void _openPreview(Map<String, String>? headers) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => _ImagePreviewPage(
+          imageUrl: widget.url,
+          headers: headers,
+          heroTag: _heroTag,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCachedImage(
+    BuildContext context,
+    Map<String, String>? requestHeaders,
+    bool hasCookie,
+  ) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: CachedNetworkImage(
@@ -1011,6 +1086,98 @@ class _MarkdownImageState extends State<_MarkdownImage> {
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ImagePreviewPage extends StatefulWidget {
+  const _ImagePreviewPage({
+    required this.imageUrl,
+    required this.headers,
+    required this.heroTag,
+  });
+
+  final String imageUrl;
+  final Map<String, String>? headers;
+  final String heroTag;
+
+  @override
+  State<_ImagePreviewPage> createState() => _ImagePreviewPageState();
+}
+
+class _ImagePreviewPageState extends State<_ImagePreviewPage> {
+  bool _retryWithoutCookie = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasCookie = (widget.headers?['Cookie'] ?? '').trim().isNotEmpty;
+    final requestHeaders = _retryWithoutCookie
+        ? const <String, String>{'Referer': riverSideBaseUrl}
+        : widget.headers;
+
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        elevation: 0,
+      ),
+      body: SafeArea(
+        child: Center(
+          child: Hero(
+            tag: widget.heroTag,
+            child: InteractiveViewer(
+              minScale: 1,
+              maxScale: 4,
+              child: Image.network(
+                widget.imageUrl,
+                headers: requestHeaders,
+                fit: BoxFit.contain,
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) {
+                    return child;
+                  }
+                  return const SizedBox(
+                    height: 180,
+                    child: Center(
+                      child: CircularProgressIndicator(color: Colors.white),
+                    ),
+                  );
+                },
+                errorBuilder: (context, error, stackTrace) {
+                  if (!_retryWithoutCookie && hasCookie) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (!mounted) {
+                        return;
+                      }
+                      setState(() {
+                        _retryWithoutCookie = true;
+                      });
+                    });
+                    return const SizedBox(
+                      height: 180,
+                      child: Center(
+                        child: CircularProgressIndicator(color: Colors.white),
+                      ),
+                    );
+                  }
+
+                  return const SizedBox(
+                    height: 180,
+                    child: Center(
+                      child: Icon(
+                        Icons.broken_image_outlined,
+                        color: Colors.white70,
+                        size: 36,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
