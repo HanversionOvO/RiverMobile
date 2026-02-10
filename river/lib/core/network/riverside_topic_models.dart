@@ -102,6 +102,9 @@ class RiverSideTopicPostDetail {
     required this.createdAt,
     required this.editCount,
     required this.likeCount,
+    this.reactions = const <RiverSidePostReaction>[],
+    this.currentUserReaction,
+    this.reactionUsersCount = 0,
   });
 
   final int id;
@@ -116,6 +119,48 @@ class RiverSideTopicPostDetail {
   final DateTime? createdAt;
   final int editCount;
   final int likeCount;
+  final List<RiverSidePostReaction> reactions;
+  final RiverSideCurrentUserReaction? currentUserReaction;
+  final int reactionUsersCount;
+
+  RiverSideTopicPostDetail copyWith({
+    int? id,
+    int? topicId,
+    int? postNumber,
+    String? authorUsername,
+    String? authorDisplayName,
+    String? authorAvatarUrl,
+    String? authorTitle,
+    bool? isOnline,
+    String? contentMarkdown,
+    DateTime? createdAt,
+    int? editCount,
+    int? likeCount,
+    List<RiverSidePostReaction>? reactions,
+    RiverSideCurrentUserReaction? currentUserReaction,
+    bool clearCurrentUserReaction = false,
+    int? reactionUsersCount,
+  }) {
+    return RiverSideTopicPostDetail(
+      id: id ?? this.id,
+      topicId: topicId ?? this.topicId,
+      postNumber: postNumber ?? this.postNumber,
+      authorUsername: authorUsername ?? this.authorUsername,
+      authorDisplayName: authorDisplayName ?? this.authorDisplayName,
+      authorAvatarUrl: authorAvatarUrl ?? this.authorAvatarUrl,
+      authorTitle: authorTitle ?? this.authorTitle,
+      isOnline: isOnline ?? this.isOnline,
+      contentMarkdown: contentMarkdown ?? this.contentMarkdown,
+      createdAt: createdAt ?? this.createdAt,
+      editCount: editCount ?? this.editCount,
+      likeCount: likeCount ?? this.likeCount,
+      reactions: reactions ?? this.reactions,
+      currentUserReaction: clearCurrentUserReaction
+          ? null
+          : (currentUserReaction ?? this.currentUserReaction),
+      reactionUsersCount: reactionUsersCount ?? this.reactionUsersCount,
+    );
+  }
 }
 
 class RiverSideTopicDetail {
@@ -130,6 +175,7 @@ class RiverSideTopicDetail {
     required this.comments,
     required this.streamPostIds,
     required this.loadedPostIds,
+    this.validReactions = const <String>{},
   });
 
   final int topicId;
@@ -142,4 +188,99 @@ class RiverSideTopicDetail {
   final List<RiverSideTopicPostDetail> comments;
   final List<int> streamPostIds;
   final Set<int> loadedPostIds;
+  final Set<String> validReactions;
+
+  RiverSideTopicDetail copyWith({
+    int? topicId,
+    String? title,
+    int? viewCount,
+    int? replyCount,
+    int? likeCount,
+    DateTime? createdAt,
+    RiverSideTopicPostDetail? mainPost,
+    List<RiverSideTopicPostDetail>? comments,
+    List<int>? streamPostIds,
+    Set<int>? loadedPostIds,
+    Set<String>? validReactions,
+  }) {
+    return RiverSideTopicDetail(
+      topicId: topicId ?? this.topicId,
+      title: title ?? this.title,
+      viewCount: viewCount ?? this.viewCount,
+      replyCount: replyCount ?? this.replyCount,
+      likeCount: likeCount ?? this.likeCount,
+      createdAt: createdAt ?? this.createdAt,
+      mainPost: mainPost ?? this.mainPost,
+      comments: comments ?? this.comments,
+      streamPostIds: streamPostIds ?? this.streamPostIds,
+      loadedPostIds: loadedPostIds ?? this.loadedPostIds,
+      validReactions: validReactions ?? this.validReactions,
+    );
+  }
+}
+
+class RiverSidePostReaction {
+  const RiverSidePostReaction({
+    required this.id,
+    required this.type,
+    required this.count,
+  });
+
+  final String id;
+  final String type;
+  final int count;
+}
+
+class RiverSideCurrentUserReaction {
+  const RiverSideCurrentUserReaction({
+    required this.id,
+    required this.type,
+    required this.canUndo,
+  });
+
+  final String id;
+  final String type;
+  final bool canUndo;
+}
+
+class RiverSidePostReactionUsersGroup {
+  const RiverSidePostReactionUsersGroup({
+    required this.id,
+    required this.count,
+    required this.users,
+  });
+
+  final String id;
+  final int count;
+  final List<RiverSideReactionUser> users;
+}
+
+class RiverSideReactionUser {
+  const RiverSideReactionUser({
+    required this.username,
+    required this.displayName,
+    required this.avatarUrl,
+    required this.canUndo,
+    required this.createdAt,
+  });
+
+  final String username;
+  final String displayName;
+  final String avatarUrl;
+  final bool canUndo;
+  final DateTime? createdAt;
+}
+
+class RiverSidePostReactionState {
+  const RiverSidePostReactionState({
+    required this.postId,
+    required this.reactions,
+    required this.currentUserReaction,
+    required this.reactionUsersCount,
+  });
+
+  final int postId;
+  final List<RiverSidePostReaction> reactions;
+  final RiverSideCurrentUserReaction? currentUserReaction;
+  final int reactionUsersCount;
 }

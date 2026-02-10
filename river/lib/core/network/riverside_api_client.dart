@@ -14,6 +14,9 @@ class RiverSideApiClient {
       <String, Map<int, RiverSideCategoryOption>>{};
   final Map<String, Map<String, String>> _emojiUrlCacheByCookieKey =
       <String, Map<String, String>>{};
+  final Map<String, Map<String, List<String>>> _emojiGroupsCacheByCookieKey =
+      <String, Map<String, List<String>>>{};
+  final Map<String, String> _csrfTokenCacheByCookieKey = <String, String>{};
 
   Future<UserAccount> fetchUserProfile(
     String username, {
@@ -342,6 +345,7 @@ class RiverSideApiClient {
     final createdAt = DateTime.tryParse(
       (decoded['created_at'] ?? '').toString(),
     );
+    final validReactions = _asStringSet(decoded['valid_reactions']);
 
     final postStream = _toStringMap(decoded['post_stream']);
     final postsRaw = postStream['posts'];
@@ -383,6 +387,7 @@ class RiverSideApiClient {
       comments: comments,
       streamPostIds: streamPostIds,
       loadedPostIds: loadedPostIds,
+      validReactions: validReactions,
     );
   }
 
@@ -432,6 +437,546 @@ class RiverSideApiClient {
     }
     posts.sort((a, b) => a.postNumber.compareTo(b.postNumber));
     return posts;
+  }
+
+  Future<RiverSideTopicPostDetail> fetchTopicPostByNumber({
+    required int topicId,
+    required int postNumber,
+    String? cookieHeader,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$riverSideBaseUrl/posts/by_number/$topicId/$postNumber.json'),
+      headers: _buildJsonHeaders(cookieHeader: cookieHeader),
+    );
+
+    if (response.statusCode != 200) {
+      throw RiverSideApiException(
+        'Failed to load quoted post, HTTP ${response.statusCode}',
+      );
+    }
+
+    final decoded = _decodeJsonObject(
+      response,
+      fallbackMessage: 'Invalid quoted post response format',
+    );
+    final parsed =
+        _parseTopicPost(decoded, topicId: topicId) ??
+        _parseTopicPost(decoded['post'], topicId: topicId);
+    if (parsed == null) {
+      throw const RiverSideApiException('Quoted post payload is invalid');
+    }
+    return parsed;
+  }
+
+  Future<List<RiverSideTopicPostDetail>> fetchPostReplies({
+    required int topicId,
+    required int postId,
+    String? cookieHeader,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$riverSideBaseUrl/posts/$postId/replies.json'),
+      headers: _buildJsonHeaders(cookieHeader: cookieHeader),
+    );
+    if (response.statusCode == 403) {
+      throw const RiverSideApiException('无权限查看该评论的回复。');
+    }
+    if (response.statusCode != 200) {
+      throw RiverSideApiException(
+        'Failed to load post replies, HTTP ${response.statusCode}',
+      );
+    }
+
+    final body = utf8.decode(response.bodyBytes);
+    final decoded = jsonDecode(body);
+    final repliesRaw = switch (decoded) {
+      List<dynamic> list => list,
+      Map<String, dynamic> map when map['replies'] is List => map['replies'],
+      _ => null,
+    };
+    if (repliesRaw is! List) {
+      throw const RiverSideApiException('Invalid post replies response format');
+    }
+
+    final replies = <RiverSideTopicPostDetail>[];
+    for (final rawReply in repliesRaw) {
+      final replyMap = _toStringMap(rawReply);
+      final replyTopicId = _asInt(replyMap['topic_id']) ?? topicId;
+      final parsed = _parseTopicPost(rawReply, topicId: replyTopicId);
+      if (parsed == null || parsed.id == postId) {
+        continue;
+      }
+      replies.add(parsed);
+    }
+    replies.sort((a, b) => a.postNumber.compareTo(b.postNumber));
+    return replies;
+  }
+
+  Future<RiverSideTopicPostDetail> fetchPostById({
+    required int postId,
+    String? cookieHeader,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$riverSideBaseUrl/posts/$postId.json'),
+      headers: _buildJsonHeaders(cookieHeader: cookieHeader),
+    );
+    if (response.statusCode != 200) {
+      throw RiverSideApiException(
+        'Failed to load post detail, HTTP ${response.statusCode}',
+      );
+    }
+
+    final decoded = _decodeJsonObject(
+      response,
+      fallbackMessage: 'Invalid post detail response format',
+    );
+    final parsed = _parsePostFromPayload(decoded);
+    if (parsed == null) {
+      throw const RiverSideApiException('Post payload is invalid');
+    }
+    return parsed;
+  }
+
+  Future<RiverSideTopicPostDetail> editPost({
+    required int postId,
+    required int topicId,
+    required String raw,
+    required String originalRaw,
+    required String cookieHeader,
+    String editReason = '',
+    String locale = '',
+  }) async {
+    final cookie = cookieHeader.trim();
+    if (cookie.isEmpty) {
+      throw const RiverSideApiException('Cookie header is empty.');
+    }
+    final nextRaw = raw.trim();
+    if (nextRaw.isEmpty) {
+      throw const RiverSideApiException('Edited content is empty.');
+    }
+
+    final csrf = await fetchSessionCsrfToken(cookieHeader: cookie);
+    final response = await http.put(
+      Uri.parse('$riverSideBaseUrl/posts/$postId'),
+      headers: <String, String>{
+        'Accept': 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'Cookie': cookie,
+        'X-CSRF-Token': csrf,
+        'X-Requested-With': 'XMLHttpRequest',
+        'Origin': riverSideBaseUrl,
+        'Referer': '$riverSideBaseUrl/t/topic/$topicId',
+      },
+      body: <String, String>{
+        'post[edit_reason]': editReason,
+        'post[raw]': nextRaw,
+        'post[topic_id]': '$topicId',
+        'post[original_text]': originalRaw,
+        'post[locale]': locale,
+      },
+      encoding: utf8,
+    );
+
+    if (response.statusCode == 403) {
+      throw const RiverSideApiException('登录态已失效，请重新登录后再试。');
+    }
+    if (response.statusCode == 422) {
+      final message = _extractErrorMessageFromResponse(response);
+      throw RiverSideApiException(message.isEmpty ? '编辑评论失败。' : message);
+    }
+    if (response.statusCode != 200) {
+      final message = _extractErrorMessageFromResponse(response);
+      throw RiverSideApiException(
+        message.isEmpty
+            ? 'Failed to edit post, HTTP ${response.statusCode}'
+            : message,
+      );
+    }
+
+    final decoded = _decodeJsonObject(
+      response,
+      fallbackMessage: 'Invalid edit post response format',
+    );
+    final parsed =
+        _parsePostFromPayload(decoded) ??
+        await fetchPostById(postId: postId, cookieHeader: cookie);
+    return parsed;
+  }
+
+  Future<void> deletePost({
+    required int postId,
+    required int topicId,
+    required int postNumber,
+    required String cookieHeader,
+  }) async {
+    final cookie = cookieHeader.trim();
+    if (cookie.isEmpty) {
+      throw const RiverSideApiException('Cookie header is empty.');
+    }
+
+    final csrf = await fetchSessionCsrfToken(cookieHeader: cookie);
+    final response = await http.delete(
+      Uri.parse('$riverSideBaseUrl/posts/$postId'),
+      headers: <String, String>{
+        'Accept': 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'Cookie': cookie,
+        'X-CSRF-Token': csrf,
+        'X-Requested-With': 'XMLHttpRequest',
+        'Origin': riverSideBaseUrl,
+        'Referer': '$riverSideBaseUrl/t/topic/$topicId/$postNumber',
+      },
+      body: <String, String>{
+        'context': '/t/topic/$topicId/$postNumber',
+      },
+      encoding: utf8,
+    );
+
+    if (response.statusCode == 403) {
+      throw const RiverSideApiException('登录态已失效，请重新登录后再试。');
+    }
+    if (response.statusCode == 422) {
+      final message = _extractErrorMessageFromResponse(response);
+      throw RiverSideApiException(message.isEmpty ? '删除评论失败。' : message);
+    }
+    if (response.statusCode != 200) {
+      final message = _extractErrorMessageFromResponse(response);
+      throw RiverSideApiException(
+        message.isEmpty
+            ? 'Failed to delete post, HTTP ${response.statusCode}'
+            : message,
+      );
+    }
+  }
+
+  Future<RiverSideTopicPostDetail> createTopicReply({
+    required int topicId,
+    required String raw,
+    required String cookieHeader,
+    int? replyToPostNumber,
+  }) async {
+    final cookie = cookieHeader.trim();
+    if (cookie.isEmpty) {
+      throw const RiverSideApiException('Cookie header is empty.');
+    }
+
+    final markdown = raw.trim();
+    if (markdown.isEmpty) {
+      throw const RiverSideApiException('Reply content is empty.');
+    }
+
+    final csrf = await fetchSessionCsrfToken(cookieHeader: cookie);
+    final body = <String, String>{
+      'raw': markdown,
+      'topic_id': '$topicId',
+      'nested_post': 'true',
+    };
+    if (replyToPostNumber != null && replyToPostNumber > 0) {
+      body['reply_to_post_number'] = '$replyToPostNumber';
+    }
+
+    final response = await http.post(
+      Uri.parse('$riverSideBaseUrl/posts'),
+      headers: <String, String>{
+        'Accept': 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'Cookie': cookie,
+        'X-CSRF-Token': csrf,
+        'X-Requested-With': 'XMLHttpRequest',
+        'Origin': riverSideBaseUrl,
+        'Referer': '$riverSideBaseUrl/t/topic/$topicId',
+      },
+      body: body,
+      encoding: utf8,
+    );
+
+    if (response.statusCode == 403) {
+      throw const RiverSideApiException('登录态已失效，请重新登录后再试。');
+    }
+    if (response.statusCode == 422) {
+      final message = _extractErrorMessageFromResponse(response);
+      throw RiverSideApiException(message.isEmpty ? '回复发布失败。' : message);
+    }
+    if (response.statusCode != 200) {
+      final message = _extractErrorMessageFromResponse(response);
+      throw RiverSideApiException(
+        message.isEmpty
+            ? 'Failed to publish reply, HTTP ${response.statusCode}'
+            : message,
+      );
+    }
+
+    final decoded = _decodeJsonObject(
+      response,
+      fallbackMessage: 'Invalid publish reply response format',
+    );
+    final post =
+        _parseTopicPost(decoded, topicId: topicId) ??
+        _parseTopicPost(decoded['post'], topicId: topicId);
+    if (post == null) {
+      throw const RiverSideApiException(
+        'Reply published but response invalid.',
+      );
+    }
+    return post;
+  }
+
+  Future<String> uploadComposerImage({
+    required String cookieHeader,
+    required String fileName,
+    required List<int> bytes,
+  }) async {
+    final cookie = cookieHeader.trim();
+    if (cookie.isEmpty) {
+      throw const RiverSideApiException('Cookie header is empty.');
+    }
+    if (bytes.isEmpty) {
+      throw const RiverSideApiException('Image file is empty.');
+    }
+
+    final csrf = await fetchSessionCsrfToken(cookieHeader: cookie);
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$riverSideBaseUrl/uploads.json'),
+    );
+    request.headers.addAll(<String, String>{
+      'Accept': 'application/json',
+      'Cookie': cookie,
+      'X-CSRF-Token': csrf,
+      'X-Requested-With': 'XMLHttpRequest',
+      'Origin': riverSideBaseUrl,
+      'Referer': riverSideBaseUrl,
+    });
+    request.fields['type'] = 'composer';
+    request.fields['synchronous'] = 'true';
+    request.files.add(
+      http.MultipartFile.fromBytes('file', bytes, filename: fileName),
+    );
+
+    final streamed = await request.send();
+    final response = await http.Response.fromStream(streamed);
+    if (response.statusCode == 403) {
+      throw const RiverSideApiException('登录态已失效，请重新登录后再试。');
+    }
+    if (response.statusCode == 422) {
+      final message = _extractErrorMessageFromResponse(response);
+      throw RiverSideApiException(message.isEmpty ? '图片上传失败。' : message);
+    }
+    if (response.statusCode != 200) {
+      final message = _extractErrorMessageFromResponse(response);
+      throw RiverSideApiException(
+        message.isEmpty
+            ? 'Failed to upload image, HTTP ${response.statusCode}'
+            : message,
+      );
+    }
+
+    final decoded = _decodeJsonObject(
+      response,
+      fallbackMessage: 'Invalid upload image response format',
+    );
+
+    final shortUrl = (decoded['short_url'] ?? '').toString().trim();
+    if (shortUrl.startsWith('upload://')) {
+      return shortUrl;
+    }
+    if (shortUrl.isNotEmpty) {
+      return _normalizeUploadUrl(shortUrl);
+    }
+
+    final url = (decoded['url'] ?? '').toString().trim();
+    if (url.isNotEmpty) {
+      return _normalizeUploadUrl(url);
+    }
+    throw const RiverSideApiException(
+      'Upload succeeded but image url missing.',
+    );
+  }
+
+  Future<String> fetchSessionCsrfToken({required String cookieHeader}) async {
+    final cookie = cookieHeader.trim();
+    if (cookie.isEmpty) {
+      throw const RiverSideApiException('Cookie header is empty.');
+    }
+    final cacheKey = _categoryCacheKey(cookieHeader: cookie);
+    final cached = _csrfTokenCacheByCookieKey[cacheKey];
+    if (cached != null && cached.isNotEmpty) {
+      return cached;
+    }
+
+    final response = await http.get(
+      Uri.parse('$riverSideBaseUrl/session/csrf'),
+      headers: <String, String>{
+        'Accept': 'application/json',
+        'Cookie': cookie,
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+    );
+    if (response.statusCode != 200) {
+      throw RiverSideApiException(
+        'Failed to fetch csrf token, HTTP ${response.statusCode}',
+      );
+    }
+    final decoded = _decodeJsonObject(
+      response,
+      fallbackMessage: 'Invalid csrf response format',
+    );
+    final csrf = (decoded['csrf'] ?? '').toString().trim();
+    if (csrf.isEmpty) {
+      throw const RiverSideApiException('CSRF token is missing.');
+    }
+    _csrfTokenCacheByCookieKey[cacheKey] = csrf;
+    return csrf;
+  }
+
+  Future<RiverSidePostReactionState> togglePostReaction({
+    required int postId,
+    required String reactionId,
+    required String cookieHeader,
+    String? csrfToken,
+  }) async {
+    final cookie = cookieHeader.trim();
+    if (cookie.isEmpty) {
+      throw const RiverSideApiException('Cookie header is empty.');
+    }
+    final reaction = reactionId.trim();
+    if (reaction.isEmpty) {
+      throw const RiverSideApiException('Reaction id is empty.');
+    }
+
+    final csrf = (csrfToken ?? '').trim().isNotEmpty
+        ? csrfToken!.trim()
+        : await fetchSessionCsrfToken(cookieHeader: cookie);
+
+    final encodedReaction = Uri.encodeComponent(reaction);
+    final response = await http.put(
+      Uri.parse(
+        '$riverSideBaseUrl/discourse-reactions/posts/$postId/custom-reactions/$encodedReaction/toggle.json',
+      ),
+      headers: <String, String>{
+        'Accept': 'application/json',
+        'Cookie': cookie,
+        'X-CSRF-Token': csrf,
+        'X-Requested-With': 'XMLHttpRequest',
+        'Origin': riverSideBaseUrl,
+        'Referer': '$riverSideBaseUrl/',
+      },
+    );
+
+    if (response.statusCode == 403) {
+      throw const RiverSideApiException('登录态已失效，请重新登录后再试。');
+    }
+    if (response.statusCode == 422) {
+      final message = _extractErrorMessageFromResponse(response);
+      throw RiverSideApiException(message.isEmpty ? '该反应状态不可用。' : message);
+    }
+    if (response.statusCode != 200) {
+      final message = _extractErrorMessageFromResponse(response);
+      throw RiverSideApiException(
+        message.isEmpty
+            ? 'Failed to toggle reaction, HTTP ${response.statusCode}'
+            : message,
+      );
+    }
+
+    final decoded = _decodeJsonObject(
+      response,
+      fallbackMessage: 'Invalid toggle reaction response format',
+    );
+    final state = _parsePostReactionStateFromPostPayload(decoded);
+    if (state == null) {
+      throw const RiverSideApiException(
+        'Toggle reaction succeeded but response payload is invalid.',
+      );
+    }
+    return state;
+  }
+
+  Future<List<RiverSidePostReactionUsersGroup>> fetchPostReactionUsers({
+    required int postId,
+    String? reactionId,
+    String? cookieHeader,
+  }) async {
+    final query = <String, String>{};
+    final reaction = reactionId?.trim();
+    if (reaction != null && reaction.isNotEmpty) {
+      query['reaction_value'] = reaction;
+    }
+
+    final uri = Uri.parse(
+      '$riverSideBaseUrl/discourse-reactions/posts/$postId/reactions-users.json',
+    ).replace(queryParameters: query.isEmpty ? null : query);
+
+    final response = await http.get(
+      uri,
+      headers: _buildJsonHeaders(cookieHeader: cookieHeader),
+    );
+    if (response.statusCode == 403) {
+      throw const RiverSideApiException('无权限查看该帖子的反应用户。');
+    }
+    if (response.statusCode == 404) {
+      throw const RiverSideApiException('未找到对应帖子或反应状态。');
+    }
+    if (response.statusCode != 200) {
+      final message = _extractErrorMessageFromResponse(response);
+      throw RiverSideApiException(
+        message.isEmpty
+            ? 'Failed to load reaction users, HTTP ${response.statusCode}'
+            : message,
+      );
+    }
+
+    final decoded = _decodeJsonObject(
+      response,
+      fallbackMessage: 'Invalid reaction users response format',
+    );
+
+    final rawGroups = decoded['reaction_users'];
+    if (rawGroups is! List) {
+      return const <RiverSidePostReactionUsersGroup>[];
+    }
+
+    final result = <RiverSidePostReactionUsersGroup>[];
+    for (final rawGroup in rawGroups) {
+      final group = _toStringMap(rawGroup);
+      final id = (group['id'] ?? '').toString().trim();
+      if (id.isEmpty) {
+        continue;
+      }
+      final users = <RiverSideReactionUser>[];
+      final rawUsers = group['users'];
+      if (rawUsers is List) {
+        for (final rawUser in rawUsers) {
+          final user = _toStringMap(rawUser);
+          final username = (user['username'] ?? '').toString().trim();
+          if (username.isEmpty) {
+            continue;
+          }
+          final name = (user['name'] ?? '').toString().trim();
+          users.add(
+            RiverSideReactionUser(
+              username: username,
+              displayName: name.isEmpty ? username : name,
+              avatarUrl: _normalizeAvatarUrl(
+                (user['avatar_template'] ?? '').toString(),
+              ),
+              canUndo: _asBool(user['can_undo']),
+              createdAt: DateTime.tryParse(
+                (user['created_at'] ?? '').toString(),
+              ),
+            ),
+          );
+        }
+      }
+
+      result.add(
+        RiverSidePostReactionUsersGroup(
+          id: id,
+          count: _asInt(group['count']) ?? users.length,
+          users: users,
+        ),
+      );
+    }
+    return result;
   }
 
   Future<List<RiverSideCategoryOption>> fetchCategories({
@@ -573,9 +1118,48 @@ class RiverSideApiClient {
       userApiKey: userApiKey,
       userApiClientId: userApiClientId,
     );
-    final cached = _emojiUrlCacheByCookieKey[cacheKey];
-    if (cached != null && cached.isNotEmpty) {
-      return cached;
+    await _ensureEmojiCaches(
+      cacheKey: cacheKey,
+      cookieHeader: cookieHeader,
+      userApiKey: userApiKey,
+      userApiClientId: userApiClientId,
+    );
+    return _emojiUrlCacheByCookieKey[cacheKey] ?? const <String, String>{};
+  }
+
+  Future<Map<String, List<String>>> fetchEmojiGroups({
+    String? cookieHeader,
+    String? userApiKey,
+    String? userApiClientId,
+  }) async {
+    final cacheKey = _categoryCacheKey(
+      cookieHeader: cookieHeader,
+      userApiKey: userApiKey,
+      userApiClientId: userApiClientId,
+    );
+    await _ensureEmojiCaches(
+      cacheKey: cacheKey,
+      cookieHeader: cookieHeader,
+      userApiKey: userApiKey,
+      userApiClientId: userApiClientId,
+    );
+    return _emojiGroupsCacheByCookieKey[cacheKey] ??
+        const <String, List<String>>{};
+  }
+
+  Future<void> _ensureEmojiCaches({
+    required String cacheKey,
+    String? cookieHeader,
+    String? userApiKey,
+    String? userApiClientId,
+  }) async {
+    final cachedUrls = _emojiUrlCacheByCookieKey[cacheKey];
+    final cachedGroups = _emojiGroupsCacheByCookieKey[cacheKey];
+    if (cachedUrls != null &&
+        cachedUrls.isNotEmpty &&
+        cachedGroups != null &&
+        cachedGroups.isNotEmpty) {
+      return;
     }
 
     final response = await http.get(
@@ -599,11 +1183,15 @@ class RiverSideApiClient {
     }
 
     final result = <String, String>{};
+    final groups = <String, List<String>>{};
     for (final entry in decoded.entries) {
       final list = entry.value;
       if (list is! List) {
         continue;
       }
+      final categoryName = '${entry.key}'.trim();
+      final groupKey = categoryName.isEmpty ? 'default' : categoryName;
+      final groupNames = groups.putIfAbsent(groupKey, () => <String>[]);
       for (final rawEmoji in list) {
         final emoji = _toStringMap(rawEmoji);
         final name = (emoji['name'] ?? '').toString().trim();
@@ -613,6 +1201,9 @@ class RiverSideApiClient {
         }
         result[name] = url;
         result[name.toLowerCase()] = url;
+        if (!groupNames.contains(name)) {
+          groupNames.add(name);
+        }
 
         final aliases = emoji['search_aliases'];
         if (aliases is List) {
@@ -628,8 +1219,11 @@ class RiverSideApiClient {
       }
     }
 
+    for (final entry in groups.entries) {
+      entry.value.sort((a, b) => a.compareTo(b));
+    }
     _emojiUrlCacheByCookieKey[cacheKey] = result;
-    return result;
+    _emojiGroupsCacheByCookieKey[cacheKey] = groups;
   }
 
   Future<Map<int, RiverSideCategoryOption>> _loadCategoryOptionMap({
@@ -799,6 +1393,11 @@ class RiverSideApiClient {
       cookedHtml: cooked,
       uploadsRaw: post['uploads'],
     );
+    final reactions = _extractPostReactions(post['reactions']);
+    final currentUserReaction = _extractCurrentUserReaction(
+      post['current_user_reaction'],
+    );
+    final reactionUsersCount = _asInt(post['reaction_users_count']) ?? 0;
 
     final onlineValue = post['online'];
     final isOnline = onlineValue is bool
@@ -820,7 +1419,25 @@ class RiverSideApiClient {
       createdAt: createdAt,
       editCount: editCount,
       likeCount: _extractLikeCount(post['actions_summary']),
+      reactions: reactions,
+      currentUserReaction: currentUserReaction,
+      reactionUsersCount: reactionUsersCount,
     );
+  }
+
+  RiverSideTopicPostDetail? _parsePostFromPayload(Map<String, dynamic> payload) {
+    final directTopicId = _asInt(payload['topic_id']);
+    final direct = _parseTopicPost(payload, topicId: directTopicId ?? 0);
+    if (direct != null) {
+      return direct;
+    }
+
+    final nested = _toStringMap(payload['post']);
+    if (nested.isEmpty) {
+      return null;
+    }
+    final nestedTopicId = _asInt(nested['topic_id']) ?? directTopicId ?? 0;
+    return _parseTopicPost(nested, topicId: nestedTopicId);
   }
 
   String _normalizeAvatarUrl(String template) {
@@ -1240,6 +1857,127 @@ class RiverSideApiClient {
         .replaceAll('&hellip;', '...')
         .replaceAll(RegExp(r'\n{3,}'), '\n\n')
         .trim();
+  }
+
+  RiverSidePostReactionState? _parsePostReactionStateFromPostPayload(
+    Map<String, dynamic> post,
+  ) {
+    final postId = _asInt(post['id']);
+    if (postId == null) {
+      return null;
+    }
+    return RiverSidePostReactionState(
+      postId: postId,
+      reactions: _extractPostReactions(post['reactions']),
+      currentUserReaction: _extractCurrentUserReaction(
+        post['current_user_reaction'],
+      ),
+      reactionUsersCount: _asInt(post['reaction_users_count']) ?? 0,
+    );
+  }
+
+  List<RiverSidePostReaction> _extractPostReactions(dynamic rawReactions) {
+    if (rawReactions is! List) {
+      return const <RiverSidePostReaction>[];
+    }
+
+    final result = <RiverSidePostReaction>[];
+    for (final rawReaction in rawReactions) {
+      final reaction = _toStringMap(rawReaction);
+      final id = (reaction['id'] ?? reaction['reaction_value'] ?? '')
+          .toString()
+          .trim();
+      if (id.isEmpty) {
+        continue;
+      }
+      result.add(
+        RiverSidePostReaction(
+          id: id,
+          type: (reaction['type'] ?? reaction['reaction_type'] ?? 'emoji')
+              .toString()
+              .trim(),
+          count:
+              _asInt(reaction['count'] ?? reaction['reaction_users_count']) ??
+              0,
+        ),
+      );
+    }
+    result.sort((a, b) {
+      final byCount = b.count.compareTo(a.count);
+      if (byCount != 0) {
+        return byCount;
+      }
+      return a.id.compareTo(b.id);
+    });
+    return result;
+  }
+
+  RiverSideCurrentUserReaction? _extractCurrentUserReaction(dynamic raw) {
+    final reaction = _toStringMap(raw);
+    if (reaction.isEmpty) {
+      return null;
+    }
+    final id = (reaction['id'] ?? reaction['reaction_value'] ?? '')
+        .toString()
+        .trim();
+    if (id.isEmpty) {
+      return null;
+    }
+    return RiverSideCurrentUserReaction(
+      id: id,
+      type: (reaction['type'] ?? reaction['reaction_type'] ?? 'emoji')
+          .toString()
+          .trim(),
+      canUndo: _asBool(reaction['can_undo']),
+    );
+  }
+
+  Set<String> _asStringSet(dynamic value) {
+    if (value is! Iterable) {
+      return const <String>{};
+    }
+    final set = <String>{};
+    for (final item in value) {
+      final text = '$item'.trim();
+      if (text.isNotEmpty) {
+        set.add(text);
+      }
+    }
+    return set;
+  }
+
+  String _extractErrorMessageFromResponse(http.Response response) {
+    try {
+      final decoded = _decodeJsonObject(
+        response,
+        fallbackMessage: 'Invalid error response format',
+      );
+
+      final errorsRaw = decoded['errors'];
+      if (errorsRaw is List) {
+        final errors = errorsRaw.map((it) => '$it'.trim()).where((it) {
+          return it.isNotEmpty;
+        }).toList();
+        if (errors.isNotEmpty) {
+          return errors.join('\n');
+        }
+      }
+
+      final candidates = <dynamic>[
+        decoded['message'],
+        decoded['error'],
+        decoded['error_type'],
+      ];
+      for (final candidate in candidates) {
+        final text = '$candidate'.trim();
+        if (text.isNotEmpty && text.toLowerCase() != 'null') {
+          return text;
+        }
+      }
+      return '';
+    } catch (_) {
+      return '';
+    }
   }
 
   int _extractLikeCount(dynamic actionsSummaryRaw) {

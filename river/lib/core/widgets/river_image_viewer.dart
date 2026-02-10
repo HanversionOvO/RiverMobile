@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:river/core/constants.dart';
 
 class RiverImageViewerItem {
   const RiverImageViewerItem({
@@ -104,7 +105,7 @@ class _RiverImageViewerPageState extends State<RiverImageViewerPage> {
     final actions = <RiverImageViewerAction>[
       RiverImageViewerAction(
         id: _actionSaveOriginal,
-        label: '保存原图',
+        label: '\u4fdd\u5b58\u539f\u56fe',
         icon: Icons.download_outlined,
         onSelected: (context, selected) => _saveOriginalImage(selected),
       ),
@@ -113,7 +114,6 @@ class _RiverImageViewerPageState extends State<RiverImageViewerPage> {
     if (actions.isEmpty) {
       return;
     }
-
     final selected = await showModalBottomSheet<RiverImageViewerAction>(
       context: context,
       showDragHandle: true,
@@ -126,7 +126,7 @@ class _RiverImageViewerPageState extends State<RiverImageViewerPage> {
             itemBuilder: (context, index) {
               if (index == actions.length) {
                 return ListTile(
-                  title: const Text('取消'),
+                  title: const Text('\u53d6\u6d88'),
                   onTap: () => Navigator.of(sheetContext).pop(),
                 );
               }
@@ -144,98 +144,77 @@ class _RiverImageViewerPageState extends State<RiverImageViewerPage> {
     if (!mounted || selected == null) {
       return;
     }
-
     try {
       await selected.onSelected(context, item);
-    } catch (_) {
+    } catch (error) {
       if (!mounted) {
         return;
       }
+      final message = error is StateError
+          ? error.message.toString()
+          : '\u64cd\u4f5c\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5';
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('操作失败，请稍后重试')));
+      ).showSnackBar(SnackBar(content: Text(message)));
     }
   }
 
   Future<void> _saveOriginalImage(RiverImageViewerItem item) async {
     final uri = Uri.tryParse(item.url);
     if (uri == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('图片地址无效')));
-      return;
+      throw StateError('\u56fe\u7247\u5730\u5740\u65e0\u6548');
     }
-
     final granted = await _ensureStoragePermission();
     if (!mounted) {
       return;
     }
     if (!granted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('未获得存储权限，无法保存图片')));
-      return;
+      throw StateError(
+        '\u672a\u83b7\u5f97\u76f8\u518c\u6743\u9650\uff0c\u65e0\u6cd5\u4fdd\u5b58\u56fe\u7247',
+      );
     }
-
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('正在保存原图...')));
-    var response = await http.get(uri, headers: item.headers);
-    if (response.statusCode != 200) {
-      final retryHeaders = _headersWithoutCookie(item.headers);
-      final didStripCookie =
-          retryHeaders != null &&
-          retryHeaders.length != (item.headers?.length ?? 0);
-      if (didStripCookie) {
-        response = await http.get(uri, headers: retryHeaders);
-      }
-    }
-    if (response.statusCode != 200) {
-      throw StateError('HTTP ${response.statusCode}');
-    }
-
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('\u6b63\u5728\u4fdd\u5b58\u539f\u56fe...')),
+    );
+    final bytes = await _downloadImageBytes(uri, item.headers);
     final name = _guessImageFileName(uri);
     final result = await ImageGallerySaverPlus.saveImage(
-      response.bodyBytes,
+      Uint8List.fromList(bytes),
       quality: 100,
       name: name,
     );
-
-    final saved =
-        (result['isSuccess'] == true) ||
-        (result['success'] == true) ||
-        (result['filePath'] != null);
-    if (!saved) {
-      throw StateError('save failed');
+    final outcome = _parseSaveResult(result);
+    if (!outcome.success) {
+      throw StateError(
+        outcome.message ?? '\u7cfb\u7edf\u76f8\u518c\u4fdd\u5b58\u5931\u8d25',
+      );
     }
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('原图已保存到系统相册')));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          '\u539f\u56fe\u5df2\u4fdd\u5b58\u5230\u7cfb\u7edf\u76f8\u518c',
+        ),
+      ),
+    );
   }
 
   Future<bool> _ensureStoragePermission() async {
     if (kIsWeb) {
       return false;
     }
-
     if (defaultTargetPlatform == TargetPlatform.iOS) {
       final status = await Permission.photosAddOnly.request();
       return status.isGranted || status.isLimited;
     }
-
     if (defaultTargetPlatform != TargetPlatform.android) {
       return true;
     }
-
-    final photos = await Permission.photos.request();
-    if (photos.isGranted || photos.isLimited) {
-      return true;
-    }
-    final storage = await Permission.storage.request();
-    return storage.isGranted;
+    // Android 10+ can write MediaStore without storage runtime permission.
+    // Keep this non-blocking and let the plugin return a concrete failure reason.
+    return true;
   }
 
   String _guessImageFileName(Uri uri) {
@@ -245,6 +224,117 @@ class _RiverImageViewerPageState extends State<RiverImageViewerPage> {
       return sanitized;
     }
     return 'river_${DateTime.now().millisecondsSinceEpoch}.jpg';
+  }
+
+  Future<List<int>> _downloadImageBytes(
+    Uri uri,
+    Map<String, String>? sourceHeaders,
+  ) async {
+    final candidates = _buildDownloadHeaderCandidates(uri, sourceHeaders);
+    final statuses = <int>[];
+    for (final headers in candidates) {
+      final response = await http
+          .get(uri, headers: headers)
+          .timeout(const Duration(seconds: 20));
+      statuses.add(response.statusCode);
+      if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
+        return response.bodyBytes;
+      }
+    }
+    final joined = statuses.isEmpty ? 'unknown' : statuses.join('/');
+    throw StateError(
+      '\u56fe\u7247\u4e0b\u8f7d\u5931\u8d25\uff08HTTP $joined\uff09',
+    );
+  }
+
+  List<Map<String, String>?> _buildDownloadHeaderCandidates(
+    Uri uri,
+    Map<String, String>? sourceHeaders,
+  ) {
+    final candidates = <Map<String, String>?>[];
+    void add(Map<String, String>? headers) {
+      final normalized = _normalizeHeaders(headers);
+      final key = normalized == null
+          ? '<none>'
+          : normalized.entries.map((e) => '${e.key}=${e.value}').join('&');
+      final exists = candidates.any((item) {
+        final current = _normalizeHeaders(item);
+        final currentKey = current == null
+            ? '<none>'
+            : current.entries.map((e) => '${e.key}=${e.value}').join('&');
+        return currentKey == key;
+      });
+      if (!exists) {
+        candidates.add(normalized);
+      }
+    }
+
+    final stripped = _headersWithoutCookie(sourceHeaders);
+    final browserHeaders = <String, String>{
+      'User-Agent':
+          'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
+          '(KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36',
+      'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+      'Referer': '${uri.scheme}://${uri.host}/',
+    };
+    add(sourceHeaders);
+    add(stripped);
+    add({...?stripped, ...browserHeaders});
+    add(browserHeaders);
+    return candidates;
+  }
+
+  Map<String, String>? _normalizeHeaders(Map<String, String>? headers) {
+    if (headers == null || headers.isEmpty) {
+      return null;
+    }
+    final normalized = <String, String>{};
+    headers.forEach((key, value) {
+      final k = key.trim();
+      final v = value.trim();
+      if (k.isEmpty || v.isEmpty) {
+        return;
+      }
+      normalized[k] = v;
+    });
+    return normalized.isEmpty ? null : normalized;
+  }
+
+  ({bool success, String? message}) _parseSaveResult(dynamic result) {
+    if (result is bool) {
+      return (
+        success: result,
+        message: result
+            ? null
+            : '\u7cfb\u7edf\u76f8\u518c\u4fdd\u5b58\u5931\u8d25',
+      );
+    }
+    if (result is Map) {
+      final map = <String, dynamic>{};
+      result.forEach((key, value) {
+        map['$key'] = value;
+      });
+      final isSuccess =
+          map['isSuccess'] == true ||
+          map['success'] == true ||
+          (map['filePath']?.toString().trim().isNotEmpty ?? false);
+      if (isSuccess) {
+        return (success: true, message: null);
+      }
+      final errorMessage = (map['errorMessage'] ?? map['error'] ?? '')
+          .toString()
+          .trim();
+      return (
+        success: false,
+        message: errorMessage.isEmpty
+            ? '\u7cfb\u7edf\u76f8\u518c\u4fdd\u5b58\u5931\u8d25'
+            : errorMessage,
+      );
+    }
+    return (
+      success: false,
+      message: '\u7cfb\u7edf\u76f8\u518c\u4fdd\u5b58\u5931\u8d25',
+    );
   }
 
   @override
@@ -428,13 +518,14 @@ class _ViewerZoomableImageState extends State<_ViewerZoomableImage>
   @override
   Widget build(BuildContext context) {
     final hasCookie = (widget.item.headers?['Cookie'] ?? '').trim().isNotEmpty;
+    final isRiverSideImage = _isRiverSideImageUrl(widget.item.url);
     final requestHeaders = _retryWithoutCookie
         ? _headersWithoutCookie(widget.item.headers)
         : widget.item.headers;
 
     final image = _fallbackToDirectImage
         ? _buildDirectImage(requestHeaders, hasCookie)
-        : _buildCachedImage(requestHeaders, hasCookie);
+        : _buildCachedImage(requestHeaders, hasCookie, isRiverSideImage);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -631,7 +722,11 @@ class _ViewerZoomableImageState extends State<_ViewerZoomableImage>
     );
   }
 
-  Widget _buildCachedImage(Map<String, String>? headers, bool hasCookie) {
+  Widget _buildCachedImage(
+    Map<String, String>? headers,
+    bool hasCookie,
+    bool isRiverSideImage,
+  ) {
     if (_useProvidedImage && widget.item.imageProvider != null) {
       return _buildProvidedImage();
     }
@@ -656,7 +751,7 @@ class _ViewerZoomableImageState extends State<_ViewerZoomableImage>
           });
           return _buildLoadingPlaceholder();
         }
-        if (!_fallbackToDirectImage) {
+        if (!_fallbackToDirectImage && (hasCookie || isRiverSideImage)) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) {
               return;
@@ -813,6 +908,15 @@ class _MiniMapPanel extends StatelessWidget {
       ),
     );
   }
+}
+
+bool _isRiverSideImageUrl(String url) {
+  final host = (Uri.tryParse(url)?.host ?? '').trim().toLowerCase();
+  if (host.isEmpty) {
+    return false;
+  }
+  final forumHost = Uri.parse(riverSideBaseUrl).host.toLowerCase();
+  return host == forumHost || host.endsWith('.$forumHost');
 }
 
 Map<String, String>? _headersWithoutCookie(Map<String, String>? source) {

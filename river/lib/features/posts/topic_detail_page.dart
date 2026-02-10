@@ -4,6 +4,7 @@ import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:markdown/markdown.dart' as md;
 import 'package:river/app/app_dependencies.dart';
@@ -11,7 +12,70 @@ import 'package:river/core/constants.dart';
 import 'package:river/core/network/riverside_api_client.dart';
 import 'package:river/core/network/riverside_topic_models.dart';
 import 'package:river/core/widgets/river_image_viewer.dart';
+import 'package:river/core/widgets/river_markdown_editor.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+class _ReactionOption {
+  const _ReactionOption({required this.id, required this.emoji});
+
+  final String id;
+  final String emoji;
+}
+
+const List<_ReactionOption> _defaultReactionOptions = <_ReactionOption>[
+  _ReactionOption(id: '+1', emoji: '\u{1F44D}'),
+  _ReactionOption(id: 'laughing', emoji: '\u{1F606}'),
+  _ReactionOption(id: 'heart', emoji: '\u2764\uFE0F'),
+  _ReactionOption(id: 'open_mouth', emoji: '\u{1F62E}'),
+  _ReactionOption(id: 'thinking', emoji: '\u{1F914}'),
+  _ReactionOption(id: 'anxious_face_with_sweat', emoji: '\u{1F605}'),
+  _ReactionOption(id: 'distorted_face', emoji: '\u{1F635}'),
+  _ReactionOption(id: 'saluting_face', emoji: '\u{1FAE1}'),
+  _ReactionOption(id: 'sob', emoji: '\u{1F62D}'),
+  _ReactionOption(id: '-1', emoji: '\u{1F44E}'),
+];
+
+String _reactionEmoji(String reactionId) {
+  for (final option in _defaultReactionOptions) {
+    if (option.id == reactionId) {
+      return option.emoji;
+    }
+  }
+  return '\u2753';
+}
+
+String _commentHeroTag(int postId) => 'comment-card-$postId';
+
+Widget _commentCardHeroShuttleBuilder(
+  BuildContext flightContext,
+  Animation<double> animation,
+  HeroFlightDirection flightDirection,
+  BuildContext fromHeroContext,
+  BuildContext toHeroContext,
+) {
+  final fromHero = fromHeroContext.widget as Hero;
+  final toHero = toHeroContext.widget as Hero;
+  final heroChild = flightDirection == HeroFlightDirection.push
+      ? fromHero.child
+      : toHero.child;
+
+  return Material(
+    type: MaterialType.transparency,
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        return ClipRect(
+          child: SingleChildScrollView(
+            physics: const NeverScrollableScrollPhysics(),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minWidth: constraints.maxWidth),
+              child: heroChild,
+            ),
+          ),
+        );
+      },
+    ),
+  );
+}
 
 class TopicDetailPage extends StatefulWidget {
   const TopicDetailPage({
@@ -39,10 +103,32 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
   static const String _labelNoComments = '\u6682\u65e0\u8bc4\u8bba';
   static const String _labelNoMoreReplies =
       '\u6ca1\u6709\u66f4\u591a\u8bc4\u8bba\u4e86';
-  static const String _labelReplyNotReady =
-      '\u56de\u590d\u529f\u80fd\u6682\u672a\u5b9e\u73b0';
+  static const String _labelReply = '\u56de\u590d';
+  static const String _labelReplyEditorTitle = '\u53d1\u5e03\u56de\u590d';
+  static const String _labelReplySuccess =
+      '\u56de\u590d\u53d1\u5e03\u6210\u529f';
+  static const String _labelReplyNeedLogin =
+      '\u8bf7\u5148\u767b\u5f55 RiverSide \u8d26\u53f7';
+  static const String _labelEditCommentTitle = '\u7f16\u8f91\u8bc4\u8bba';
+  static const String _labelEditCommentSuccess =
+      '\u8bc4\u8bba\u5df2\u66f4\u65b0';
+  static const String _labelDeleteCommentTitle = '\u5220\u9664\u8bc4\u8bba';
+  static const String _labelDeleteCommentHint =
+      '\u786e\u5b9a\u8981\u5220\u9664\u8fd9\u6761\u8bc4\u8bba\u5417\uff1f';
+  static const String _labelDeleteCommentSuccess =
+      '\u8bc4\u8bba\u5df2\u5220\u9664';
+  static const String _labelActionCopyContent = '\u590d\u5236\u5185\u5bb9';
+  static const String _labelActionEditComment = '\u7f16\u8f91\u8bc4\u8bba';
+  static const String _labelActionDeleteComment = '\u5220\u9664\u8bc4\u8bba';
+  static const String _labelSave = '\u4fdd\u5b58';
+  static const String _labelCancel = '\u53d6\u6d88';
+  static const String _labelDelete = '\u5220\u9664';
   static const String _labelTargetFloorMissing =
       '\u76ee\u6807\u697c\u5c42\u5c1a\u672a\u52a0\u8f7d';
+  static const String _labelQuoteLoading =
+      '\u6b63\u5728\u52a0\u8f7d\u88ab\u56de\u590d\u5185\u5bb9...';
+  static const String _labelQuoteLoadFailed =
+      '\u88ab\u56de\u590d\u5185\u5bb9\u52a0\u8f7d\u5931\u8d25\uff0c\u5df2\u663e\u793a\u5f15\u7528\u7247\u6bb5';
   static const String _labelReplyContent = '\u56de\u590d\u8be5\u5185\u5bb9';
   static const String _labelJumpToFloor =
       '\u8df3\u8f6c\u81f3\u88ab\u56de\u590d\u697c\u5c42';
@@ -55,6 +141,10 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
   static const String _labelOnline = '\u5728\u7ebf';
   static const String _labelOffline = '\u79bb\u7ebf';
   static const String _labelEmpty = '\u6682\u65e0\u5185\u5bb9';
+  static const String _labelReact = '\u70b9\u8d5e';
+  static const String _labelReactionNotReady =
+      '\u8bf7\u5148\u767b\u5f55 RiverSide \u8d26\u53f7';
+  static const String _labelReactionUsersEmpty = '\u6682\u65e0\u7528\u6237';
 
   final ScrollController _scrollController = ScrollController();
   final Map<int, GlobalKey> _postItemKeys = <int, GlobalKey>{};
@@ -62,7 +152,9 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
   RiverSideTopicDetail? _detail;
   List<RiverSideTopicPostDetail> _comments = const <RiverSideTopicPostDetail>[];
   final Set<int> _loadedPostIds = <int>{};
+  final Set<int> _reactingPostIds = <int>{};
   Map<String, String> _emojiUrls = const <String, String>{};
+  Map<String, List<String>> _emojiGroups = const <String, List<String>>{};
 
   bool _loadingInitial = true;
   bool _loadingMore = false;
@@ -171,8 +263,12 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
       final emojiFuture = apiClient
           .fetchEmojiUrlMap(cookieHeader: cookieHeader)
           .catchError((_) => const <String, String>{});
+      final emojiGroupsFuture = apiClient
+          .fetchEmojiGroups(cookieHeader: cookieHeader)
+          .catchError((_) => const <String, List<String>>{});
       final detail = await detailFuture;
       final emojiUrls = await emojiFuture;
+      final emojiGroups = await emojiGroupsFuture;
       if (!mounted) {
         return;
       }
@@ -187,6 +283,7 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
           ..clear()
           ..addAll(detail.loadedPostIds);
         _emojiUrls = emojiUrls;
+        _emojiGroups = emojiGroups;
         _loadingInitial = false;
       });
       _maybeAutoLoadMore();
@@ -422,7 +519,693 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
     await completer.future;
   }
 
+  List<_ReactionOption> _availableReactionOptions() {
+    final valid = _detail?.validReactions ?? const <String>{};
+    if (valid.isEmpty) {
+      return _defaultReactionOptions;
+    }
+    final filtered = _defaultReactionOptions
+        .where((option) => valid.contains(option.id))
+        .toList(growable: false);
+    return filtered.isEmpty ? _defaultReactionOptions : filtered;
+  }
+
+  Future<void> _onReactPressed(RiverSideTopicPostDetail post) async {
+    final cookieHeader = _activeCookieHeader();
+    if (cookieHeader == null || cookieHeader.trim().isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text(_labelReactionNotReady)));
+      return;
+    }
+
+    final options = _availableReactionOptions();
+    final selected = await showModalBottomSheet<_ReactionOption>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: options
+                  .map((option) {
+                    final isCurrent = post.currentUserReaction?.id == option.id;
+                    return ChoiceChip(
+                      selected: isCurrent,
+                      showCheckmark: false,
+                      label: Text(
+                        option.emoji,
+                        style: const TextStyle(fontSize: 22),
+                      ),
+                      onSelected: (_) => Navigator.of(sheetContext).pop(option),
+                    );
+                  })
+                  .toList(growable: false),
+            ),
+          ),
+        );
+      },
+    );
+    if (!mounted || selected == null) {
+      return;
+    }
+
+    await _togglePostReaction(
+      post: post,
+      reactionId: selected.id,
+      cookieHeader: cookieHeader,
+    );
+  }
+
+  Future<void> _togglePostReaction({
+    required RiverSideTopicPostDetail post,
+    required String reactionId,
+    required String cookieHeader,
+  }) async {
+    setState(() {
+      _reactingPostIds.add(post.id);
+    });
+
+    try {
+      final state = await widget.dependencies.accountStore.riverSideApiClient
+          .togglePostReaction(
+            postId: post.id,
+            reactionId: reactionId,
+            cookieHeader: cookieHeader,
+          );
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _applyPostReactionState(state);
+      });
+    } on RiverSideApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('\u70b9\u8d5e\u64cd\u4f5c\u5931\u8d25')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _reactingPostIds.remove(post.id);
+        });
+      }
+    }
+  }
+
+  void _applyPostReactionState(RiverSidePostReactionState state) {
+    final detail = _detail;
+    if (detail == null) {
+      return;
+    }
+
+    final clearCurrent = state.currentUserReaction == null;
+    if (detail.mainPost.id == state.postId) {
+      _detail = detail.copyWith(
+        mainPost: detail.mainPost.copyWith(
+          reactions: state.reactions,
+          currentUserReaction: state.currentUserReaction,
+          clearCurrentUserReaction: clearCurrent,
+          reactionUsersCount: state.reactionUsersCount,
+        ),
+      );
+    }
+
+    final index = _comments.indexWhere((post) => post.id == state.postId);
+    if (index >= 0) {
+      final next = <RiverSideTopicPostDetail>[..._comments];
+      final current = next[index];
+      next[index] = current.copyWith(
+        reactions: state.reactions,
+        currentUserReaction: state.currentUserReaction,
+        clearCurrentUserReaction: clearCurrent,
+        reactionUsersCount: state.reactionUsersCount,
+      );
+      _comments = next;
+    }
+  }
+
+  Future<void> _onReactionStatusPressed({
+    required RiverSideTopicPostDetail post,
+    required String reactionId,
+  }) async {
+    try {
+      final groups = await widget.dependencies.accountStore.riverSideApiClient
+          .fetchPostReactionUsers(
+            postId: post.id,
+            reactionId: reactionId,
+            cookieHeader: _activeCookieHeader(),
+          );
+      if (!mounted) {
+        return;
+      }
+
+      RiverSidePostReactionUsersGroup? group;
+      for (final item in groups) {
+        if (item.id == reactionId) {
+          group = item;
+          break;
+        }
+      }
+      group ??= groups.isEmpty ? null : groups.first;
+      await showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        builder: (sheetContext) {
+          final users = group?.users ?? const <RiverSideReactionUser>[];
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${_reactionEmoji(reactionId)}  ${group?.count ?? 0}',
+                    style: Theme.of(sheetContext).textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  if (users.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: Text(_labelReactionUsersEmpty),
+                    )
+                  else
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 360),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: users.length,
+                        separatorBuilder: (context, index) =>
+                            const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final user = users[index];
+                          return ListTile(
+                            leading: CircleAvatar(
+                              backgroundImage: user.avatarUrl.isEmpty
+                                  ? null
+                                  : NetworkImage(user.avatarUrl),
+                              child: user.avatarUrl.isEmpty
+                                  ? const Icon(Icons.person_outline)
+                                  : null,
+                            ),
+                            title: Text(user.displayName),
+                            subtitle: Text('@${user.username}'),
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    } on RiverSideApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('\u52a0\u8f7d\u70b9\u8d5e\u7528\u6237\u5931\u8d25'),
+        ),
+      );
+    }
+  }
+
+  String _buildReplyInitialText({
+    String? quoteUsername,
+    int? quotePostNumber,
+    int? quoteTopicId,
+    String? quoteContent,
+  }) {
+    final username = quoteUsername?.trim() ?? '';
+    final postNumber = quotePostNumber ?? 0;
+    final topicId = quoteTopicId ?? 0;
+    final content = (quoteContent ?? '').trim();
+    if (username.isEmpty ||
+        postNumber <= 0 ||
+        topicId <= 0 ||
+        content.isEmpty) {
+      return '';
+    }
+
+    return '[quote="$username, post:$postNumber, topic:$topicId"]\n'
+        '$content\n'
+        '[/quote]\n\n';
+  }
+
+  Future<String?> _uploadReplyImage(String fileName, List<int> bytes) async {
+    final cookieHeader = _activeCookieHeader();
+    if (cookieHeader == null || cookieHeader.trim().isEmpty) {
+      throw const RiverSideApiException(_labelReplyNeedLogin);
+    }
+
+    final uploaded = await widget.dependencies.accountStore.riverSideApiClient
+        .uploadComposerImage(
+          cookieHeader: cookieHeader,
+          fileName: fileName,
+          bytes: bytes,
+        );
+    final resolved = uploaded.startsWith('upload://')
+        ? uploaded
+        : _resolveForumUrl(uploaded);
+    return '![]($resolved)';
+  }
+
+  void _appendPublishedReply(RiverSideTopicPostDetail created) {
+    final detail = _detail;
+    if (detail == null || created.topicId != detail.topicId) {
+      return;
+    }
+
+    if (created.postNumber <= 1 || detail.mainPost.id == created.id) {
+      _detail = detail.copyWith(mainPost: created);
+      _loadedPostIds.add(created.id);
+      return;
+    }
+
+    final nextComments = <RiverSideTopicPostDetail>[..._comments];
+    final existingIndex = nextComments.indexWhere(
+      (item) => item.id == created.id,
+    );
+    var added = false;
+    if (existingIndex >= 0) {
+      nextComments[existingIndex] = created;
+    } else {
+      added = true;
+      nextComments.add(created);
+      _loadedPostIds.add(created.id);
+    }
+    nextComments.sort((a, b) => a.postNumber.compareTo(b.postNumber));
+
+    final nextStream = detail.streamPostIds.contains(created.id)
+        ? detail.streamPostIds
+        : <int>[...detail.streamPostIds, created.id];
+
+    _comments = nextComments;
+    _detail = detail.copyWith(
+      replyCount: added ? detail.replyCount + 1 : detail.replyCount,
+      streamPostIds: nextStream,
+      loadedPostIds: <int>{..._loadedPostIds},
+    );
+  }
+
+  Future<bool> _submitReply({
+    required int topicId,
+    required String markdown,
+    int? replyToPostNumber,
+  }) async {
+    final cookieHeader = _activeCookieHeader();
+    if (cookieHeader == null || cookieHeader.trim().isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text(_labelReplyNeedLogin)));
+      return false;
+    }
+
+    try {
+      final created = await widget.dependencies.accountStore.riverSideApiClient
+          .createTopicReply(
+            topicId: topicId,
+            raw: markdown,
+            replyToPostNumber: replyToPostNumber,
+            cookieHeader: cookieHeader,
+          );
+      if (!mounted) {
+        return false;
+      }
+
+      setState(() {
+        _appendPublishedReply(created);
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text(_labelReplySuccess)));
+
+      if (topicId == (_detail?.topicId ?? -1)) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) {
+            return;
+          }
+          _jumpToPostNumber(
+            postNumber: created.postNumber,
+            topicId: created.topicId,
+          );
+        });
+      }
+      return true;
+    } on RiverSideApiException catch (error) {
+      if (!mounted) {
+        return false;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+      return false;
+    } catch (_) {
+      if (!mounted) {
+        return false;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('\u56de\u590d\u53d1\u9001\u5931\u8d25')),
+      );
+      return false;
+    }
+  }
+
+  Future<void> _openReplyComposer({
+    required int topicId,
+    int? replyToPostNumber,
+    String? quoteUsername,
+    int? quoteTopicId,
+    String? quoteContent,
+  }) async {
+    await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return RiverMarkdownEditor(
+          title: _labelReplyEditorTitle,
+          submitLabel: _labelReply,
+          initialText: _buildReplyInitialText(
+            quoteUsername: quoteUsername,
+            quotePostNumber: replyToPostNumber,
+            quoteTopicId: quoteTopicId ?? topicId,
+            quoteContent: quoteContent,
+          ),
+          emojiUrls: _emojiUrls,
+          emojiGroups: _emojiGroups,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.86,
+          onUploadImage: _uploadReplyImage,
+          onSubmit: (markdown) {
+            return _submitReply(
+              topicId: topicId,
+              markdown: markdown,
+              replyToPostNumber: replyToPostNumber,
+            );
+          },
+        );
+      },
+    );
+  }
+
+  bool _isOwnComment(RiverSideTopicPostDetail post) {
+    final active = widget.dependencies.accountStore.activeRiverSideUsername;
+    if (active == null || active.trim().isEmpty) {
+      return false;
+    }
+    return active.toLowerCase() == post.authorUsername.toLowerCase();
+  }
+
+  Future<void> _copyCommentContent(RiverSideTopicPostDetail post) async {
+    await Clipboard.setData(ClipboardData(text: post.contentMarkdown));
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('\u5df2\u590d\u5236\u5230\u526a\u8d34\u677f'),
+      ),
+    );
+  }
+
+  void _replacePostInState(RiverSideTopicPostDetail updated) {
+    final detail = _detail;
+    if (detail == null) {
+      return;
+    }
+
+    if (detail.mainPost.id == updated.id) {
+      _detail = detail.copyWith(mainPost: updated);
+      return;
+    }
+
+    final index = _comments.indexWhere((item) => item.id == updated.id);
+    if (index < 0) {
+      return;
+    }
+    final next = <RiverSideTopicPostDetail>[..._comments];
+    next[index] = updated;
+    next.sort((a, b) => a.postNumber.compareTo(b.postNumber));
+    _comments = next;
+  }
+
+  void _removePostFromState(RiverSideTopicPostDetail post) {
+    final detail = _detail;
+    if (detail == null) {
+      return;
+    }
+
+    final nextComments = _comments.where((item) => item.id != post.id).toList();
+    _comments = nextComments;
+    _loadedPostIds.remove(post.id);
+    _detail = detail.copyWith(
+      replyCount: detail.replyCount > 0 ? detail.replyCount - 1 : 0,
+      streamPostIds: detail.streamPostIds.where((id) => id != post.id).toList(),
+      loadedPostIds: <int>{..._loadedPostIds},
+    );
+  }
+
+  Future<bool> _submitEditComment({
+    required RiverSideTopicPostDetail sourcePost,
+    required String originalRaw,
+    required String nextRaw,
+  }) async {
+    final cookieHeader = _activeCookieHeader();
+    if (cookieHeader == null || cookieHeader.trim().isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text(_labelReplyNeedLogin)));
+      return false;
+    }
+
+    try {
+      final edited = await widget.dependencies.accountStore.riverSideApiClient
+          .editPost(
+            postId: sourcePost.id,
+            topicId: sourcePost.topicId,
+            raw: nextRaw,
+            originalRaw: originalRaw,
+            cookieHeader: cookieHeader,
+          );
+      if (!mounted) {
+        return false;
+      }
+      setState(() {
+        _replacePostInState(edited);
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text(_labelEditCommentSuccess)));
+      return true;
+    } on RiverSideApiException catch (error) {
+      if (!mounted) {
+        return false;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+      return false;
+    } catch (_) {
+      if (!mounted) {
+        return false;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('\u7f16\u8f91\u8bc4\u8bba\u5931\u8d25')),
+      );
+      return false;
+    }
+  }
+
+  Future<void> _openEditCommentComposer(RiverSideTopicPostDetail post) async {
+    final cookieHeader = _activeCookieHeader();
+    if (cookieHeader == null || cookieHeader.trim().isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text(_labelReplyNeedLogin)));
+      return;
+    }
+
+    RiverSideTopicPostDetail original = post;
+    try {
+      original = await widget.dependencies.accountStore.riverSideApiClient
+          .fetchPostById(postId: post.id, cookieHeader: cookieHeader);
+    } catch (_) {}
+
+    final originalRaw = original.contentMarkdown;
+    await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return RiverMarkdownEditor(
+          title: _labelEditCommentTitle,
+          submitLabel: _labelSave,
+          initialText: originalRaw,
+          emojiUrls: _emojiUrls,
+          emojiGroups: _emojiGroups,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.86,
+          onUploadImage: _uploadReplyImage,
+          onSubmit: (markdown) {
+            return _submitEditComment(
+              sourcePost: original,
+              originalRaw: originalRaw,
+              nextRaw: markdown,
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _deleteComment(RiverSideTopicPostDetail post) async {
+    final cookieHeader = _activeCookieHeader();
+    if (cookieHeader == null || cookieHeader.trim().isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text(_labelReplyNeedLogin)));
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text(_labelDeleteCommentTitle),
+          content: const Text(_labelDeleteCommentHint),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text(_labelCancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text(_labelDelete),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true) {
+      return;
+    }
+
+    try {
+      await widget.dependencies.accountStore.riverSideApiClient.deletePost(
+        postId: post.id,
+        topicId: post.topicId,
+        postNumber: post.postNumber,
+        cookieHeader: cookieHeader,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _removePostFromState(post);
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text(_labelDeleteCommentSuccess)));
+    } on RiverSideApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('\u5220\u9664\u8bc4\u8bba\u5931\u8d25')),
+      );
+    }
+  }
+
+  Future<void> _showCommentActions(RiverSideTopicPostDetail post) async {
+    final own = _isOwnComment(post);
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.content_copy_outlined),
+                title: const Text(_labelActionCopyContent),
+                onTap: () => Navigator.of(sheetContext).pop('copy'),
+              ),
+              if (own)
+                ListTile(
+                  leading: const Icon(Icons.edit_outlined),
+                  title: const Text(_labelActionEditComment),
+                  onTap: () => Navigator.of(sheetContext).pop('edit'),
+                ),
+              if (own)
+                ListTile(
+                  leading: const Icon(Icons.delete_outline),
+                  title: const Text(_labelActionDeleteComment),
+                  onTap: () => Navigator.of(sheetContext).pop('delete'),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (!mounted || action == null) {
+      return;
+    }
+    switch (action) {
+      case 'copy':
+        await _copyCommentContent(post);
+        break;
+      case 'edit':
+        await _openEditCommentComposer(post);
+        break;
+      case 'delete':
+        await _deleteComment(post);
+        break;
+    }
+  }
+
   Future<void> _showQuoteBottomSheet(_QuoteBlock quote) async {
+    final cookieHeader = _activeCookieHeader();
+    final Future<RiverSideTopicPostDetail>? quotedPostFuture =
+        quote.ref.postNumber > 0
+        ? widget.dependencies.accountStore.riverSideApiClient
+              .fetchTopicPostByNumber(
+                topicId: quote.ref.topicId,
+                postNumber: quote.ref.postNumber,
+                cookieHeader: cookieHeader,
+              )
+        : null;
+
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -442,13 +1225,66 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
                 const SizedBox(height: 10),
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxHeight: 280),
-                  child: SingleChildScrollView(
-                    child: _MarkdownContent(
-                      markdown: quote.contentMarkdown,
-                      cookieHeader: _activeCookieHeader(),
-                      emojiUrls: _emojiUrls,
-                    ),
-                  ),
+                  child: quotedPostFuture == null
+                      ? SingleChildScrollView(
+                          child: _MarkdownContent(
+                            markdown: quote.contentMarkdown,
+                            cookieHeader: cookieHeader,
+                            emojiUrls: _emojiUrls,
+                          ),
+                        )
+                      : FutureBuilder<RiverSideTopicPostDetail>(
+                          future: quotedPostFuture,
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState ==
+                                ConnectionState.waiting) {
+                              return const Center(
+                                child: Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 20),
+                                  child: Text(_labelQuoteLoading),
+                                ),
+                              );
+                            }
+
+                            if (snapshot.hasError) {
+                              return SingleChildScrollView(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _labelQuoteLoadFailed,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.error,
+                                          ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    _MarkdownContent(
+                                      markdown: quote.contentMarkdown,
+                                      cookieHeader: cookieHeader,
+                                      emojiUrls: _emojiUrls,
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }
+
+                            final markdown =
+                                snapshot.data?.contentMarkdown ??
+                                quote.contentMarkdown;
+                            return SingleChildScrollView(
+                              child: _MarkdownContent(
+                                markdown: markdown,
+                                cookieHeader: cookieHeader,
+                                emojiUrls: _emojiUrls,
+                              ),
+                            );
+                          },
+                        ),
                 ),
                 const SizedBox(height: 14),
                 Row(
@@ -468,10 +1304,26 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: FilledButton(
-                        onPressed: () {
+                        onPressed: () async {
                           Navigator.of(sheetContext).pop();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text(_labelReplyNotReady)),
+                          final detailTopicId = _detail?.topicId;
+                          if (detailTopicId == null ||
+                              quote.ref.topicId != detailTopicId) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(_labelCrossTopicQuote),
+                              ),
+                            );
+                            return;
+                          }
+                          await _openReplyComposer(
+                            topicId: quote.ref.topicId,
+                            replyToPostNumber: quote.ref.postNumber,
+                            quoteUsername: quote.ref.username,
+                            quoteTopicId: quote.ref.topicId,
+                            quoteContent: _stripQuotedMarkdown(
+                              quote.contentMarkdown,
+                            ),
                           );
                         },
                         child: const Text(_labelReplyContent),
@@ -500,6 +1352,26 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
       duration: const Duration(milliseconds: 280),
       curve: Curves.easeOutCubic,
     );
+  }
+
+  Future<void> _openCommentDetail(RiverSideTopicPostDetail post) async {
+    final hasMutations = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => CommentDetailPage(
+          dependencies: widget.dependencies,
+          rootPost: post,
+          heroTag: _commentHeroTag(post.id),
+          initialEmojiUrls: _emojiUrls,
+          initialEmojiGroups: _emojiGroups,
+        ),
+      ),
+    );
+    if (!mounted) {
+      return;
+    }
+    if (hasMutations == true) {
+      await _loadInitial();
+    }
   }
 
   @override
@@ -581,6 +1453,14 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
             cookieHeader: cookieHeader,
             emojiUrls: _emojiUrls,
             onQuoteTap: _showQuoteBottomSheet,
+            isReacting: _reactingPostIds.contains(detail.mainPost.id),
+            onReactPressed: _onReactPressed,
+            onReplyPressed: (post) {
+              _openReplyComposer(topicId: post.topicId);
+            },
+            onReactionStatusPressed: (post, reactionId) {
+              _onReactionStatusPressed(post: post, reactionId: reactionId);
+            },
           ),
           const SizedBox(height: 10),
           _SectionHeader(
@@ -600,6 +1480,26 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
                 cookieHeader: cookieHeader,
                 emojiUrls: _emojiUrls,
                 onQuoteTap: _showQuoteBottomSheet,
+                isReacting: _reactingPostIds.contains(post.id),
+                onReactPressed: _onReactPressed,
+                heroTag: _commentHeroTag(post.id),
+                onTap: () => _openCommentDetail(post),
+                onLongPress: () => _showCommentActions(post),
+                onReplyPressed: (target) {
+                  _openReplyComposer(
+                    topicId: target.topicId,
+                    replyToPostNumber: target.postNumber,
+                    quoteUsername: target.authorUsername,
+                    quoteTopicId: target.topicId,
+                    quoteContent: _stripQuotedMarkdown(target.contentMarkdown),
+                  );
+                },
+                onReactionStatusPressed: (selectedPost, reactionId) {
+                  _onReactionStatusPressed(
+                    post: selectedPost,
+                    reactionId: reactionId,
+                  );
+                },
               ),
             ),
           if (_loadingMore)
@@ -620,6 +1520,647 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
           else
             const SizedBox(height: 36),
         ],
+      ),
+    );
+  }
+}
+
+class CommentDetailPage extends StatefulWidget {
+  const CommentDetailPage({
+    super.key,
+    required this.dependencies,
+    required this.rootPost,
+    required this.heroTag,
+    this.initialEmojiUrls = const <String, String>{},
+    this.initialEmojiGroups = const <String, List<String>>{},
+  });
+
+  final AppDependencies dependencies;
+  final RiverSideTopicPostDetail rootPost;
+  final String heroTag;
+  final Map<String, String> initialEmojiUrls;
+  final Map<String, List<String>> initialEmojiGroups;
+
+  @override
+  State<CommentDetailPage> createState() => _CommentDetailPageState();
+}
+
+class _CommentDetailPageState extends State<CommentDetailPage> {
+  static const String _labelTitle = '\u8bc4\u8bba\u8be6\u60c5';
+  static const String _labelRootComment = '\u8be5\u8bc4\u8bba';
+  static const String _labelReplies = '\u56de\u590d\u8be5\u8bc4\u8bba';
+  static const String _labelEmptyReplies = '\u6682\u65e0\u56de\u590d';
+  static const String _labelQuoteTitle = '\u88ab\u56de\u590d\u5185\u5bb9';
+  static const String _labelReload = '\u91cd\u8bd5';
+  static const String _labelReplyNeedLogin =
+      '\u8bf7\u5148\u767b\u5f55 RiverSide \u8d26\u53f7';
+  static const String _labelReplySuccess =
+      '\u56de\u590d\u53d1\u5e03\u6210\u529f';
+  static const String _labelEditCommentTitle =
+      _TopicDetailPageState._labelEditCommentTitle;
+  static const String _labelEditCommentSuccess =
+      _TopicDetailPageState._labelEditCommentSuccess;
+  static const String _labelDeleteCommentTitle =
+      _TopicDetailPageState._labelDeleteCommentTitle;
+  static const String _labelDeleteCommentHint =
+      _TopicDetailPageState._labelDeleteCommentHint;
+  static const String _labelDeleteCommentSuccess =
+      _TopicDetailPageState._labelDeleteCommentSuccess;
+  static const String _labelActionCopyContent =
+      _TopicDetailPageState._labelActionCopyContent;
+  static const String _labelActionEditComment =
+      _TopicDetailPageState._labelActionEditComment;
+  static const String _labelActionDeleteComment =
+      _TopicDetailPageState._labelActionDeleteComment;
+  static const String _labelSave = _TopicDetailPageState._labelSave;
+  static const String _labelCancel = _TopicDetailPageState._labelCancel;
+  static const String _labelDelete = _TopicDetailPageState._labelDelete;
+
+  late RiverSideTopicPostDetail _rootPost;
+  List<RiverSideTopicPostDetail> _replies = const <RiverSideTopicPostDetail>[];
+  Map<String, String> _emojiUrls = const <String, String>{};
+  Map<String, List<String>> _emojiGroups = const <String, List<String>>{};
+  bool _loading = true;
+  bool _hasMutations = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _rootPost = widget.rootPost;
+    _emojiUrls = widget.initialEmojiUrls;
+    _emojiGroups = widget.initialEmojiGroups;
+    _loadData();
+  }
+
+  String? _activeCookieHeader() {
+    final username = widget.dependencies.accountStore.activeRiverSideUsername;
+    if (username == null || username.isEmpty) {
+      return null;
+    }
+    return widget.dependencies.accountStore.riverSideCookieHeaderFor(username);
+  }
+
+  Future<void> _loadData() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final cookieHeader = _activeCookieHeader();
+      final apiClient = widget.dependencies.accountStore.riverSideApiClient;
+      final repliesFuture = apiClient.fetchPostReplies(
+        topicId: _rootPost.topicId,
+        postId: _rootPost.id,
+        cookieHeader: cookieHeader,
+      );
+      final emojiFuture = _emojiUrls.isNotEmpty
+          ? Future<Map<String, String>>.value(_emojiUrls)
+          : apiClient
+                .fetchEmojiUrlMap(cookieHeader: cookieHeader)
+                .catchError((_) => const <String, String>{});
+      final emojiGroupsFuture = _emojiGroups.isNotEmpty
+          ? Future<Map<String, List<String>>>.value(_emojiGroups)
+          : apiClient
+                .fetchEmojiGroups(cookieHeader: cookieHeader)
+                .catchError((_) => const <String, List<String>>{});
+
+      final replies = await repliesFuture;
+      final emojiUrls = await emojiFuture;
+      final emojiGroups = await emojiGroupsFuture;
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _replies = replies;
+        _emojiUrls = emojiUrls;
+        _emojiGroups = emojiGroups;
+        _loading = false;
+      });
+    } on RiverSideApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _loading = false;
+        _error = error.message;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _loading = false;
+        _error = '\u8bc4\u8bba\u8be6\u60c5\u52a0\u8f7d\u5931\u8d25';
+      });
+    }
+  }
+
+  Future<void> _onRefresh() => _loadData();
+
+  String _buildReplyInitialText({
+    String? quoteUsername,
+    int? quotePostNumber,
+    int? quoteTopicId,
+    String? quoteContent,
+  }) {
+    final username = quoteUsername?.trim() ?? '';
+    final postNumber = quotePostNumber ?? 0;
+    final topicId = quoteTopicId ?? 0;
+    final content = (quoteContent ?? '').trim();
+    if (username.isEmpty ||
+        postNumber <= 0 ||
+        topicId <= 0 ||
+        content.isEmpty) {
+      return '';
+    }
+    return '[quote="$username, post:$postNumber, topic:$topicId"]\n'
+        '$content\n'
+        '[/quote]\n\n';
+  }
+
+  Future<String?> _uploadReplyImage(String fileName, List<int> bytes) async {
+    final cookieHeader = _activeCookieHeader();
+    if (cookieHeader == null || cookieHeader.trim().isEmpty) {
+      throw const RiverSideApiException(_labelReplyNeedLogin);
+    }
+    final uploaded = await widget.dependencies.accountStore.riverSideApiClient
+        .uploadComposerImage(
+          cookieHeader: cookieHeader,
+          fileName: fileName,
+          bytes: bytes,
+        );
+    final resolved = uploaded.startsWith('upload://')
+        ? uploaded
+        : _resolveForumUrl(uploaded);
+    return '![]($resolved)';
+  }
+
+  Future<bool> _submitReply({
+    required String markdown,
+    int? replyToPostNumber,
+  }) async {
+    final cookieHeader = _activeCookieHeader();
+    if (cookieHeader == null || cookieHeader.trim().isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text(_labelReplyNeedLogin)));
+      return false;
+    }
+
+    try {
+      await widget.dependencies.accountStore.riverSideApiClient
+          .createTopicReply(
+            topicId: _rootPost.topicId,
+            raw: markdown,
+            replyToPostNumber: replyToPostNumber,
+            cookieHeader: cookieHeader,
+          );
+      if (!mounted) {
+        return false;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text(_labelReplySuccess)));
+      await _loadData();
+      return true;
+    } on RiverSideApiException catch (error) {
+      if (!mounted) {
+        return false;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+      return false;
+    } catch (_) {
+      if (!mounted) {
+        return false;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('\u56de\u590d\u53d1\u9001\u5931\u8d25')),
+      );
+      return false;
+    }
+  }
+
+  Future<void> _openReplyComposer({
+    int? replyToPostNumber,
+    String? quoteUsername,
+    int? quoteTopicId,
+    String? quoteContent,
+  }) async {
+    await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return RiverMarkdownEditor(
+          title: _TopicDetailPageState._labelReplyEditorTitle,
+          submitLabel: _TopicDetailPageState._labelReply,
+          initialText: _buildReplyInitialText(
+            quoteUsername: quoteUsername,
+            quotePostNumber: replyToPostNumber,
+            quoteTopicId: quoteTopicId ?? _rootPost.topicId,
+            quoteContent: quoteContent,
+          ),
+          emojiUrls: _emojiUrls,
+          emojiGroups: _emojiGroups,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.86,
+          onUploadImage: _uploadReplyImage,
+          onSubmit: (markdown) => _submitReply(
+            markdown: markdown,
+            replyToPostNumber: replyToPostNumber,
+          ),
+        );
+      },
+    );
+  }
+
+  bool _isOwnComment(RiverSideTopicPostDetail post) {
+    final active = widget.dependencies.accountStore.activeRiverSideUsername;
+    if (active == null || active.trim().isEmpty) {
+      return false;
+    }
+    return active.toLowerCase() == post.authorUsername.toLowerCase();
+  }
+
+  Future<void> _copyCommentContent(RiverSideTopicPostDetail post) async {
+    await Clipboard.setData(ClipboardData(text: post.contentMarkdown));
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('\u5df2\u590d\u5236\u5230\u526a\u8d34\u677f'),
+      ),
+    );
+  }
+
+  void _replacePostInState(RiverSideTopicPostDetail updated) {
+    if (_rootPost.id == updated.id) {
+      _rootPost = updated;
+      return;
+    }
+
+    final index = _replies.indexWhere((item) => item.id == updated.id);
+    if (index < 0) {
+      return;
+    }
+    final next = <RiverSideTopicPostDetail>[..._replies];
+    next[index] = updated;
+    next.sort((a, b) => a.postNumber.compareTo(b.postNumber));
+    _replies = next;
+  }
+
+  void _removePostFromState(RiverSideTopicPostDetail post) {
+    _replies = _replies.where((item) => item.id != post.id).toList();
+  }
+
+  Future<bool> _submitEditComment({
+    required RiverSideTopicPostDetail sourcePost,
+    required String originalRaw,
+    required String nextRaw,
+  }) async {
+    final cookieHeader = _activeCookieHeader();
+    if (cookieHeader == null || cookieHeader.trim().isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text(_labelReplyNeedLogin)));
+      return false;
+    }
+
+    try {
+      final edited = await widget.dependencies.accountStore.riverSideApiClient
+          .editPost(
+            postId: sourcePost.id,
+            topicId: sourcePost.topicId,
+            raw: nextRaw,
+            originalRaw: originalRaw,
+            cookieHeader: cookieHeader,
+          );
+      if (!mounted) {
+        return false;
+      }
+      setState(() {
+        _replacePostInState(edited);
+        _hasMutations = true;
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text(_labelEditCommentSuccess)));
+      return true;
+    } on RiverSideApiException catch (error) {
+      if (!mounted) {
+        return false;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+      return false;
+    } catch (_) {
+      if (!mounted) {
+        return false;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('\u7f16\u8f91\u8bc4\u8bba\u5931\u8d25')),
+      );
+      return false;
+    }
+  }
+
+  Future<void> _openEditCommentComposer(RiverSideTopicPostDetail post) async {
+    final cookieHeader = _activeCookieHeader();
+    if (cookieHeader == null || cookieHeader.trim().isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text(_labelReplyNeedLogin)));
+      return;
+    }
+
+    RiverSideTopicPostDetail original = post;
+    try {
+      original = await widget.dependencies.accountStore.riverSideApiClient
+          .fetchPostById(postId: post.id, cookieHeader: cookieHeader);
+    } catch (_) {}
+
+    final originalRaw = original.contentMarkdown;
+    await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return RiverMarkdownEditor(
+          title: _labelEditCommentTitle,
+          submitLabel: _labelSave,
+          initialText: originalRaw,
+          emojiUrls: _emojiUrls,
+          emojiGroups: _emojiGroups,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.86,
+          onUploadImage: _uploadReplyImage,
+          onSubmit: (markdown) {
+            return _submitEditComment(
+              sourcePost: original,
+              originalRaw: originalRaw,
+              nextRaw: markdown,
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _deleteComment(RiverSideTopicPostDetail post) async {
+    final cookieHeader = _activeCookieHeader();
+    if (cookieHeader == null || cookieHeader.trim().isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text(_labelReplyNeedLogin)));
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text(_labelDeleteCommentTitle),
+          content: const Text(_labelDeleteCommentHint),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text(_labelCancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text(_labelDelete),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true) {
+      return;
+    }
+
+    try {
+      await widget.dependencies.accountStore.riverSideApiClient.deletePost(
+        postId: post.id,
+        topicId: post.topicId,
+        postNumber: post.postNumber,
+        cookieHeader: cookieHeader,
+      );
+      if (!mounted) {
+        return;
+      }
+      if (post.id == _rootPost.id) {
+        Navigator.of(context).pop(true);
+        return;
+      }
+      setState(() {
+        _removePostFromState(post);
+        _hasMutations = true;
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text(_labelDeleteCommentSuccess)));
+    } on RiverSideApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('\u5220\u9664\u8bc4\u8bba\u5931\u8d25')),
+      );
+    }
+  }
+
+  Future<void> _showCommentActions(RiverSideTopicPostDetail post) async {
+    final own = _isOwnComment(post);
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.content_copy_outlined),
+                title: const Text(_labelActionCopyContent),
+                onTap: () => Navigator.of(sheetContext).pop('copy'),
+              ),
+              if (own)
+                ListTile(
+                  leading: const Icon(Icons.edit_outlined),
+                  title: const Text(_labelActionEditComment),
+                  onTap: () => Navigator.of(sheetContext).pop('edit'),
+                ),
+              if (own)
+                ListTile(
+                  leading: const Icon(Icons.delete_outline),
+                  title: const Text(_labelActionDeleteComment),
+                  onTap: () => Navigator.of(sheetContext).pop('delete'),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (!mounted || action == null) {
+      return;
+    }
+    switch (action) {
+      case 'copy':
+        await _copyCommentContent(post);
+        break;
+      case 'edit':
+        await _openEditCommentComposer(post);
+        break;
+      case 'delete':
+        await _deleteComment(post);
+        break;
+    }
+  }
+
+  Future<void> _showQuoteBottomSheet(_QuoteBlock quote) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _labelQuoteTitle,
+                  style: Theme.of(sheetContext).textTheme.titleSmall,
+                ),
+                const SizedBox(height: 8),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 320),
+                  child: SingleChildScrollView(
+                    child: _MarkdownContent(
+                      markdown: quote.contentMarkdown,
+                      cookieHeader: _activeCookieHeader(),
+                      emojiUrls: _emojiUrls,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) {
+          return;
+        }
+        Navigator.of(context).pop(_hasMutations);
+      },
+      child: Scaffold(
+        appBar: AppBar(title: const Text(_labelTitle)),
+        body: RefreshIndicator(
+          onRefresh: _onRefresh,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 20),
+            children: [
+              const _SectionHeader(title: _labelRootComment),
+              _CommentDetailPostCard(
+                post: _rootPost,
+                cookieHeader: _activeCookieHeader(),
+                emojiUrls: _emojiUrls,
+                onQuoteTap: _showQuoteBottomSheet,
+                heroTag: widget.heroTag,
+                onLongPress: () => _showCommentActions(_rootPost),
+                onReplyPressed: (post) {
+                  _openReplyComposer(
+                    replyToPostNumber: post.postNumber,
+                    quoteUsername: post.authorUsername,
+                    quoteTopicId: post.topicId,
+                    quoteContent: _stripQuotedMarkdown(post.contentMarkdown),
+                  );
+                },
+              ),
+              const SizedBox(height: 10),
+              _SectionHeader(
+                title: _labelReplies,
+                trailing: Text('\u5171 ${_replies.length} \u6761'),
+              ),
+              if (_loading)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Column(
+                    children: [
+                      Text(
+                        _error!,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      FilledButton(
+                        onPressed: _loadData,
+                        child: const Text(_labelReload),
+                      ),
+                    ],
+                  ),
+                )
+              else if (_replies.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20),
+                  child: Center(child: Text(_labelEmptyReplies)),
+                )
+              else
+                ..._replies.map((post) {
+                  final displayPost = post.copyWith(
+                    contentMarkdown: _stripQuotedMarkdown(post.contentMarkdown),
+                  );
+                  return _CommentDetailPostCard(
+                    post: displayPost,
+                    cookieHeader: _activeCookieHeader(),
+                    emojiUrls: _emojiUrls,
+                    onQuoteTap: _showQuoteBottomSheet,
+                    onLongPress: () => _showCommentActions(post),
+                    onReplyPressed: (target) {
+                      _openReplyComposer(
+                        replyToPostNumber: target.postNumber,
+                        quoteUsername: target.authorUsername,
+                        quoteTopicId: target.topicId,
+                        quoteContent: _stripQuotedMarkdown(
+                          target.contentMarkdown,
+                        ),
+                      );
+                    },
+                  );
+                }),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -659,12 +2200,21 @@ class _MainPostCard extends StatefulWidget {
     required this.cookieHeader,
     required this.emojiUrls,
     required this.onQuoteTap,
+    required this.isReacting,
+    required this.onReactPressed,
+    required this.onReplyPressed,
+    required this.onReactionStatusPressed,
   });
 
   final RiverSideTopicDetail detail;
   final String? cookieHeader;
   final Map<String, String> emojiUrls;
   final ValueChanged<_QuoteBlock> onQuoteTap;
+  final bool isReacting;
+  final ValueChanged<RiverSideTopicPostDetail> onReactPressed;
+  final ValueChanged<RiverSideTopicPostDetail> onReplyPressed;
+  final void Function(RiverSideTopicPostDetail post, String reactionId)
+  onReactionStatusPressed;
 
   @override
   State<_MainPostCard> createState() => _MainPostCardState();
@@ -724,6 +2274,16 @@ class _MainPostCardState extends State<_MainPostCard>
               emojiUrls: widget.emojiUrls,
               onQuoteTap: widget.onQuoteTap,
             ),
+            const SizedBox(height: 12),
+            _PostReactionBar(
+              post: post,
+              reacting: widget.isReacting,
+              onReactPressed: () => widget.onReactPressed(post),
+              onReplyPressed: () => widget.onReplyPressed(post),
+              onReactionStatusPressed: (reactionId) {
+                widget.onReactionStatusPressed(post, reactionId);
+              },
+            ),
           ],
         ),
       ),
@@ -738,12 +2298,27 @@ class _CommentCard extends StatefulWidget {
     required this.cookieHeader,
     required this.emojiUrls,
     required this.onQuoteTap,
+    required this.isReacting,
+    required this.onReactPressed,
+    required this.onReplyPressed,
+    required this.heroTag,
+    this.onTap,
+    this.onLongPress,
+    required this.onReactionStatusPressed,
   });
 
   final RiverSideTopicPostDetail post;
   final String? cookieHeader;
   final Map<String, String> emojiUrls;
   final ValueChanged<_QuoteBlock> onQuoteTap;
+  final bool isReacting;
+  final ValueChanged<RiverSideTopicPostDetail> onReactPressed;
+  final ValueChanged<RiverSideTopicPostDetail> onReplyPressed;
+  final String heroTag;
+  final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
+  final void Function(RiverSideTopicPostDetail post, String reactionId)
+  onReactionStatusPressed;
 
   @override
   State<_CommentCard> createState() => _CommentCardState();
@@ -759,42 +2334,222 @@ class _CommentCardState extends State<_CommentCard>
     super.build(context);
     final subtitleColor = Theme.of(context).colorScheme.onSurfaceVariant;
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _PostAuthorHeader(post: widget.post),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 12,
-              runSpacing: 8,
-              children: [
-                _MetaItem(
-                  icon: Icons.schedule_outlined,
-                  text: _formatDateTime(widget.post.createdAt),
-                  color: subtitleColor,
-                ),
-                _MetaItem(
-                  icon: Icons.thumb_up_alt_outlined,
-                  text: '\u70b9\u8d5e ${widget.post.likeCount}',
-                  color: subtitleColor,
-                ),
-              ],
+    return Hero(
+      tag: widget.heroTag,
+      flightShuttleBuilder: _commentCardHeroShuttleBuilder,
+      transitionOnUserGestures: true,
+      child: HeroMode(
+        enabled: false,
+        child: Card(
+          margin: const EdgeInsets.only(bottom: 10),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: widget.onTap,
+            onLongPress: widget.onLongPress,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _PostAuthorHeader(post: widget.post),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 8,
+                    children: [
+                      _MetaItem(
+                        icon: Icons.schedule_outlined,
+                        text: _formatDateTime(widget.post.createdAt),
+                        color: subtitleColor,
+                      ),
+                      _MetaItem(
+                        icon: Icons.thumb_up_alt_outlined,
+                        text: '\u70b9\u8d5e ${widget.post.likeCount}',
+                        color: subtitleColor,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  _PostContent(
+                    markdown: widget.post.contentMarkdown,
+                    topicId: widget.post.topicId,
+                    cookieHeader: widget.cookieHeader,
+                    emojiUrls: widget.emojiUrls,
+                    onQuoteTap: widget.onQuoteTap,
+                    enableImageHero: false,
+                  ),
+                  const SizedBox(height: 10),
+                  _PostReactionBar(
+                    post: widget.post,
+                    reacting: widget.isReacting,
+                    onReactPressed: () => widget.onReactPressed(widget.post),
+                    onReplyPressed: () => widget.onReplyPressed(widget.post),
+                    onReactionStatusPressed: (reactionId) {
+                      widget.onReactionStatusPressed(widget.post, reactionId);
+                    },
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 10),
-            _PostContent(
-              markdown: widget.post.contentMarkdown,
-              topicId: widget.post.topicId,
-              cookieHeader: widget.cookieHeader,
-              emojiUrls: widget.emojiUrls,
-              onQuoteTap: widget.onQuoteTap,
-            ),
-          ],
+          ),
         ),
       ),
+    );
+  }
+}
+
+class _CommentDetailPostCard extends StatelessWidget {
+  const _CommentDetailPostCard({
+    required this.post,
+    required this.cookieHeader,
+    required this.emojiUrls,
+    required this.onQuoteTap,
+    required this.onReplyPressed,
+    this.onLongPress,
+    this.heroTag,
+  });
+
+  final RiverSideTopicPostDetail post;
+  final String? cookieHeader;
+  final Map<String, String> emojiUrls;
+  final ValueChanged<_QuoteBlock> onQuoteTap;
+  final ValueChanged<RiverSideTopicPostDetail> onReplyPressed;
+  final VoidCallback? onLongPress;
+  final String? heroTag;
+
+  @override
+  Widget build(BuildContext context) {
+    final subtitleColor = Theme.of(context).colorScheme.onSurfaceVariant;
+
+    final card = Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onLongPress: onLongPress,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _PostAuthorHeader(post: post),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                children: [
+                  _MetaItem(
+                    icon: Icons.schedule_outlined,
+                    text: _formatDateTime(post.createdAt),
+                    color: subtitleColor,
+                  ),
+                  _MetaItem(
+                    icon: Icons.thumb_up_alt_outlined,
+                    text: '\u70b9\u8d5e ${post.likeCount}',
+                    color: subtitleColor,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              _PostContent(
+                markdown: post.contentMarkdown,
+                topicId: post.topicId,
+                cookieHeader: cookieHeader,
+                emojiUrls: emojiUrls,
+                onQuoteTap: onQuoteTap,
+                enableImageHero: false,
+              ),
+              const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.centerRight,
+                child: OutlinedButton.icon(
+                  onPressed: () => onReplyPressed(post),
+                  icon: const Icon(Icons.reply_outlined, size: 18),
+                  label: const Text(_TopicDetailPageState._labelReply),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (heroTag == null || heroTag!.isEmpty) {
+      return card;
+    }
+    return Hero(
+      tag: heroTag!,
+      flightShuttleBuilder: _commentCardHeroShuttleBuilder,
+      transitionOnUserGestures: true,
+      child: HeroMode(enabled: false, child: card),
+    );
+  }
+}
+
+class _PostReactionBar extends StatelessWidget {
+  const _PostReactionBar({
+    required this.post,
+    required this.reacting,
+    required this.onReactPressed,
+    required this.onReplyPressed,
+    required this.onReactionStatusPressed,
+  });
+
+  final RiverSideTopicPostDetail post;
+  final bool reacting;
+  final VoidCallback onReactPressed;
+  final VoidCallback onReplyPressed;
+  final ValueChanged<String> onReactionStatusPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final reactions = post.reactions.where((item) => item.count > 0).toList();
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        OutlinedButton.icon(
+          onPressed: onReplyPressed,
+          icon: const Icon(Icons.reply_outlined, size: 18),
+          label: const Text(_TopicDetailPageState._labelReply),
+        ),
+        OutlinedButton.icon(
+          onPressed: reacting ? null : onReactPressed,
+          icon: reacting
+              ? const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.add_reaction_outlined, size: 18),
+          label: const Text(_TopicDetailPageState._labelReact),
+        ),
+        ...reactions.map((reaction) {
+          final selected = post.currentUserReaction?.id == reaction.id;
+          return ActionChip(
+            avatar: Text(
+              _reactionEmoji(reaction.id),
+              style: const TextStyle(fontSize: 14),
+            ),
+            label: Text('${reaction.count}'),
+            labelStyle: theme.textTheme.bodySmall?.copyWith(
+              color: selected ? theme.colorScheme.primary : null,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+            ),
+            backgroundColor: selected
+                ? theme.colorScheme.primaryContainer
+                : theme.colorScheme.surfaceContainerHighest,
+            side: BorderSide(
+              color: selected
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.outlineVariant,
+            ),
+            onPressed: () => onReactionStatusPressed(reaction.id),
+          );
+        }),
+      ],
     );
   }
 }
@@ -806,6 +2561,7 @@ class _PostContent extends StatelessWidget {
     required this.cookieHeader,
     required this.emojiUrls,
     required this.onQuoteTap,
+    this.enableImageHero = true,
   });
 
   final String markdown;
@@ -813,6 +2569,7 @@ class _PostContent extends StatelessWidget {
   final String? cookieHeader;
   final Map<String, String> emojiUrls;
   final ValueChanged<_QuoteBlock> onQuoteTap;
+  final bool enableImageHero;
 
   @override
   Widget build(BuildContext context) {
@@ -832,6 +2589,7 @@ class _PostContent extends StatelessWidget {
               markdown: (blocks[i] as _MarkdownBlock).markdown,
               cookieHeader: cookieHeader,
               emojiUrls: emojiUrls,
+              enableImageHero: enableImageHero,
             )
           else
             _QuotePreviewCard(
@@ -907,11 +2665,13 @@ class _MarkdownContent extends StatelessWidget {
     required this.markdown,
     this.cookieHeader,
     this.emojiUrls = const <String, String>{},
+    this.enableImageHero = true,
   });
 
   final String markdown;
   final String? cookieHeader;
   final Map<String, String> emojiUrls;
+  final bool enableImageHero;
 
   @override
   Widget build(BuildContext context) {
@@ -968,6 +2728,7 @@ class _MarkdownContent extends StatelessWidget {
           viewerItems: viewerItems,
           initialIndex: initialIndex,
           heroTag: viewerItems[initialIndex].heroTag,
+          enableHero: enableImageHero,
         );
       },
       onTapLink: (_, href, _) {
@@ -1002,6 +2763,7 @@ class _MarkdownImage extends StatefulWidget {
     required this.viewerItems,
     required this.initialIndex,
     required this.heroTag,
+    this.enableHero = true,
   });
 
   final String url;
@@ -1009,6 +2771,7 @@ class _MarkdownImage extends StatefulWidget {
   final List<RiverImageViewerItem> viewerItems;
   final int initialIndex;
   final String heroTag;
+  final bool enableHero;
 
   @override
   State<_MarkdownImage> createState() => _MarkdownImageState();
@@ -1022,18 +2785,27 @@ class _MarkdownImageState extends State<_MarkdownImage> {
   Widget build(BuildContext context) {
     final baseHeaders = _headersForImageUrl(widget.url, widget.headers);
     final hasCookie = (baseHeaders?['Cookie'] ?? '').trim().isNotEmpty;
+    final isRiverSideImage = _isRiverSideImageUrl(widget.url);
     final requestHeaders = _retryWithoutCookie
         ? _stripCookieHeader(baseHeaders)
         : baseHeaders;
 
     final image = _fallbackToDirectImage
         ? _buildDirectImage(context, requestHeaders, hasCookie)
-        : _buildCachedImage(context, requestHeaders, hasCookie);
+        : _buildCachedImage(
+            context,
+            requestHeaders,
+            hasCookie,
+            isRiverSideImage,
+          );
 
-    return GestureDetector(
+    final content = GestureDetector(
       onTap: () => _openPreview(requestHeaders),
-      child: Hero(tag: widget.heroTag, child: image),
+      child: widget.enableHero
+          ? Hero(tag: widget.heroTag, child: image)
+          : image,
     );
+    return content;
   }
 
   void _openPreview(Map<String, String>? headers) {
@@ -1073,6 +2845,7 @@ class _MarkdownImageState extends State<_MarkdownImage> {
     BuildContext context,
     Map<String, String>? requestHeaders,
     bool hasCookie,
+    bool isRiverSideImage,
   ) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
@@ -1096,7 +2869,7 @@ class _MarkdownImageState extends State<_MarkdownImage> {
             });
             return _buildLoadingPlaceholder(context);
           }
-          if (!_fallbackToDirectImage) {
+          if (!_fallbackToDirectImage && (hasCookie || isRiverSideImage)) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (!mounted) {
                 return;
@@ -1397,6 +3170,33 @@ String _toPlainPreview(String markdown) {
       .trim();
 }
 
+String _stripQuotedMarkdown(String markdown) {
+  final source = markdown.trim();
+  if (source.isEmpty) {
+    return source;
+  }
+  var stripped = source;
+  stripped = stripped.replaceAll(
+    RegExp(r'\[quote(?:="[^"]*")?\][\s\S]*?\[/quote\]', caseSensitive: false),
+    '',
+  );
+  stripped = stripped.replaceAll(
+    RegExp(
+      r'<aside\b[^>]*class="[^"]*\bquote\b[^"]*"[^>]*>[\s\S]*?</aside>',
+      caseSensitive: false,
+    ),
+    '',
+  );
+  stripped = stripped.replaceAll(
+    RegExp(
+      r'^(?:[^\n]{0,120}:\s*\n)?(?:>\s?.*(?:\n|$))+',
+      caseSensitive: false,
+    ),
+    '',
+  );
+  return stripped.replaceAll(RegExp(r'\n{3,}'), '\n\n').trim();
+}
+
 class _EmojiInlineSyntax extends md.InlineSyntax {
   _EmojiInlineSyntax(this.emojiUrls) : super(r':([a-zA-Z0-9_+\-]+):');
 
@@ -1471,6 +3271,15 @@ Map<String, String>? _headersForImageUrl(
     return headers;
   }
   return null;
+}
+
+bool _isRiverSideImageUrl(String url) {
+  final host = (Uri.tryParse(url)?.host ?? '').trim().toLowerCase();
+  if (host.isEmpty) {
+    return false;
+  }
+  final forumHost = Uri.parse(riverSideBaseUrl).host.toLowerCase();
+  return host == forumHost || host.endsWith('.$forumHost');
 }
 
 Map<String, String>? _stripCookieHeader(Map<String, String>? headers) {
