@@ -2,7 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:package_info_plus/package_info_plus.dart'; // 新增引入
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:river/app/app_dependencies.dart';
 import 'package:river/core/account/account_models.dart';
 import 'package:river/core/platform/riverside_webview_support.dart';
@@ -12,6 +12,7 @@ import 'package:river/features/login/riverside_login_webview_page.dart';
 import 'package:river/features/mine/about_page.dart';
 import 'package:river/features/mine/appearance_settings_page.dart';
 import 'package:river/features/mine/riverside_profile_page.dart';
+import 'package:river/features/mine/storage_settings_page.dart'; // 引入新页面
 import 'package:river/core/navigation/river_page_route.dart';
 
 class MinePage extends StatefulWidget {
@@ -28,7 +29,7 @@ class _MinePageState extends State<MinePage> {
   // 状态与逻辑
   // ---------------------------------------------------------------------------
   bool _isBusy = false;
-  String _appVersion = ''; // 用于存储版本号
+  String _appVersion = '';
 
   UserAccount? get _activeAccount =>
       widget.dependencies.accountStore.activeRiverSideAccount;
@@ -39,7 +40,7 @@ class _MinePageState extends State<MinePage> {
   @override
   void initState() {
     super.initState();
-    _loadAppVersion(); // 初始化时获取版本号
+    _loadAppVersion();
   }
 
   Future<void> _loadAppVersion() async {
@@ -51,7 +52,7 @@ class _MinePageState extends State<MinePage> {
         });
       }
     } catch (e) {
-      // 忽略版本获取错误，保持为空即可
+      // Ignore
     }
   }
 
@@ -71,7 +72,7 @@ class _MinePageState extends State<MinePage> {
 
   Future<void> _onAddAccountPressed() async {
     if (_isBusy) return;
-    Navigator.pop(context); // 关闭 BottomSheet
+    Navigator.pop(context);
 
     final support = await RiverSideWebViewSupport.check();
     if (!mounted) return;
@@ -104,7 +105,7 @@ class _MinePageState extends State<MinePage> {
         )) {
       return;
     }
-    Navigator.pop(context); // 关闭 BottomSheet
+    Navigator.pop(context);
 
     _setBusy(true);
     final success = await widget.dependencies.accountStore
@@ -172,7 +173,7 @@ class _MinePageState extends State<MinePage> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.transparent, // 透明背景以实现圆角
+      backgroundColor: Colors.transparent,
       builder: (context) => _AccountManagerSheet(
         accounts: _allAccounts,
         activeAccount: _activeAccount,
@@ -191,6 +192,13 @@ class _MinePageState extends State<MinePage> {
         ),
       ),
     );
+  }
+
+  // 新增：打开存储设置
+  void _openStorageSettings() {
+    Navigator.of(
+      context,
+    ).push(riverPageRoute<void>(builder: (_) => const StorageSettingsPage()));
   }
 
   void _openAboutPage() {
@@ -214,7 +222,6 @@ class _MinePageState extends State<MinePage> {
 
   @override
   Widget build(BuildContext context) {
-    // 监听账号变化
     return AnimatedBuilder(
       animation: widget.dependencies.accountStore,
       builder: (context, _) {
@@ -223,10 +230,8 @@ class _MinePageState extends State<MinePage> {
         return Scaffold(
           body: CustomScrollView(
             slivers: [
-              // 1. 顶部个人信息卡片
               SliverToBoxAdapter(child: _buildHeader(context, account)),
 
-              // 2. 设置选项列表
               SliverPadding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 sliver: SliverList(
@@ -237,30 +242,35 @@ class _MinePageState extends State<MinePage> {
                       children: [
                         _SettingsTile(
                           icon: Icons.palette_outlined,
-                          title: '外观与主题',
-                          subtitle: '深色模式、主题色',
+                          title: '外观',
+                          subtitle: '主题色、深色模式、字体大小',
                           onTap: _openAppearanceSettings,
                         ),
-                        // 预留位置：通知设置、隐私设置等
+                        // 增加了分隔线
+                        const _SettingsDivider(),
+                        _SettingsTile(
+                          icon: Icons.sd_storage_outlined,
+                          title: '存储空间',
+                          subtitle: '缓存清理',
+                          onTap: _openStorageSettings,
+                        ),
                       ],
                     ),
                     const SizedBox(height: 24),
-                    _SectionTitle(title: '关于'),
+                    _SectionTitle(title: '其他'), // 改为其他更合适
                     _SettingsCard(
                       children: [
                         _SettingsTile(
                           icon: Icons.info_outline_rounded,
                           title: '关于 River',
-                          // 使用本地状态 _appVersion
                           subtitle: _appVersion.isNotEmpty
-                              ? '版本 $_appVersion'
-                              : '版本信息加载中...',
+                              ? '当前版本 $_appVersion'
+                              : null,
                           onTap: _openAboutPage,
                         ),
                       ],
                     ),
 
-                    // 底部留白
                     const SizedBox(height: 100),
                   ]),
                 ),
@@ -419,7 +429,7 @@ class _MinePageState extends State<MinePage> {
 }
 
 // -----------------------------------------------------------------------------
-// 组件：设置卡片容器
+// 组件
 // -----------------------------------------------------------------------------
 class _SettingsCard extends StatelessWidget {
   const _SettingsCard({required this.children});
@@ -438,9 +448,21 @@ class _SettingsCard extends StatelessWidget {
   }
 }
 
-// -----------------------------------------------------------------------------
-// 组件：单个设置项
-// -----------------------------------------------------------------------------
+class _SettingsDivider extends StatelessWidget {
+  const _SettingsDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return Divider(
+      height: 1,
+      thickness: 1,
+      indent: 56,
+      endIndent: 0,
+      color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.2),
+    );
+  }
+}
+
 class _SettingsTile extends StatelessWidget {
   const _SettingsTile({
     required this.icon,
@@ -677,7 +699,7 @@ class _AccountManagerSheetState extends State<_AccountManagerSheet> {
                       '即将上线',
                       style: TextStyle(fontSize: 10),
                     ),
-                    enabled: false, // 暂时禁用
+                    enabled: false,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
