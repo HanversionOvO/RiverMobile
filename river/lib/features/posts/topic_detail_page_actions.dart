@@ -4,12 +4,16 @@ extension _TopicDetailPageCommentActions on _TopicDetailPageState {
   Future<void> _openAuthorProfileSheetForPost(
     RiverSideTopicPostDetail post,
   ) async {
+    final avatarHeroTag = _topicPostAuthorAvatarHeroTag(post);
+    final nameHeroTag = _topicPostAuthorNameHeroTag(post);
     await showRiverSideUserProfileSheet(
       context: context,
       dependencies: widget.dependencies,
       username: post.authorUsername,
       displayName: post.authorDisplayName,
       avatarUrl: post.authorAvatarUrl,
+      heroTagAvatar: avatarHeroTag,
+      heroTagName: nameHeroTag,
     );
   }
 

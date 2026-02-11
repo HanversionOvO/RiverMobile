@@ -1,17 +1,17 @@
 import 'dart:async';
-import 'dart:ui'; // 用于 ImageFilter
 
 import 'package:flutter/material.dart';
 import 'package:river/app/app_dependencies.dart';
 import 'package:river/core/categories/riverside_category_utils.dart';
 import 'package:river/core/network/riverside_api_client.dart';
 import 'package:river/core/network/riverside_topic_models.dart';
+import 'package:river/core/realtime/riverside_message_bus_poller.dart';
 import 'package:river/features/mine/riverside_profile_sheet.dart';
 import 'package:river/features/posts/topic_detail_page.dart';
 import 'package:river/core/navigation/river_page_route.dart';
 
 // -----------------------------------------------------------------------------
-// 控制器 (保持兼容)
+
 // -----------------------------------------------------------------------------
 class PostsPageController {
   _PostsPageState? _state;
@@ -26,14 +26,13 @@ class PostsPageController {
     }
   }
 
-  /// 滚动当前激活的 Tab 到顶部并刷新
   Future<void> scrollToTopAndRefresh() async {
     await _state?._scrollToTopAndRefresh();
   }
 }
 
 // -----------------------------------------------------------------------------
-// 主页面
+
 // -----------------------------------------------------------------------------
 class PostsPage extends StatefulWidget {
   const PostsPage({super.key, required this.dependencies, this.controller});
@@ -46,37 +45,123 @@ class PostsPage extends StatefulWidget {
 }
 
 class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
-  // 数据源
+  static const String _latestTopicChannel = '/latest';
+
   List<RiverSideCategoryOption> _categories = [];
   bool _loadingCategories = false;
 
-  // 筛选状态 (全局共享)
   int? _selectedBoardId;
   String? _selectedBoardName;
 
-  // Tab 控制
   late TabController _tabController;
   final List<RiverSideTopicFeed> _feeds = RiverSideTopicFeed.values;
 
-  // 用于通过 Key 通知子 Tab 刷新的机制
   int _filterVersion = 0;
 
-  // 引用子组件以控制滚动
   final Map<int, GlobalKey<_TopicListTabState>> _tabKeys = {};
+  String? _lastActiveUsername;
+  RiverSideMessageBusPoller? _messageBusPoller;
+  bool _hasRealtimeTopicUpdate = false;
 
   @override
   void initState() {
     super.initState();
     widget.controller?._attach(this);
+    _lastActiveUsername =
+        widget.dependencies.accountStore.activeRiverSideUsername;
+    widget.dependencies.accountStore.addListener(_onAccountStoreChanged);
     _tabController = TabController(length: _feeds.length, vsync: this);
     _loadCategories();
+    _restartRealtimePolling();
   }
 
   @override
   void dispose() {
+    _messageBusPoller?.stop();
+    widget.dependencies.accountStore.removeListener(_onAccountStoreChanged);
     widget.controller?._detach(this);
     _tabController.dispose();
     super.dispose();
+  }
+
+  void _onAccountStoreChanged() {
+    final current = widget.dependencies.accountStore.activeRiverSideUsername;
+    if (current == _lastActiveUsername) {
+      return;
+    }
+    _lastActiveUsername = current;
+    _messageBusPoller?.stop();
+    _messageBusPoller = null;
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _hasRealtimeTopicUpdate = false;
+      _filterVersion++;
+    });
+    _loadCategories();
+    unawaited(_scrollToTopAndRefresh());
+    _restartRealtimePolling();
+  }
+
+  String? _activeCookieHeader() {
+    final username = widget.dependencies.accountStore.activeRiverSideUsername;
+    if (username == null || username.isEmpty) {
+      return null;
+    }
+    return widget.dependencies.accountStore.riverSideCookieHeaderFor(username);
+  }
+
+  void _restartRealtimePolling() {
+    _messageBusPoller?.stop();
+    _messageBusPoller = null;
+
+    final cookie = _activeCookieHeader();
+    if (cookie == null || cookie.trim().isEmpty) {
+      return;
+    }
+
+    final poller = RiverSideMessageBusPoller(
+      apiClient: widget.dependencies.accountStore.riverSideApiClient,
+      cookieHeader: cookie,
+      channelLastIds: RiverSideMessageBusPoller.buildInitialChannels(
+        const <String>[_latestTopicChannel],
+      ),
+      onEvents: (events) {
+        if (!mounted || events.isEmpty) {
+          return;
+        }
+        final hasLatestEvent = events.any(
+          (event) => event.channel == _latestTopicChannel,
+        );
+        if (!hasLatestEvent || _hasRealtimeTopicUpdate) {
+          return;
+        }
+        setState(() {
+          _hasRealtimeTopicUpdate = true;
+        });
+      },
+    );
+    _messageBusPoller = poller;
+    poller.start();
+  }
+
+  Future<void> _consumeRealtimeTopicUpdate() async {
+    if (_hasRealtimeTopicUpdate && mounted) {
+      setState(() {
+        _hasRealtimeTopicUpdate = false;
+      });
+    }
+    await _scrollToTopAndRefresh();
+  }
+
+  void _dismissRealtimeTopicUpdateHint() {
+    if (!_hasRealtimeTopicUpdate || !mounted) {
+      return;
+    }
+    setState(() {
+      _hasRealtimeTopicUpdate = false;
+    });
   }
 
   Future<void> _loadCategories() async {
@@ -118,7 +203,7 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
           setState(() {
             _selectedBoardId = category?.id;
             _selectedBoardName = category?.name;
-            _filterVersion++; // 触发子 Tab 重建/刷新
+            _filterVersion++;
           });
         },
       ),
@@ -130,107 +215,210 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
     final theme = Theme.of(context);
 
     return Scaffold(
-      body: NestedScrollView(
-        headerSliverBuilder: (context, innerBoxIsScrolled) {
-          return [
-            SliverAppBar(
-              // 1. 移除 Title，节省顶部空间
-              title: null,
-              toolbarHeight: 0, // 隐藏标准 Toolbar 区域
-              pinned: true,
-              floating: true,
-              forceElevated: innerBoxIsScrolled,
-              backgroundColor: theme.colorScheme.surface.withOpacity(0.95),
-              // 自定义 Bottom 区域作为主要导航栏
-              bottom: PreferredSize(
-                preferredSize: const Size.fromHeight(52), // 稍微增加高度以容纳 padding
-                child: Container(
-                  height: 52,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    border: Border(
-                      bottom: BorderSide(
-                        color: theme.colorScheme.outlineVariant.withOpacity(
-                          0.2,
+      body: Stack(
+        children: [
+          NestedScrollView(
+            headerSliverBuilder: (context, innerBoxIsScrolled) {
+              return [
+                SliverAppBar(
+                  title: null,
+                  toolbarHeight: 0,
+                  pinned: true,
+                  floating: true,
+                  forceElevated: innerBoxIsScrolled,
+                  backgroundColor: theme.colorScheme.surface.withOpacity(0.95),
+
+                  bottom: PreferredSize(
+                    preferredSize: const Size.fromHeight(52),
+                    child: Container(
+                      height: 52,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        border: Border(
+                          bottom: BorderSide(
+                            color: theme.colorScheme.outlineVariant.withOpacity(
+                              0.2,
+                            ),
+                            width: 1,
+                          ),
                         ),
-                        width: 1,
+                      ),
+                      child: Row(
+                        children: [
+                          // TabBar
+                          Expanded(
+                            child: TabBar(
+                              controller: _tabController,
+                              isScrollable: true,
+                              tabAlignment: TabAlignment.start,
+                              indicatorColor: theme.colorScheme.primary,
+                              labelColor: theme.colorScheme.primary,
+                              unselectedLabelColor:
+                                  theme.colorScheme.onSurfaceVariant,
+                              indicatorSize: TabBarIndicatorSize.label,
+                              dividerColor: Colors.transparent,
+                              labelStyle: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                              ),
+                              labelPadding: const EdgeInsets.only(right: 24),
+                              tabs: _feeds
+                                  .map((feed) => Tab(text: feed.label))
+                                  .toList(),
+                            ),
+                          ),
+
+                          Container(
+                            width: 1,
+                            height: 20,
+                            color: theme.colorScheme.outlineVariant.withOpacity(
+                              0.5,
+                            ),
+                            margin: const EdgeInsets.symmetric(horizontal: 8),
+                          ),
+
+                          _buildBoardFilterButton(theme),
+                        ],
                       ),
                     ),
                   ),
-                  child: Row(
-                    children: [
-                      // TabBar
-                      Expanded(
-                        child: TabBar(
-                          controller: _tabController,
-                          isScrollable: true,
-                          tabAlignment: TabAlignment.start,
-                          indicatorColor: theme.colorScheme.primary,
-                          labelColor: theme.colorScheme.primary,
-                          unselectedLabelColor:
-                              theme.colorScheme.onSurfaceVariant,
-                          indicatorSize: TabBarIndicatorSize.label,
-                          dividerColor: Colors.transparent,
-                          labelStyle: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
+                ),
+              ];
+            },
+            body: TabBarView(
+              controller: _tabController,
+              children: _feeds.asMap().entries.map((entry) {
+                final index = entry.key;
+                final feed = entry.value;
+
+                _tabKeys[index] ??= GlobalKey<_TopicListTabState>();
+
+                return _TopicListTab(
+                  key: _tabKeys[index],
+                  dependencies: widget.dependencies,
+                  feed: feed,
+                  boardId: _selectedBoardId,
+                  filterVersion: _filterVersion,
+                );
+              }).toList(),
+            ),
+          ),
+          Positioned(
+            left: 20,
+            right: 20,
+            top: 60,
+            child: SafeArea(
+              bottom: false,
+              child: IgnorePointer(
+                ignoring: !_hasRealtimeTopicUpdate,
+                child: AnimatedSlide(
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOutBack,
+                  offset: _hasRealtimeTopicUpdate
+                      ? Offset.zero
+                      : const Offset(0, -0.3),
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 180),
+                    opacity: _hasRealtimeTopicUpdate ? 1 : 0,
+                    child: AnimatedScale(
+                      duration: const Duration(milliseconds: 220),
+                      curve: Curves.easeOutBack,
+                      scale: _hasRealtimeTopicUpdate ? 1 : 0.97,
+                      child: Align(
+                        alignment: Alignment.topCenter,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 520),
+                          child: Material(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(999),
+                                color: Colors.transparent,
+                                border: Border.all(
+                                  color: theme.colorScheme.outlineVariant
+                                      .withValues(alpha: 0.7),
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: theme.colorScheme.shadow.withValues(
+                                      alpha: 0.08,
+                                    ),
+                                    blurRadius: 14,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(999),
+                                      onTap: _consumeRealtimeTopicUpdate,
+                                      child: Padding(
+                                        padding: const EdgeInsets.fromLTRB(
+                                          12,
+                                          8,
+                                          8,
+                                          8,
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Icon(
+                                              Icons.fiber_new_rounded,
+                                              size: 16,
+                                              color: theme.colorScheme.primary,
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Flexible(
+                                              child: Text(
+                                                '有新帖子，点击刷新',
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: theme
+                                                    .textTheme
+                                                    .labelMedium
+                                                    ?.copyWith(
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                    ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  IconButton(
+                                    tooltip: '关闭',
+                                    visualDensity: VisualDensity.compact,
+                                    onPressed: _dismissRealtimeTopicUpdateHint,
+                                    icon: const Icon(Icons.close_rounded),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
-                          labelPadding: const EdgeInsets.only(right: 24),
-                          tabs: _feeds
-                              .map((feed) => Tab(text: feed.label))
-                              .toList(),
                         ),
                       ),
-
-                      // 垂直分割线
-                      Container(
-                        width: 1,
-                        height: 20,
-                        color: theme.colorScheme.outlineVariant.withOpacity(
-                          0.5,
-                        ),
-                        margin: const EdgeInsets.symmetric(horizontal: 8),
-                      ),
-
-                      // 2. 板块筛选按钮 (Hero 源)
-                      _buildBoardFilterButton(theme),
-                    ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ];
-        },
-        body: TabBarView(
-          controller: _tabController,
-          children: _feeds.asMap().entries.map((entry) {
-            final index = entry.key;
-            final feed = entry.value;
-
-            _tabKeys[index] ??= GlobalKey<_TopicListTabState>();
-
-            return _TopicListTab(
-              key: _tabKeys[index],
-              dependencies: widget.dependencies,
-              feed: feed,
-              boardId: _selectedBoardId,
-              filterVersion: _filterVersion,
-            );
-          }).toList(),
-        ),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildBoardFilterButton(ThemeData theme) {
     final hasSelection = _selectedBoardId != null;
-    final label = _selectedBoardName ?? '全部板块';
+    final label = _selectedBoardName ?? '\u5168\u90e8\u677f\u5757';
 
     return Hero(
-      tag: 'board_picker_hero', // Hero 标签
+      tag: 'board_picker_hero',
       flightShuttleBuilder:
           (flightContext, animation, direction, fromContext, toContext) {
             return Material(color: Colors.transparent, child: toContext.widget);
@@ -299,7 +487,7 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
 }
 
 // -----------------------------------------------------------------------------
-// 单个 Tab 的帖子列表
+
 // -----------------------------------------------------------------------------
 class _TopicListTab extends StatefulWidget {
   const _TopicListTab({
@@ -396,7 +584,9 @@ class _TopicListTabState extends State<_TopicListTab>
       if (!mounted || serial != _requestSerial) return;
       setState(() {
         _isLoading = false;
-        _error = e is RiverSideApiException ? e.message : '加载失败';
+        _error = e is RiverSideApiException
+            ? e.message
+            : '\u52a0\u8f7d\u5931\u8d25';
       });
     }
   }
@@ -451,14 +641,17 @@ class _TopicListTabState extends State<_TopicListTab>
   }
 
   void _openAuthor(RiverSideTopicSummary topic) {
-    // 生成 Hero Tag
-    final heroTag = 'avatar_${topic.id}_${topic.authorUsername}';
+    final avatarHeroTag = _buildAuthorAvatarHeroTag(topic);
+    final nameHeroTag = _buildAuthorNameHeroTag(topic);
 
     showRiverSideUserProfileSheet(
       context: context,
       dependencies: widget.dependencies,
       username: topic.authorUsername,
-      heroTagAvatar: heroTag, // 传递 Tag，确保 riverside_profile_sheet.dart 已更新支持此参数
+      displayName: topic.authorDisplayName,
+      avatarUrl: topic.authorAvatarUrl,
+      heroTagAvatar: avatarHeroTag,
+      heroTagName: nameHeroTag,
     );
   }
 
@@ -481,7 +674,7 @@ class _TopicListTabState extends State<_TopicListTab>
             const SizedBox(height: 16),
             FilledButton.tonal(
               onPressed: _loadFirstPage,
-              child: const Text('重试'),
+              child: const Text('\u91cd\u8bd5'),
             ),
           ],
         ),
@@ -499,8 +692,14 @@ class _TopicListTabState extends State<_TopicListTab>
               color: Colors.grey.withOpacity(0.3),
             ),
             const SizedBox(height: 16),
-            const Text('暂无帖子', style: TextStyle(color: Colors.grey)),
-            TextButton(onPressed: _loadFirstPage, child: const Text('刷新')),
+            const Text(
+              '\u6682\u65e0\u5e16\u5b50',
+              style: TextStyle(color: Colors.grey),
+            ),
+            TextButton(
+              onPressed: _loadFirstPage,
+              child: const Text('\u5237\u65b0'),
+            ),
           ],
         ),
       );
@@ -527,7 +726,7 @@ class _TopicListTabState extends State<_TopicListTab>
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : Text(
-                        '没有更多了',
+                        '\u6ca1\u6709\u66f4\u591a\u4e86',
                         style: TextStyle(
                           color: Theme.of(context).colorScheme.outline,
                         ),
@@ -549,7 +748,7 @@ class _TopicListTabState extends State<_TopicListTab>
 }
 
 // -----------------------------------------------------------------------------
-// 美化后的板块选择器
+
 // -----------------------------------------------------------------------------
 class _RiverSideBoardPicker extends StatelessWidget {
   const _RiverSideBoardPicker({
@@ -571,7 +770,6 @@ class _RiverSideBoardPicker extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 1. Hero Header (标题区域)
         Hero(
           tag: 'board_picker_hero',
           child: Material(
@@ -586,7 +784,7 @@ class _RiverSideBoardPicker extends StatelessWidget {
                   ),
                   const SizedBox(width: 12),
                   Text(
-                    '选择板块',
+                    '\u9009\u62e9\u677f\u5757',
                     style: theme.textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),
@@ -597,13 +795,11 @@ class _RiverSideBoardPicker extends StatelessWidget {
           ),
         ),
 
-        // 列表内容
         Flexible(
           child: ListView(
             shrinkWrap: true,
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
             children: [
-              // 2. 优化后的“全部板块”按钮
               InkWell(
                 onTap: () => onSelected(null),
                 borderRadius: BorderRadius.circular(16),
@@ -650,7 +846,7 @@ class _RiverSideBoardPicker extends StatelessWidget {
                       ),
                       const SizedBox(width: 16),
                       Text(
-                        '全部板块',
+                        '\u5168\u90e8\u677f\u5757',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
@@ -670,7 +866,6 @@ class _RiverSideBoardPicker extends StatelessWidget {
 
               const SizedBox(height: 20),
 
-              // 3. 板块分组列表
               ...groups.map(
                 (group) => Padding(
                   padding: const EdgeInsets.only(bottom: 16),
@@ -709,7 +904,6 @@ class _BoardGroupCard extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 父板块
         InkWell(
           onTap: () => onSelected(parent),
           borderRadius: BorderRadius.circular(8),
@@ -750,7 +944,6 @@ class _BoardGroupCard extends StatelessWidget {
           ),
         ),
 
-        // 子板块 (Chips)
         if (group.children.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(left: 14, top: 4),
@@ -764,7 +957,7 @@ class _BoardGroupCard extends StatelessWidget {
                   label: Text(child.name),
                   onSelected: (_) => onSelected(child),
                   side: BorderSide.none,
-                  showCheckmark: false, // 已移除对号
+                  showCheckmark: false,
                   backgroundColor: theme.colorScheme.surfaceContainerHighest
                       .withOpacity(0.3),
                   selectedColor: theme.colorScheme.primaryContainer,
@@ -793,10 +986,19 @@ class _BoardGroupCard extends StatelessWidget {
 }
 
 // -----------------------------------------------------------------------------
-// 帖子卡片
+
 // -----------------------------------------------------------------------------
+String _buildAuthorAvatarHeroTag(RiverSideTopicSummary topic) {
+  return 'author_avatar_${topic.id}_${topic.authorUsername}';
+}
+
+String _buildAuthorNameHeroTag(RiverSideTopicSummary topic) {
+  return 'author_name_${topic.id}_${topic.authorUsername}';
+}
+
 class _TopicCard extends StatelessWidget {
   const _TopicCard({
+    super.key, // 推荐加上 super.key
     required this.topic,
     required this.isHotFeed,
     required this.onTap,
@@ -814,32 +1016,37 @@ class _TopicCard extends StatelessWidget {
     final isPinned = topic.isPinned;
     final isHot = topic.isHot || isHotFeed;
 
-    // 为头像生成唯一的 Hero Tag
-    final avatarHeroTag = 'avatar_${topic.id}_${topic.authorUsername}';
+    // 1. 定义 Hero Tags (必须与用户资料 Sheet 保持一致)
+    final avatarHeroTag = _buildAuthorAvatarHeroTag(topic);
+    final nameHeroTag = _buildAuthorNameHeroTag(topic);
+    final titleHeroTag = 'title_${topic.id}';
 
     return Container(
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
+          // 优化阴影：更柔和、扩散更广
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 10,
+            color: theme.shadowColor.withOpacity(0.06),
+            blurRadius: 12,
             offset: const Offset(0, 4),
           ),
         ],
       ),
-      clipBehavior: Clip.antiAlias,
+      clipBehavior: Clip.antiAlias, // 确保水波纹不溢出圆角
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
+          splashColor: theme.colorScheme.primary.withOpacity(0.08),
+          highlightColor: theme.colorScheme.primary.withOpacity(0.04),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // 顶部信息栏
+                // --- 顶部信息栏 ---
                 Row(
                   children: [
                     GestureDetector(
@@ -847,7 +1054,7 @@ class _TopicCard extends StatelessWidget {
                       child: Hero(
                         tag: avatarHeroTag,
                         child: CircleAvatar(
-                          radius: 12,
+                          radius: 14,
                           backgroundImage: topic.authorAvatarUrl.isNotEmpty
                               ? NetworkImage(topic.authorAvatarUrl)
                               : null,
@@ -856,118 +1063,119 @@ class _TopicCard extends StatelessWidget {
                           child: topic.authorAvatarUrl.isEmpty
                               ? Icon(
                                   Icons.person,
-                                  size: 14,
+                                  size: 16,
                                   color: theme.colorScheme.onSurfaceVariant,
                                 )
                               : null,
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 10),
                     Expanded(
-                      child: Text.rich(
-                        TextSpan(
-                          children: [
-                            TextSpan(
-                              text: topic.authorDisplayName,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Hero(
+                            tag: nameHeroTag,
+                            child: Material(
+                              color: Colors.transparent,
+                              child: Text.rich(
+                                TextSpan(
+                                  children: [
+                                    TextSpan(
+                                      text: topic.authorDisplayName,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                softWrap: false,
+                                style: theme.textTheme.labelLarge,
                               ),
                             ),
-                            const TextSpan(text: ' · '),
-                            TextSpan(
-                              text: _formatTimeRelative(topic.createdAt),
-                              style: TextStyle(
-                                color: theme.colorScheme.outline,
-                                fontWeight: FontWeight.normal,
-                              ),
+                          ),
+                          Text(
+                            _formatTimeRelative(topic.createdAt),
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.outline,
+                              fontSize: 11,
                             ),
-                          ],
-                        ),
-                        style: theme.textTheme.labelMedium,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
                       ),
                     ),
+
+                    // 标签区域
                     if (isPinned)
-                      Container(
-                        margin: const EdgeInsets.only(left: 6),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.primaryContainer,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          '置顶',
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: theme.colorScheme.primary,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                      _buildTag(
+                        theme,
+                        '置顶',
+                        theme.colorScheme.primaryContainer,
+                        theme.colorScheme.primary,
                       ),
+                    if (isPinned && isHot) const SizedBox(width: 6),
                     if (isHot)
-                      Container(
-                        margin: const EdgeInsets.only(left: 6),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.shade50,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          '热门',
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: Colors.orange.shade800,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                      _buildTag(
+                        theme,
+                        '热门',
+                        Colors.orange.shade50,
+                        Colors.orange.shade800,
                       ),
                   ],
                 ),
 
-                const SizedBox(height: 10),
+                const SizedBox(height: 12),
 
-                // 标题
-                Text(
-                  topic.title,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    height: 1.3,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-
-                // 摘要
-                if (topic.excerpt.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    topic.excerpt.replaceAll('\n', ' '),
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                      height: 1.4,
+                // --- 标题 (Hero 源) ---
+                Hero(
+                  tag: titleHeroTag,
+                  // 飞行过程中使用 DefaultTextStyle 避免黄色下划线
+                  flightShuttleBuilder: (_, animation, __, ___, toContext) {
+                    return DefaultTextStyle(
+                      style: DefaultTextStyle.of(toContext).style,
+                      child: toContext.widget,
+                    );
+                  },
+                  child: Text(
+                    topic.title,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      height: 1.3,
+                      fontSize: 17, // 列表页字体稍大
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
+                ),
+
+                // --- 摘要 ---
+                if (topic.excerpt.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    topic.excerpt.replaceAll('\n', ' '),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      height: 1.5,
+                      fontSize: 14,
+                    ),
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ],
 
-                const SizedBox(height: 12),
+                const SizedBox(height: 14),
 
-                // 底部数据栏
+                // --- 底部数据栏 ---
                 Row(
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 8,
-                        vertical: 2,
+                        vertical: 4,
                       ),
                       decoration: BoxDecoration(
                         color: theme.colorScheme.surfaceContainerHighest
@@ -979,6 +1187,7 @@ class _TopicCard extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 11,
                           color: theme.colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ),
@@ -1002,14 +1211,29 @@ class _TopicCard extends StatelessWidget {
     );
   }
 
+  // 辅助方法：构建标签
+  Widget _buildTag(ThemeData theme, String text, Color bg, Color fg) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(fontSize: 10, color: fg, fontWeight: FontWeight.bold),
+      ),
+    );
+  }
+
   String _formatTimeRelative(DateTime? time) {
     if (time == null) return '';
     final now = DateTime.now();
     final diff = now.difference(time);
-    if (diff.inMinutes < 1) return '刚刚';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}分钟前';
-    if (diff.inHours < 24) return '${diff.inHours}小时前';
-    if (diff.inDays < 7) return '${diff.inDays}天前';
+    if (diff.inMinutes < 1) return '\u521a\u521a';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}\u5206\u949f\u524d';
+    if (diff.inHours < 24) return '${diff.inHours}\u5c0f\u65f6\u524d';
+    if (diff.inDays < 7) return '${diff.inDays}\u5929\u524d';
     return '${time.month}/${time.day}';
   }
 }

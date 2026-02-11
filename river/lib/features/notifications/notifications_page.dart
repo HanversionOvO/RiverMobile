@@ -327,9 +327,8 @@ class _NotificationsPageState extends State<NotificationsPage>
     final cookie = _activeCookieHeader();
     if (cookie == null) return;
 
-    var userId =
-        widget.dependencies.accountStore.activeRiverSideAccount?.userId;
-    if (userId == null) return;
+    final userId = await _resolvePollingUserId(cookie: cookie);
+    if (!mounted || userId == null) return;
 
     final channel = '/notification/$userId';
     _messageBusPoller = RiverSideMessageBusPoller(
@@ -344,6 +343,37 @@ class _NotificationsPageState extends State<NotificationsPage>
       },
     );
     _messageBusPoller?.start();
+  }
+
+  Future<int?> _resolvePollingUserId({required String cookie}) async {
+    final account = widget.dependencies.accountStore.activeRiverSideAccount;
+    final currentId = account?.userId;
+    if (currentId != null && currentId > 0) {
+      return currentId;
+    }
+
+    final activeUsername =
+        widget.dependencies.accountStore.activeRiverSideUsername;
+    if (activeUsername == null || activeUsername.isEmpty) {
+      return null;
+    }
+
+    try {
+      final profile = await widget.dependencies.accountStore.riverSideApiClient
+          .fetchCurrentUserByCookie(
+            cookieHeader: cookie,
+            fallbackLogin: activeUsername,
+          );
+      await widget.dependencies.accountStore.upsertRiverSideAccount(profile);
+      final refreshedId = profile.userId;
+      if (refreshedId != null && refreshedId > 0) {
+        return refreshedId;
+      }
+    } catch (_) {
+      // Keep realtime polling resilient; no-op when user id cannot be resolved.
+    }
+
+    return null;
   }
 
   // ---------------------------------------------------------------------------

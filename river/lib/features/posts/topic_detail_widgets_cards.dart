@@ -77,6 +77,8 @@ class _MainPostCardState extends State<_MainPostCard>
             _PostAuthorHeader(
               post: post,
               onTap: () => widget.onAuthorTap(post),
+              heroTagAvatar: _topicPostAuthorAvatarHeroTag(post),
+              heroTagName: _topicPostAuthorNameHeroTag(post),
             ),
             const SizedBox(height: 10),
             Wrap(
@@ -195,6 +197,8 @@ class _CommentCardState extends State<_CommentCard>
                   _PostAuthorHeader(
                     post: widget.post,
                     onTap: () => widget.onAuthorTap(widget.post),
+                    heroTagAvatar: _topicPostAuthorAvatarHeroTag(widget.post),
+                    heroTagName: _topicPostAuthorNameHeroTag(widget.post),
                   ),
                   const SizedBox(height: 8),
                   Wrap(
@@ -277,7 +281,12 @@ class _CommentDetailPostCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _PostAuthorHeader(post: post, onTap: () => onAuthorTap(post)),
+              _PostAuthorHeader(
+                post: post,
+                onTap: () => onAuthorTap(post),
+                heroTagAvatar: _topicPostAuthorAvatarHeroTag(post),
+                heroTagName: _topicPostAuthorNameHeroTag(post),
+              ),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 12,

@@ -4,7 +4,6 @@ import 'package:river/core/account/account_models.dart';
 import 'package:river/core/network/riverside_api_client.dart';
 import 'package:river/core/network/riverside_profile_models.dart';
 import 'package:river/features/mine/riverside_profile_page.dart';
-import 'package:river/core/navigation/river_page_route.dart';
 
 Future<void> showRiverSideUserProfileSheet({
   required BuildContext context,
@@ -28,24 +27,43 @@ Future<void> showRiverSideUserProfileSheet({
     avatarUrl: avatarUrl,
   );
 
-  // 显示弹窗
-  await showModalBottomSheet(
-    context: context,
-    isScrollControlled: true,
-    useSafeArea: true,
-    backgroundColor: Colors.transparent,
-    // 允许内容拖拽
-    enableDrag: true,
-    builder: (_) {
-      return _RiverSideUserProfileSheet(
-        dependencies: dependencies,
-        username: normalizedUsername,
-        initialAccount: initialAccount,
-        cookieHeader: cookieHeader,
-        heroTagAvatar: heroTagAvatar,
-        heroTagName: heroTagName,
-      );
-    },
+  // 使用 PageRouteBuilder 而非 showModalBottomSheet，确保 Hero 转场可用
+  await Navigator.of(context).push<void>(
+    PageRouteBuilder<void>(
+      opaque: false,
+      barrierDismissible: true,
+      barrierColor: Colors.black54,
+      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+      transitionDuration: const Duration(milliseconds: 260),
+      reverseTransitionDuration: const Duration(milliseconds: 220),
+      pageBuilder: (routeContext, animation, secondaryAnimation) {
+        return _RiverSideUserProfileSheet(
+          dependencies: dependencies,
+          username: normalizedUsername,
+          initialAccount: initialAccount,
+          cookieHeader: cookieHeader,
+          heroTagAvatar: heroTagAvatar,
+          heroTagName: heroTagName,
+        );
+      },
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+          reverseCurve: Curves.easeInCubic,
+        );
+        return FadeTransition(
+          opacity: curved,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, 0.06),
+              end: Offset.zero,
+            ).animate(curved),
+            child: child,
+          ),
+        );
+      },
+    ),
   );
 }
 
@@ -63,15 +81,20 @@ UserAccount _resolveAccount({
   String? displayName,
   String? avatarUrl,
 }) {
+  final trimmedName = (displayName ?? '').trim();
+  final trimmedAvatar = (avatarUrl ?? '').trim();
+
   for (final account in dependencies.accountStore.accountsOf(
     AccountProvider.riverSide,
   )) {
     if (account.username.toLowerCase() == username.toLowerCase()) {
-      return account;
+      return account.copyWith(
+        displayName: trimmedName.isEmpty ? account.displayName : trimmedName,
+        avatarUrl: trimmedAvatar.isEmpty ? account.avatarUrl : trimmedAvatar,
+      );
     }
   }
 
-  final trimmedName = (displayName ?? '').trim();
   return UserAccount(
     provider: AccountProvider.riverSide,
     username: username,
@@ -104,6 +127,11 @@ class _RiverSideUserProfileSheet extends StatefulWidget {
 
 class _RiverSideUserProfileSheetState
     extends State<_RiverSideUserProfileSheet> {
+  static const double _kInitialSheetSize = 0.45;
+  static const double _kMinSheetSize = 0.3;
+  static const double _kOpenFullSize = 0.92;
+  static const double _kCloseEpsilon = 0.005;
+
   late Future<RiverSideProfileOverview> _future;
   late UserAccount _resolvedAccount;
 
@@ -111,6 +139,7 @@ class _RiverSideUserProfileSheetState
   final DraggableScrollableController _sheetController =
       DraggableScrollableController();
   bool _isNavigating = false;
+  bool _isClosing = false;
 
   @override
   void initState() {
@@ -130,12 +159,22 @@ class _RiverSideUserProfileSheetState
   }
 
   void _onSheetScrolled() {
-    if (_isNavigating) return;
+    if (_isNavigating || _isClosing) return;
+    if (_sheetController.size <= _kMinSheetSize + _kCloseEpsilon) {
+      _closeBySwipe();
+      return;
+    }
     // 当 Sheet 接近顶部时（0.92 是一个经验值，既不太早也不太晚）
     // 自动跳转到全屏页面，给用户一种“弹窗变成了页面”的错觉
-    if (_sheetController.size >= 0.92) {
+    if (_sheetController.size >= _kOpenFullSize) {
       _navigateToFullProfile();
     }
+  }
+
+  void _closeBySwipe() {
+    if (!mounted || _isClosing) return;
+    _isClosing = true;
+    Navigator.of(context).maybePop();
   }
 
   Future<void> _navigateToFullProfile() async {
@@ -159,7 +198,8 @@ class _RiverSideUserProfileSheetState
             dependencies: widget.dependencies,
             account: _resolvedAccount,
             cookieHeader: widget.cookieHeader,
-            heroTag: widget.heroTagAvatar, // 传递 Hero Tag
+            heroTag: widget.heroTagAvatar, // 传递头像 Hero Tag
+            heroTagName: widget.heroTagName, // 传递昵称 Hero Tag
           );
         },
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
@@ -205,11 +245,11 @@ class _RiverSideUserProfileSheetState
 
     return DraggableScrollableSheet(
       controller: _sheetController,
-      initialChildSize: 0.45, // 初始高度
-      minChildSize: 0.3,
+      initialChildSize: _kInitialSheetSize, // 初始高度
+      minChildSize: _kMinSheetSize,
       maxChildSize: 1.0, // 允许拖满全屏
       snap: true, // 允许吸附
-      snapSizes: const [0.45, 1.0],
+      snapSizes: const [_kInitialSheetSize, 1.0],
       builder: (context, scrollController) {
         return Material(
           clipBehavior: Clip.antiAlias,
@@ -281,135 +321,189 @@ class _RiverSideUserProfileSheetState
   }
 
   Widget _buildBody(AsyncSnapshot<RiverSideProfileOverview> snapshot) {
-    if (snapshot.connectionState == ConnectionState.waiting) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 22),
-        child: Center(child: CircularProgressIndicator()),
-      );
+    if (snapshot.hasData) {
+      _resolvedAccount = snapshot.data!.account;
     }
 
-    if (snapshot.hasError) {
-      final message = snapshot.error is RiverSideApiException
-          ? (snapshot.error! as RiverSideApiException).message
-          : '资料加载失败，请稍后重试';
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            message,
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
-          ),
-          const SizedBox(height: 10),
-          OutlinedButton.icon(
-            onPressed: _retry,
-            icon: const Icon(Icons.refresh, size: 18),
-            label: const Text('重试'),
-          ),
-        ],
-      );
-    }
-
-    final overview = snapshot.data;
-    if (overview == null) {
-      return const Text('暂无资料');
-    }
-
-    final account = overview.account;
+    final account = widget.initialAccount;
     final name = account.displayName.trim().isEmpty
         ? account.username
         : account.displayName;
+    final overview = snapshot.data;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 头像部分
-            Hero(
-              tag: widget.heroTagAvatar ?? 'default_avatar',
-              child: Container(
-                width: 64,
-                height: 64,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  image: account.avatarUrl.isNotEmpty
-                      ? DecorationImage(image: NetworkImage(account.avatarUrl))
-                      : null,
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                ),
-                child: account.avatarUrl.isEmpty
-                    ? const Icon(Icons.person_outline)
-                    : null,
-              ),
+        _buildHeader(account: account, name: name),
+        const SizedBox(height: 16),
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            overview == null)
+          _buildOverviewSkeleton()
+        else if (snapshot.hasError && overview == null)
+          _buildOverviewError(snapshot.error)
+        else if (overview == null)
+          const Text('暂无资料')
+        else ...[
+          if (!overview.isProfileHidden)
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _StatChip(label: '主题', value: overview.topicCount),
+                _StatChip(label: '帖子', value: overview.postCount),
+                _StatChip(label: '获赞', value: overview.likesReceived),
+                _StatChip(label: '关注', value: overview.followingCount),
+                _StatChip(label: '粉丝', value: overview.followersCount),
+              ],
             ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 昵称部分
-                  // 注意：如果需要名字也飞过去，可以给 Text 包裹 Material 再包裹 Hero
-                  // 这里为了简单和效果稳定，仅演示头像 Hero
-                  Text(
+          if (!overview.isProfileHidden && overview.bio.trim().isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text(
+              overview.bio.trim(),
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ],
+        ],
+      ],
+    );
+  }
+
+  Widget _buildHeader({required UserAccount account, required String name}) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Hero(
+          tag: widget.heroTagAvatar ?? 'profile-avatar-${account.username}',
+          child: Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              image: account.avatarUrl.isNotEmpty
+                  ? DecorationImage(image: NetworkImage(account.avatarUrl))
+                  : null,
+              color: theme.colorScheme.surfaceContainerHighest,
+            ),
+            child: account.avatarUrl.isEmpty
+                ? const Icon(Icons.person_outline)
+                : null,
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Hero(
+                tag: widget.heroTagName ?? 'profile-name-${account.username}',
+                child: Material(
+                  color: Colors.transparent,
+                  child: Text(
                     name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    style: theme.textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '@${account.username}',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  if (account.title.trim().isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      account.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        backgroundColor: Theme.of(context)
-                            .colorScheme
-                            .surfaceContainerHighest
-                            .withValues(alpha: 0.5),
-                      ),
-                    ),
-                  ],
-                ],
+                ),
               ),
-            ),
-          ],
-        ),
-        if (!overview.isProfileHidden) ...[
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _StatChip(label: '主题', value: overview.topicCount),
-              _StatChip(label: '帖子', value: overview.postCount),
-              _StatChip(label: '获赞', value: overview.likesReceived),
-              _StatChip(label: '关注', value: overview.followingCount),
-              _StatChip(label: '粉丝', value: overview.followersCount),
+              const SizedBox(height: 4),
+              Text(
+                '@${account.username}',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              if (account.title.trim().isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  account.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    backgroundColor: theme.colorScheme.surfaceContainerHighest
+                        .withValues(alpha: 0.5),
+                  ),
+                ),
+              ],
             ],
           ),
-        ],
-        if (!overview.isProfileHidden && overview.bio.trim().isNotEmpty) ...[
-          const SizedBox(height: 16),
-          Text(
-            overview.bio.trim(),
-            maxLines: 4,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-        ],
+        ),
       ],
+    );
+  }
+
+  Widget _buildOverviewError(Object? error) {
+    final message = error is RiverSideApiException
+        ? error.message
+        : '资料加载失败，请稍后重试';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          message,
+          style: TextStyle(color: Theme.of(context).colorScheme.error),
+        ),
+        const SizedBox(height: 10),
+        OutlinedButton.icon(
+          onPressed: _retry,
+          icon: const Icon(Icons.refresh, size: 18),
+          label: const Text('重试'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildOverviewSkeleton() {
+    final color = Theme.of(
+      context,
+    ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.55);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: List<Widget>.generate(
+            5,
+            (_) => Container(
+              width: 64,
+              height: 28,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        _buildSkeletonLine(widthFactor: 0.9),
+        const SizedBox(height: 8),
+        _buildSkeletonLine(widthFactor: 0.82),
+        const SizedBox(height: 8),
+        _buildSkeletonLine(widthFactor: 0.72),
+      ],
+    );
+  }
+
+  Widget _buildSkeletonLine({required double widthFactor}) {
+    final color = Theme.of(
+      context,
+    ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.55);
+    return FractionallySizedBox(
+      widthFactor: widthFactor,
+      child: Container(
+        height: 12,
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(999),
+        ),
+      ),
     );
   }
 }

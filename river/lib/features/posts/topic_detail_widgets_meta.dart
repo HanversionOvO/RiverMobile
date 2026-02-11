@@ -1,20 +1,25 @@
 part of 'topic_detail_page.dart';
 
 class _PostAuthorHeader extends StatelessWidget {
-  const _PostAuthorHeader({required this.post, this.onTap});
+  const _PostAuthorHeader({
+    required this.post,
+    this.onTap,
+    this.heroTagAvatar,
+    this.heroTagName,
+  });
 
   final RiverSideTopicPostDetail post;
   final VoidCallback? onTap;
+  final String? heroTagAvatar;
+  final String? heroTagName;
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     final subtitleColor = Theme.of(context).colorScheme.onSurfaceVariant;
-    final onlineState = _onlineStateText(post.isOnline);
     final onlineColor = _onlineStateColor(post.isOnline, context);
 
-    final child = Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    final avatar = Stack(
       children: [
         CircleAvatar(
           radius: 20,
@@ -25,36 +30,59 @@ class _PostAuthorHeader extends StatelessWidget {
               ? const Icon(Icons.person_outline)
               : null,
         ),
+        Positioned(
+          right: 0,
+          bottom: 0,
+          child: Container(
+            width: 12,
+            height: 12,
+            decoration: BoxDecoration(
+              color: onlineColor,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: Theme.of(context).colorScheme.surface,
+                width: 2,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+    final avatarWidget = heroTagAvatar == null || heroTagAvatar!.isEmpty
+        ? avatar
+        : Hero(tag: heroTagAvatar!, child: avatar);
+
+    final displayName = Text(
+      post.authorDisplayName,
+      style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+    );
+    final displayNameWidget = heroTagName == null || heroTagName!.isEmpty
+        ? displayName
+        : Hero(
+            tag: heroTagName!,
+            child: Material(color: Colors.transparent, child: displayName),
+          );
+
+    final child = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 1. 頭像 + 在線狀態指示器
+        avatarWidget,
         const SizedBox(width: 10),
+
+        // 2. 用戶信息列
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                post.authorDisplayName,
-                style: textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+              displayNameWidget,
               const SizedBox(height: 4),
               Wrap(
                 spacing: 8,
                 runSpacing: 6,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.circle, size: 9, color: onlineColor),
-                      const SizedBox(width: 4),
-                      Text(
-                        onlineState,
-                        style: textTheme.bodySmall?.copyWith(
-                          color: onlineColor,
-                        ),
-                      ),
-                    ],
-                  ),
+                  // 移除了單獨的在線狀態文字行，僅保留頭銜和用戶名
                   if (post.authorTitle.isNotEmpty)
                     Text(
                       post.authorTitle,

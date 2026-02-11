@@ -16,13 +16,15 @@ class RiverSideProfilePage extends StatefulWidget {
     required this.dependencies,
     required this.account,
     this.cookieHeader,
-    this.heroTag, // 新增：接收 Hero Tag
+    this.heroTag, // 新增：接收头像 Hero Tag
+    this.heroTagName, // 新增：接收昵称 Hero Tag
   });
 
   final AppDependencies dependencies;
   final UserAccount account;
   final String? cookieHeader;
   final String? heroTag;
+  final String? heroTagName;
 
   @override
   State<RiverSideProfilePage> createState() => _RiverSideProfilePageState();
@@ -382,14 +384,29 @@ class _RiverSideProfilePageState extends State<RiverSideProfilePage>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const SizedBox(height: 8),
-                        Text(
-                          displayName,
-                          style: theme.textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            height: 1.1,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                        Builder(
+                          builder: (context) {
+                            final nameWidget = Text(
+                              displayName,
+                              style: theme.textTheme.headlineSmall?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                height: 1.1,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            );
+                            final nameHeroTag = widget.heroTagName;
+                            if (nameHeroTag == null || nameHeroTag.isEmpty) {
+                              return nameWidget;
+                            }
+                            return Hero(
+                              tag: nameHeroTag,
+                              child: Material(
+                                color: Colors.transparent,
+                                child: nameWidget,
+                              ),
+                            );
+                          },
                         ),
                         Text(
                           '@${account.username}',
