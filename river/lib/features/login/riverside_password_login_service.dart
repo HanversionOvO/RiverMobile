@@ -23,9 +23,18 @@ class RiverSidePasswordLoginService {
       );
     }
 
-    final about = await _getAbout();
-    final version = (_toMap(about['about'])['version'] ?? '').toString();
-    final csrfResponse = await _getCsrf();
+    final cookieJar = <String, String>{};
+    final about = await _getAbout(
+      cookieHeader: _cookieHeaderFromJar(cookieJar),
+    );
+    _mergeSetCookieHeader(cookieJar, about.setCookieHeader);
+    final version = (_toMap(about.payload['about'])['version'] ?? '')
+        .toString();
+
+    final csrfResponse = await _getCsrf(
+      cookieHeader: _cookieHeaderFromJar(cookieJar),
+    );
+    _mergeSetCookieHeader(cookieJar, csrfResponse.setCookieHeader);
     final csrfToken = csrfResponse.csrf.trim();
     if (csrfToken.isEmpty) {
       throw const RiverSidePasswordLoginException(
@@ -33,8 +42,6 @@ class RiverSidePasswordLoginService {
       );
     }
 
-    final cookieJar = <String, String>{};
-    _mergeSetCookieHeader(cookieJar, csrfResponse.setCookieHeader);
     final isLegacy25 = version.startsWith('2.5');
 
     final loginResponse = await _postSessionLogin(
@@ -69,10 +76,15 @@ class RiverSidePasswordLoginService {
     );
   }
 
-  Future<Map<String, dynamic>> _getAbout() async {
+  Future<_AboutResponse> _getAbout({required String cookieHeader}) async {
+    final headers = <String, String>{'Accept': 'application/json'};
+    if (cookieHeader.isNotEmpty) {
+      headers['Cookie'] = cookieHeader;
+    }
+
     final response = await http.get(
       Uri.parse('$riverSideBaseUrl/about.json'),
-      headers: const <String, String>{'Accept': 'application/json'},
+      headers: headers,
     );
     if (response.statusCode != 200) {
       throw RiverSidePasswordLoginException(
@@ -80,18 +92,29 @@ class RiverSidePasswordLoginService {
       );
     }
 
-    return _decodeJsonObject(response, fallback: 'Site info response invalid.');
+    return _AboutResponse(
+      payload: _decodeJsonObject(
+        response,
+        fallback: 'Site info response invalid.',
+      ),
+      setCookieHeader: response.headers['set-cookie'],
+    );
   }
 
-  Future<_CsrfResponse> _getCsrf() async {
+  Future<_CsrfResponse> _getCsrf({required String cookieHeader}) async {
+    final headers = <String, String>{
+      'Accept': 'application/json',
+      'X-CSRF-Token': 'undefined',
+      'Referer': riverSideBaseUrl,
+      'X-Requested-With': 'XMLHttpRequest',
+    };
+    if (cookieHeader.isNotEmpty) {
+      headers['Cookie'] = cookieHeader;
+    }
+
     final response = await http.get(
       Uri.parse('$riverSideBaseUrl/session/csrf'),
-      headers: const <String, String>{
-        'Accept': 'application/json',
-        'X-CSRF-Token': 'undefined',
-        'Referer': riverSideBaseUrl,
-        'X-Requested-With': 'XMLHttpRequest',
-      },
+      headers: headers,
     );
 
     if (response.statusCode != 200) {
@@ -270,6 +293,13 @@ class _CsrfResponse {
   const _CsrfResponse({required this.csrf, required this.setCookieHeader});
 
   final String csrf;
+  final String? setCookieHeader;
+}
+
+class _AboutResponse {
+  const _AboutResponse({required this.payload, required this.setCookieHeader});
+
+  final Map<String, dynamic> payload;
   final String? setCookieHeader;
 }
 

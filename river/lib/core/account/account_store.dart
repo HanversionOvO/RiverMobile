@@ -156,6 +156,20 @@ class AccountStore extends ChangeNotifier {
       return false;
     }
 
+    final previousActive = _activeRiverSideUsername;
+    final switchingToNewAccount =
+        previousActive != null &&
+        previousActive.isNotEmpty &&
+        previousActive.toLowerCase() != target.username.toLowerCase();
+
+    if (switchingToNewAccount) {
+      try {
+        await captureAndPersistCurrentRiverSideCookies(previousActive);
+      } catch (_) {
+        // Keep switching flow resilient even if capturing cookies fails.
+      }
+    }
+
     await _applyRiverSideCookiesForUsername(target.username);
 
     _activeRiverSideUsername = target.username;
@@ -235,7 +249,24 @@ class AccountStore extends ChangeNotifier {
       return;
     }
 
-    _riverSideCookiesByUsername[normalized] = cookieHeader.trim();
+    final normalizedCookie = cookieHeader.trim();
+    if (!_looksLikeAuthenticatedCookie(normalizedCookie)) {
+      return;
+    }
+
+    try {
+      final current = await _riverSideApiClient.fetchCurrentUserByCookie(
+        cookieHeader: normalizedCookie,
+        fallbackLogin: username,
+      );
+      if (_normalizeUsername(current.username) != normalized) {
+        return;
+      }
+    } catch (_) {
+      return;
+    }
+
+    _riverSideCookiesByUsername[normalized] = normalizedCookie;
     await _persist();
   }
 
@@ -346,6 +377,11 @@ class AccountStore extends ChangeNotifier {
 
   String _normalizeUsername(String source) {
     return source.trim().toLowerCase();
+  }
+
+  bool _looksLikeAuthenticatedCookie(String cookieHeader) {
+    final source = cookieHeader.toLowerCase();
+    return source.contains('_forum_session=') || source.contains('_t=');
   }
 
   Future<void> _persist() async {

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:river/app/app_dependencies.dart';
-import 'package:river/features/home/tab_placeholder_page.dart';
+import 'package:river/features/compose/compose_topic_page.dart';
 import 'package:river/features/mine/mine_page.dart';
+import 'package:river/features/notifications/notifications_page.dart';
 import 'package:river/features/posts/posts_page.dart';
+import 'package:river/features/search/search_page.dart';
 
 class HomeShellPage extends StatefulWidget {
   const HomeShellPage({super.key, required this.dependencies});
@@ -19,21 +21,43 @@ class _HomeShellPageState extends State<HomeShellPage> {
   static const List<String> _titles = <String>[
     '\u5e16\u5b50',
     '\u53d1\u5e16',
-    '\u804a\u5929',
+    '\u901a\u77e5',
     '\u6211\u7684',
   ];
 
   late final List<Widget> _pages = <Widget>[
     PostsPage(dependencies: widget.dependencies),
-    const TabPlaceholderPage(label: '\u53d1\u5e16\u9875\u5360\u4f4d'),
-    const TabPlaceholderPage(label: '\u804a\u5929\u9875\u5360\u4f4d'),
+    ComposeTopicPage(dependencies: widget.dependencies),
+    NotificationsPage(dependencies: widget.dependencies),
     MinePage(dependencies: widget.dependencies),
   ];
+
+  Future<void> _openSearchPage() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SearchPage(dependencies: widget.dependencies),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(_titles[_selectedTabIndex])),
+      appBar: AppBar(
+        title: Text(_titles[_selectedTabIndex]),
+        actions: _selectedTabIndex == 0
+            ? [
+                IconButton(
+                  onPressed: _openSearchPage,
+                  tooltip: '\u641c\u7d22',
+                  icon: Hero(
+                    tag: postsSearchHeroTag,
+                    child: const Icon(Icons.search),
+                  ),
+                ),
+              ]
+            : null,
+      ),
       body: IndexedStack(index: _selectedTabIndex, children: _pages),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedTabIndex,
@@ -54,9 +78,9 @@ class _HomeShellPageState extends State<HomeShellPage> {
             label: '\u53d1\u5e16',
           ),
           NavigationDestination(
-            icon: Icon(Icons.chat_bubble_outline),
-            selectedIcon: Icon(Icons.chat_bubble),
-            label: '\u804a\u5929',
+            icon: Icon(Icons.notifications_none_outlined),
+            selectedIcon: Icon(Icons.notifications),
+            label: '\u901a\u77e5',
           ),
           NavigationDestination(
             icon: Icon(Icons.person_outline),
