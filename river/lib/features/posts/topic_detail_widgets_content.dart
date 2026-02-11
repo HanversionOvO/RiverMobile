@@ -80,7 +80,7 @@ class _QuotePreviewCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '\u56de\u590d @${quote.ref.username} 鐨?#${quote.ref.postNumber}',
+                      '\u56de\u590d @${quote.ref.username} \u7684 #${quote.ref.postNumber}',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),

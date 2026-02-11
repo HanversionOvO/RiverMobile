@@ -510,6 +510,7 @@ class _TopicListTab extends StatefulWidget {
 class _TopicListTabState extends State<_TopicListTab>
     with AutomaticKeepAliveClientMixin {
   final ScrollController _scrollController = ScrollController();
+  final ValueNotifier<bool> _showBackToTopNotifier = ValueNotifier<bool>(false);
   List<RiverSideTopicSummary> _topics = [];
   bool _isLoading = true;
   bool _isLoadingMore = false;
@@ -539,6 +540,7 @@ class _TopicListTabState extends State<_TopicListTab>
 
   @override
   void dispose() {
+    _showBackToTopNotifier.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -547,6 +549,10 @@ class _TopicListTabState extends State<_TopicListTab>
     if (!_scrollController.hasClients) return;
     final maxScroll = _scrollController.position.maxScrollExtent;
     final currentScroll = _scrollController.offset;
+    final shouldShowBackToTop = currentScroll >= 420;
+    if (_showBackToTopNotifier.value != shouldShowBackToTop) {
+      _showBackToTopNotifier.value = shouldShowBackToTop;
+    }
     if (currentScroll >= maxScroll - 200 && !_isLoadingMore && _hasMore) {
       _loadMore();
     }
@@ -556,11 +562,23 @@ class _TopicListTabState extends State<_TopicListTab>
     if (_scrollController.hasClients) {
       _scrollController.jumpTo(0);
     }
+    _showBackToTopNotifier.value = false;
     await _loadFirstPage();
   }
 
   Future<void> scrollToTopAndRefresh() {
     return _scrollToTopAndRefresh();
+  }
+
+  Future<void> _scrollToTop() async {
+    if (!_scrollController.hasClients) {
+      return;
+    }
+    await _scrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   Future<void> _loadFirstPage() async {
@@ -719,44 +737,75 @@ class _TopicListTabState extends State<_TopicListTab>
       );
     }
 
-    return RefreshIndicator(
-      onRefresh: _loadFirstPage,
-      edgeOffset: 0,
-      child: ListView.separated(
-        controller: _scrollController,
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 80),
-        physics: const AlwaysScrollableScrollPhysics(),
-        itemCount: _topics.length + (_hasMore ? 1 : 0),
-        separatorBuilder: (_, __) => const SizedBox(height: 12),
-        itemBuilder: (context, index) {
-          if (index == _topics.length) {
-            return Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Center(
-                child: _isLoadingMore
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Text(
-                        '\u6ca1\u6709\u66f4\u591a\u4e86',
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.outline,
-                        ),
-                      ),
-              ),
-            );
-          }
-          final topic = _topics[index];
-          return _TopicCard(
-            topic: topic,
-            isHotFeed: widget.feed == RiverSideTopicFeed.hot,
-            onTap: () => _openDetail(topic),
-            onAuthorTap: () => _openAuthor(topic),
-          );
-        },
-      ),
+    return Stack(
+      children: [
+        RefreshIndicator(
+          onRefresh: _loadFirstPage,
+          edgeOffset: 0,
+          child: ListView.separated(
+            controller: _scrollController,
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 92),
+            physics: const AlwaysScrollableScrollPhysics(),
+            itemCount: _topics.length + (_hasMore ? 1 : 0),
+            separatorBuilder: (_, __) => const SizedBox(height: 12),
+            itemBuilder: (context, index) {
+              if (index == _topics.length) {
+                return Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Center(
+                    child: _isLoadingMore
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Text(
+                            '\u6ca1\u6709\u66f4\u591a\u4e86',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.outline,
+                            ),
+                          ),
+                  ),
+                );
+              }
+              final topic = _topics[index];
+              return _TopicCard(
+                topic: topic,
+                isHotFeed: widget.feed == RiverSideTopicFeed.hot,
+                onTap: () => _openDetail(topic),
+                onAuthorTap: () => _openAuthor(topic),
+              );
+            },
+          ),
+        ),
+        Positioned(
+          right: 16,
+          bottom: 16,
+          child: ValueListenableBuilder<bool>(
+            valueListenable: _showBackToTopNotifier,
+            builder: (context, visible, _) {
+              return IgnorePointer(
+                ignoring: !visible,
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 180),
+                  opacity: visible ? 1 : 0,
+                  child: AnimatedScale(
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOutBack,
+                    scale: visible ? 1 : 0.82,
+                    child: FloatingActionButton.small(
+                      heroTag: 'posts_back_to_top_${widget.feed.name}',
+                      onPressed: visible ? _scrollToTop : null,
+                      elevation: 2,
+                      child: const Icon(Icons.arrow_upward_rounded),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }

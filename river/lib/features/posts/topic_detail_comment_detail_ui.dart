@@ -2,7 +2,6 @@ part of 'topic_detail_page.dart';
 
 extension _CommentDetailPageUi on _CommentDetailPageState {
   Widget _buildPage(BuildContext context) {
-    final theme = Theme.of(context);
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
@@ -13,111 +12,86 @@ extension _CommentDetailPageUi on _CommentDetailPageState {
       },
       child: Scaffold(
         appBar: AppBar(
-          titleSpacing: 12,
           scrolledUnderElevation: 0,
           surfaceTintColor: Colors.transparent,
-          title: Row(
-            children: [
-              Icon(
-                Icons.chat_bubble_outline_rounded,
-                size: 18,
-                color: theme.colorScheme.primary,
-              ),
-              const SizedBox(width: 8),
-              const Text(_CommentDetailPageState._labelTitle),
-            ],
-          ),
+          title: const Text(_CommentDetailPageState._labelTitle),
         ),
-        body: DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                theme.colorScheme.surface,
-                theme.colorScheme.surfaceContainerLowest,
-              ],
-            ),
-          ),
-          child: RefreshIndicator(
-            onRefresh: _onRefresh,
-            child: ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 20),
-              children: [
-                const _SectionHeader(
-                  title: _CommentDetailPageState._labelRootComment,
-                ),
-                TweenAnimationBuilder<double>(
-                  key: ValueKey<int>(_rootPost.id),
-                  tween: Tween<double>(begin: 0.98, end: 1),
-                  duration: const Duration(milliseconds: 220),
-                  curve: Curves.easeOutCubic,
-                  builder: (context, value, child) {
-                    return Opacity(
-                      opacity: value.clamp(0, 1),
-                      child: Transform.translate(
-                        offset: Offset(0, (1 - value) * 10),
-                        child: child,
+        body: RefreshIndicator(
+          onRefresh: _onRefresh,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 20),
+            children: [
+              const _SectionHeader(
+                title: _CommentDetailPageState._labelRootComment,
+              ),
+              TweenAnimationBuilder<double>(
+                key: ValueKey<int>(_rootPost.id),
+                tween: Tween<double>(begin: 0.98, end: 1),
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                builder: (context, value, child) {
+                  return Opacity(
+                    opacity: value.clamp(0, 1),
+                    child: Transform.translate(
+                      offset: Offset(0, (1 - value) * 10),
+                      child: child,
+                    ),
+                  );
+                },
+                child: _CommentDetailPostCard(
+                  post: _rootPost,
+                  cookieHeader: _activeCookieHeader(),
+                  emojiUrls: _emojiUrls,
+                  onQuoteTap: _showQuoteBottomSheet,
+                  heroTag: widget.heroTag,
+                  reacting: _reactingPostIds.contains(_rootPost.id),
+                  pendingHeroReactionId:
+                      _pendingReactionHeroByPostId[_rootPost.id],
+                  reactionPulseToken:
+                      _reactionPulseTokenByPostId[_rootPost.id] ?? 0,
+                  onLongPress: () => _showCommentActions(_rootPost),
+                  onAuthorTap: _openAuthorProfileSheetForPost,
+                  onReactPressed: _onReactPressed,
+                  onReactionStatusPressed: (post, reactionId) =>
+                      _onReactionStatusPressed(
+                        post: post,
+                        reactionId: reactionId,
                       ),
+                  onReplyPressed: (post) {
+                    _openReplyComposer(
+                      replyToPostNumber: post.postNumber,
+                      quoteUsername: post.authorUsername,
+                      quoteTopicId: post.topicId,
+                      quoteContent: _stripQuotedMarkdown(post.contentMarkdown),
                     );
                   },
-                  child: _CommentDetailPostCard(
-                    post: _rootPost,
-                    cookieHeader: _activeCookieHeader(),
-                    emojiUrls: _emojiUrls,
-                    onQuoteTap: _showQuoteBottomSheet,
-                    heroTag: widget.heroTag,
-                    reacting: _reactingPostIds.contains(_rootPost.id),
-                    pendingHeroReactionId:
-                        _pendingReactionHeroByPostId[_rootPost.id],
-                    reactionPulseToken:
-                        _reactionPulseTokenByPostId[_rootPost.id] ?? 0,
-                    onLongPress: () => _showCommentActions(_rootPost),
-                    onAuthorTap: _openAuthorProfileSheetForPost,
-                    onReactPressed: _onReactPressed,
-                    onReactionStatusPressed: (post, reactionId) =>
-                        _onReactionStatusPressed(
-                          post: post,
-                          reactionId: reactionId,
-                        ),
-                    onReplyPressed: (post) {
-                      _openReplyComposer(
-                        replyToPostNumber: post.postNumber,
-                        quoteUsername: post.authorUsername,
-                        quoteTopicId: post.topicId,
-                        quoteContent: _stripQuotedMarkdown(
-                          post.contentMarkdown,
-                        ),
-                      );
-                    },
-                  ),
                 ),
-                const SizedBox(height: 10),
-                _SectionHeader(
-                  title: _CommentDetailPageState._labelReplies,
-                  trailing: Text('\u5171 ${_replies.length} \u6761'),
-                ),
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 220),
-                  switchInCurve: Curves.easeOutCubic,
-                  switchOutCurve: Curves.easeInCubic,
-                  transitionBuilder: (child, animation) {
-                    return FadeTransition(
-                      opacity: animation,
-                      child: SlideTransition(
-                        position: Tween<Offset>(
-                          begin: const Offset(0, 0.04),
-                          end: Offset.zero,
-                        ).animate(animation),
-                        child: child,
-                      ),
-                    );
-                  },
-                  child: _buildRepliesBody(context),
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 10),
+              _SectionHeader(
+                title: _CommentDetailPageState._labelReplies,
+                trailing: Text('\u5171 ${_replies.length} \u6761'),
+              ),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                transitionBuilder: (child, animation) {
+                  return FadeTransition(
+                    opacity: animation,
+                    child: SlideTransition(
+                      position: Tween<Offset>(
+                        begin: const Offset(0, 0.04),
+                        end: Offset.zero,
+                      ).animate(animation),
+                      child: child,
+                    ),
+                  );
+                },
+                child: _buildRepliesBody(context),
+              ),
+            ],
           ),
         ),
       ),

@@ -27,7 +27,7 @@ class NotificationsPage extends StatefulWidget {
 class _NotificationsPageState extends State<NotificationsPage>
     with SingleTickerProviderStateMixin {
   // ---------------------------------------------------------------------------
-  // 常量与状态定义
+  // 甯搁噺涓庣姸鎬佸畾涔?
   // ---------------------------------------------------------------------------
   static const String _labelNeedLogin = '请先登录 RiverSide 账号';
   static const String _labelLoadFailed = '加载失败，请重试';
@@ -35,6 +35,9 @@ class _NotificationsPageState extends State<NotificationsPage>
 
   late TabController _tabController;
   final ScrollController _notificationsScrollController = ScrollController();
+  final ScrollController _channelScrollController = ScrollController();
+  final ScrollController _directScrollController = ScrollController();
+  final ValueNotifier<bool> _showBackToTopNotifier = ValueNotifier<bool>(false);
 
   List<RiverSideNotificationItem> _notifications = const [];
   List<RiverSideChatChannelItem> _channelMessages = const [];
@@ -52,17 +55,20 @@ class _NotificationsPageState extends State<NotificationsPage>
   bool _hasRealtimeNotifications = false;
 
   // ---------------------------------------------------------------------------
-  // 生命周期与基础逻辑
+  // 鐢熷懡鍛ㄦ湡涓庡熀纭€閫昏緫
   // ---------------------------------------------------------------------------
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    _tabController.addListener(_onTabChanged);
     _lastActiveUsername =
         widget.dependencies.accountStore.activeRiverSideUsername;
     widget.dependencies.accountStore.addListener(_onAccountStoreChanged);
     _notificationsScrollController.addListener(_onNotificationsScroll);
+    _channelScrollController.addListener(_onChannelScroll);
+    _directScrollController.addListener(_onDirectScroll);
     _loadAll();
   }
 
@@ -70,6 +76,10 @@ class _NotificationsPageState extends State<NotificationsPage>
   void dispose() {
     _messageBusPoller?.stop();
     widget.dependencies.accountStore.removeListener(_onAccountStoreChanged);
+    _tabController.removeListener(_onTabChanged);
+    _showBackToTopNotifier.dispose();
+    _directScrollController.dispose();
+    _channelScrollController.dispose();
     _notificationsScrollController.dispose();
     _tabController.dispose();
     super.dispose();
@@ -118,6 +128,7 @@ class _NotificationsPageState extends State<NotificationsPage>
   void _onNotificationsScroll() {
     if (_tabController.index != 0) return;
 
+    _syncBackToTopVisibility();
     if (_loading ||
         _loadingMoreNotifications ||
         _nextNotificationsPath.isEmpty) {
@@ -131,6 +142,61 @@ class _NotificationsPageState extends State<NotificationsPage>
     }
   }
 
+  void _onChannelScroll() {
+    if (_tabController.index == 1) {
+      _syncBackToTopVisibility();
+    }
+  }
+
+  void _onDirectScroll() {
+    if (_tabController.index == 2) {
+      _syncBackToTopVisibility();
+    }
+  }
+
+  void _onTabChanged() {
+    if (_tabController.indexIsChanging) {
+      return;
+    }
+    _syncBackToTopVisibility();
+  }
+
+  ScrollController? _activeScrollController() {
+    switch (_tabController.index) {
+      case 0:
+        return _notificationsScrollController;
+      case 1:
+        return _channelScrollController;
+      case 2:
+        return _directScrollController;
+    }
+    return null;
+  }
+
+  void _syncBackToTopVisibility() {
+    final controller = _activeScrollController();
+    final shouldShow =
+        controller != null &&
+        controller.hasClients &&
+        controller.position.pixels >= 360;
+    if (_showBackToTopNotifier.value != shouldShow) {
+      _showBackToTopNotifier.value = shouldShow;
+    }
+  }
+
+  Future<void> _scrollActiveTabToTop() async {
+    final controller = _activeScrollController();
+    if (controller == null || !controller.hasClients) {
+      return;
+    }
+    await controller.animateTo(
+      0,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+    );
+    _syncBackToTopVisibility();
+  }
+
   String? _activeCookieHeader() {
     final username = widget.dependencies.accountStore.activeRiverSideUsername;
     if (username == null || username.isEmpty) return null;
@@ -138,7 +204,7 @@ class _NotificationsPageState extends State<NotificationsPage>
   }
 
   // ---------------------------------------------------------------------------
-  // 数据加载逻辑
+  // 鏁版嵁鍔犺浇閫昏緫
   // ---------------------------------------------------------------------------
 
   Future<void> _loadAll({
@@ -246,7 +312,7 @@ class _NotificationsPageState extends State<NotificationsPage>
   }
 
   // ---------------------------------------------------------------------------
-  // 动作逻辑
+  // 鍔ㄤ綔閫昏緫
   // ---------------------------------------------------------------------------
 
   Future<void> _openNotificationTopic(RiverSideNotificationItem item) async {
@@ -377,7 +443,7 @@ class _NotificationsPageState extends State<NotificationsPage>
   }
 
   // ---------------------------------------------------------------------------
-  // UI 构建
+  // UI 鏋勫缓
   // ---------------------------------------------------------------------------
 
   @override
@@ -389,7 +455,7 @@ class _NotificationsPageState extends State<NotificationsPage>
       backgroundColor: backgroundColor,
       body: Stack(
         children: [
-          // 1. 背景装饰 (淡雅的光晕)
+          // 1. 鑳屾櫙瑁呴グ (娣￠泤鐨勫厜鏅?
           Positioned(
             top: -100,
             right: -50,
@@ -410,7 +476,7 @@ class _NotificationsPageState extends State<NotificationsPage>
             ),
           ),
 
-          // 2. 主内容区域
+          // 2. 涓诲唴瀹瑰尯鍩?
           NestedScrollView(
             headerSliverBuilder: (context, innerBoxIsScrolled) {
               return [
@@ -418,8 +484,8 @@ class _NotificationsPageState extends State<NotificationsPage>
                   pinned: true,
                   floating: true,
                   snap: true,
-                  automaticallyImplyLeading: false, // 移除返回按钮位置
-                  toolbarHeight: 8, // 压缩 Toolbar 高度，只留给 TabBar 空间
+                  automaticallyImplyLeading: false, // 绉婚櫎杩斿洖鎸夐挳浣嶇疆
+                  toolbarHeight: 8, // 鍘嬬缉 Toolbar 楂樺害锛屽彧鐣欑粰 TabBar 绌洪棿
                   backgroundColor: backgroundColor.withOpacity(0.9),
                   elevation: 0,
                   scrolledUnderElevation: 0,
@@ -443,13 +509,49 @@ class _NotificationsPageState extends State<NotificationsPage>
               controller: _tabController,
               children: [
                 _buildNotificationsList(theme),
-                _buildChatList(theme, _channelMessages, '暂无频道消息'),
-                _buildChatList(theme, _directMessages, '暂无私信消息'),
+                _buildChatList(
+                  theme,
+                  _channelMessages,
+                  '暂无频道消息',
+                  controller: _channelScrollController,
+                ),
+                _buildChatList(
+                  theme,
+                  _directMessages,
+                  '暂无私信消息',
+                  controller: _directScrollController,
+                ),
               ],
             ),
           ),
 
-          // 3. 实时消息提示条
+          // 3. 瀹炴椂娑堟伅鎻愮ず鏉?
+          Positioned(
+            right: 16,
+            bottom: 98,
+            child: ValueListenableBuilder<bool>(
+              valueListenable: _showBackToTopNotifier,
+              builder: (context, visible, _) {
+                return IgnorePointer(
+                  ignoring: !visible,
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 180),
+                    opacity: visible ? 1 : 0,
+                    child: AnimatedScale(
+                      duration: const Duration(milliseconds: 220),
+                      curve: Curves.easeOutBack,
+                      scale: visible ? 1 : 0.82,
+                      child: FloatingActionButton.small(
+                        heroTag: 'notifications_back_to_top_fab',
+                        onPressed: visible ? _scrollActiveTabToTop : null,
+                        child: const Icon(Icons.arrow_upward_rounded),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
           _buildRealtimeBanner(theme),
         ],
       ),
@@ -557,7 +659,7 @@ class _NotificationsPageState extends State<NotificationsPage>
     ThemeData theme,
     RiverSideNotificationItem item,
   ) {
-    // 根据通知类型配置样式
+    // 鏍规嵁閫氱煡绫诲瀷閰嶇疆鏍峰紡
     IconData typeIcon;
     Color typeColor;
     Color iconBgColor;
@@ -610,7 +712,7 @@ class _NotificationsPageState extends State<NotificationsPage>
           onTap: () => _openNotificationTopic(item),
           child: Stack(
             children: [
-              // 未读指示条
+              // 鏈鎸囩ず鏉?
               if (isUnread)
                 Positioned(
                   left: 0,
@@ -636,7 +738,7 @@ class _NotificationsPageState extends State<NotificationsPage>
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // 头像与角标
+                    // 澶村儚涓庤鏍?
                     Stack(
                       clipBehavior: Clip.none,
                       children: [
@@ -690,7 +792,7 @@ class _NotificationsPageState extends State<NotificationsPage>
                       ],
                     ),
                     const SizedBox(width: 16),
-                    // 内容
+                    // 鍐呭
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -776,8 +878,9 @@ class _NotificationsPageState extends State<NotificationsPage>
   Widget _buildChatList(
     ThemeData theme,
     List<RiverSideChatChannelItem> items,
-    String emptyMsg,
-  ) {
+    String emptyMsg, {
+    required ScrollController controller,
+  }) {
     if (_loading && items.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -789,6 +892,7 @@ class _NotificationsPageState extends State<NotificationsPage>
     return RefreshIndicator(
       onRefresh: () => _loadAll(showLoading: false),
       child: ListView.separated(
+        controller: controller,
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
         itemCount: items.length,
         separatorBuilder: (_, __) => const SizedBox(height: 12),

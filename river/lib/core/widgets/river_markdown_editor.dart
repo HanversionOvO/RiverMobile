@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 typedef RiverMarkdownSubmitCallback = Future<bool> Function(String markdown);
@@ -39,18 +40,6 @@ class RiverMarkdownEditor extends StatefulWidget {
 }
 
 class _RiverMarkdownEditorState extends State<RiverMarkdownEditor> {
-  static const String _defaultHint =
-      '\u8bf7\u8f93\u5165\u56de\u590d\u5185\u5bb9';
-  static const String _defaultSubmit = '\u53d1\u9001';
-  static const String _labelEmpty =
-      '\u56de\u590d\u5185\u5bb9\u4e0d\u80fd\u4e3a\u7a7a';
-  static const String _labelImagePickFailed =
-      '\u9009\u62e9\u56fe\u7247\u5931\u8d25';
-  static const String _labelImageUploadFailed =
-      '\u56fe\u7247\u4e0a\u4f20\u5931\u8d25';
-  static const String _labelImageUploadSuccess =
-      '\u56fe\u7247\u5df2\u63d2\u5165';
-
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   final ImagePicker _picker = ImagePicker();
@@ -62,9 +51,11 @@ class _RiverMarkdownEditorState extends State<RiverMarkdownEditor> {
   void initState() {
     super.initState();
     _controller.text = widget.initialText;
-    _controller.selection = TextSelection.collapsed(
-      offset: _controller.text.length,
-    );
+    if (widget.initialText.isNotEmpty) {
+      _controller.selection = TextSelection.collapsed(
+        offset: widget.initialText.length,
+      );
+    }
   }
 
   @override
@@ -75,448 +66,530 @@ class _RiverMarkdownEditorState extends State<RiverMarkdownEditor> {
   }
 
   Future<void> _submit() async {
-    if (_submitting) {
-      return;
-    }
+    if (_submitting) return;
+
     final text = _controller.text.trim();
     if (text.isEmpty) {
-      _showMessage(_labelEmpty);
+      _showSnack('内容不能为空', isError: true);
       return;
     }
 
-    setState(() {
-      _submitting = true;
-    });
+    setState(() => _submitting = true);
     try {
       final ok = await widget.onSubmit(text);
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       if (ok && widget.closeOnSubmitSuccess) {
         Navigator.of(context).pop(true);
       }
     } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      _showMessage('$error');
+      if (!mounted) return;
+      _showSnack('发送失败: $error', isError: true);
     } finally {
-      if (mounted) {
-        setState(() {
-          _submitting = false;
-        });
-      }
+      if (mounted) setState(() => _submitting = false);
     }
   }
 
   Future<void> _pickAndUploadImage() async {
-    final callback = widget.onUploadImage;
-    if (callback == null || _uploadingImage) {
-      return;
-    }
+    if (_uploadingImage) return;
 
-    XFile? pickedFile;
-    try {
-      pickedFile = await _picker.pickImage(source: ImageSource.gallery);
-    } catch (_) {
-      _showMessage(_labelImagePickFailed);
-      return;
-    }
-    if (pickedFile == null) {
-      return;
-    }
+    // 隐藏键盘，体验更好
+    FocusScope.of(context).unfocus();
 
-    setState(() {
-      _uploadingImage = true;
-    });
     try {
-      final bytes = await pickedFile.readAsBytes();
-      final inserted = await callback(pickedFile.name, bytes);
-      if (!mounted) {
-        return;
-      }
-      if (inserted != null && inserted.trim().isNotEmpty) {
-        _insertAtSelection('\n$inserted\n');
-        _showMessage(_labelImageUploadSuccess);
+      final picked = await _picker.pickImage(source: ImageSource.gallery);
+      if (picked == null) return;
+
+      setState(() => _uploadingImage = true);
+
+      final callback = widget.onUploadImage;
+      if (callback != null) {
+        final bytes = await picked.readAsBytes();
+        final inserted = await callback(picked.name, bytes);
+        if (mounted && inserted != null && inserted.isNotEmpty) {
+          _insertText('\n$inserted\n');
+          _showSnack('图片已添加');
+        } else if (mounted) {
+          _showSnack('图片上传失败', isError: true);
+        }
       }
     } catch (_) {
-      if (mounted) {
-        _showMessage(_labelImageUploadFailed);
-      }
+      if (mounted) _showSnack('选择图片出错', isError: true);
     } finally {
       if (mounted) {
-        setState(() {
-          _uploadingImage = false;
-        });
+        setState(() => _uploadingImage = false);
+        // 恢复焦点
+        _focusNode.requestFocus();
       }
     }
   }
 
-  Future<void> _showEmojiPicker() async {
-    if (widget.emojiUrls.isEmpty) {
-      return;
-    }
+  void _showEmojiPicker() {
+    // 收起键盘
+    FocusScope.of(context).unfocus();
 
-    final selected = await showModalBottomSheet<String>(
+    showModalBottomSheet(
       context: context,
-      showDragHandle: true,
-      builder: (sheetContext) {
-        final grouped = _buildEmojiGroupsForPicker();
-        final categories = grouped.keys.toList(growable: false);
-        if (categories.isEmpty) {
-          return const SizedBox.shrink();
-        }
-        var currentCategory = categories.first;
-
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            final names = grouped[currentCategory] ?? const <String>[];
-            final maxHeight = MediaQuery.sizeOf(context).height * 0.72;
-            return SafeArea(
-              child: SizedBox(
-                height: maxHeight,
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 118,
-                      child: ListView.builder(
-                        itemCount: categories.length,
-                        itemBuilder: (context, index) {
-                          final category = categories[index];
-                          final selected = category == currentCategory;
-                          return ListTile(
-                            dense: true,
-                            selected: selected,
-                            title: Text(
-                              category,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                            onTap: () {
-                              setSheetState(() {
-                                currentCategory = category;
-                              });
-                            },
-                          );
-                        },
-                      ),
-                    ),
-                    const VerticalDivider(width: 1),
-                    Expanded(
-                      child: GridView.builder(
-                        padding: const EdgeInsets.fromLTRB(10, 8, 10, 12),
-                        gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 7,
-                              childAspectRatio: 0.95,
-                              crossAxisSpacing: 8,
-                              mainAxisSpacing: 8,
-                            ),
-                        itemCount: names.length,
-                        itemBuilder: (context, index) {
-                          final name = names[index];
-                          final url = widget.emojiUrls[name] ?? '';
-                          return InkWell(
-                            borderRadius: BorderRadius.circular(8),
-                            onTap: () => Navigator.of(sheetContext).pop(name),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.surfaceContainerHighest,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              alignment: Alignment.center,
-                              child: CachedNetworkImage(
-                                imageUrl: url,
-                                width: 22,
-                                height: 22,
-                                fit: BoxFit.contain,
-                                fadeInDuration: Duration.zero,
-                                fadeOutDuration: Duration.zero,
-                                errorWidget: (context, imageUrl, error) => Text(
-                                  ':$name:',
-                                  style: Theme.of(context).textTheme.bodySmall,
-                                  textAlign: TextAlign.center,
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _StructuredEmojiPicker(
+        emojiUrls: widget.emojiUrls,
+        emojiGroups: widget.emojiGroups,
+        onSelected: (key) {
+          _insertText(':$key:');
+          Navigator.pop(context);
+        },
+      ),
     );
+  }
 
-    if (selected == null || selected.trim().isEmpty) {
+  void _applyFormat(String prefix, String suffix, String placeholder) {
+    HapticFeedback.selectionClick();
+    final text = _controller.text;
+    final selection = _controller.selection;
+
+    if (!selection.isValid) {
+      final newText = '$text$prefix$placeholder$suffix';
+      _controller.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(
+          offset: newText.length - suffix.length,
+        ),
+      );
       return;
     }
-    _insertAtSelection(':$selected:');
-  }
 
-  Map<String, List<String>> _buildEmojiGroupsForPicker() {
-    final grouped = <String, List<String>>{};
-    final allNames = <String>[];
-    final normalized = <String>{};
-    for (final key in widget.emojiUrls.keys) {
-      final raw = key.trim();
-      final lower = raw.toLowerCase();
-      if (raw.isEmpty || normalized.contains(lower)) {
-        continue;
-      }
-      normalized.add(lower);
-      allNames.add(raw);
-    }
-    allNames.sort((a, b) => a.compareTo(b));
+    final start = selection.start;
+    final end = selection.end;
+    final selectedText = text.substring(start, end);
+    final content = selectedText.isEmpty ? placeholder : selectedText;
 
-    for (final entry in widget.emojiGroups.entries) {
-      final category = entry.key.trim();
-      if (category.isEmpty) {
-        continue;
-      }
-      final names = <String>[];
-      for (final raw in entry.value) {
-        final name = raw.trim();
-        if (name.isEmpty) {
-          continue;
-        }
-        if (!widget.emojiUrls.containsKey(name)) {
-          continue;
-        }
-        if (!names.contains(name)) {
-          names.add(name);
-        }
-      }
-      if (names.isEmpty) {
-        continue;
-      }
-      names.sort((a, b) => a.compareTo(b));
-      grouped[category] = names;
-    }
-
-    if (grouped.isEmpty) {
-      grouped['\u5168\u90e8'] = allNames;
-    } else {
-      final ordered = <String, List<String>>{'\u5168\u90e8': allNames};
-      ordered.addAll(grouped);
-      return ordered;
-    }
-    return grouped;
-  }
-
-  void _applyWrap({
-    required String prefix,
-    required String suffix,
-    String placeholder = '',
-  }) {
-    final text = _controller.text;
-    final selection = _controller.selection;
-    final safeStart = selection.start < 0 ? text.length : selection.start;
-    final safeEnd = selection.end < 0 ? text.length : selection.end;
-    final start = safeStart <= safeEnd ? safeStart : safeEnd;
-    final end = safeStart <= safeEnd ? safeEnd : safeStart;
-    final selected = text.substring(start, end);
-    final content = selected.isEmpty ? placeholder : selected;
-    final replacement = '$prefix$content$suffix';
-
-    final updated = text.replaceRange(start, end, replacement);
-    _controller.value = _controller.value.copyWith(
-      text: updated,
-      selection: TextSelection.collapsed(offset: start + replacement.length),
-      composing: TextRange.empty,
+    final newText = text.replaceRange(start, end, '$prefix$content$suffix');
+    _controller.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(
+        offset:
+            start +
+            prefix.length +
+            content.length +
+            (selectedText.isEmpty ? 0 : suffix.length),
+      ),
     );
     _focusNode.requestFocus();
   }
 
-  void _insertAtSelection(String content) {
+  void _insertText(String content) {
     final text = _controller.text;
     final selection = _controller.selection;
-    final safeStart = selection.start < 0 ? text.length : selection.start;
-    final safeEnd = selection.end < 0 ? text.length : selection.end;
-    final start = safeStart <= safeEnd ? safeStart : safeEnd;
-    final end = safeStart <= safeEnd ? safeEnd : safeStart;
+    final start = selection.isValid ? selection.start : text.length;
+    final end = selection.isValid ? selection.end : text.length;
 
-    final updated = text.replaceRange(start, end, content);
-    _controller.value = _controller.value.copyWith(
-      text: updated,
+    final newText = text.replaceRange(start, end, content);
+    _controller.value = TextEditingValue(
+      text: newText,
       selection: TextSelection.collapsed(offset: start + content.length),
-      composing: TextRange.empty,
     );
     _focusNode.requestFocus();
   }
 
-  void _showMessage(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+  void _showSnack(String msg, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: isError ? Theme.of(context).colorScheme.error : null,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+
+    // 计算合适的高度
     final screenHeight = MediaQuery.sizeOf(context).height;
     final resolvedMaxHeight = widget.maxHeight > 0
         ? widget.maxHeight
-        : screenHeight * 0.84;
-    return SafeArea(
-      child: AnimatedPadding(
-        duration: const Duration(milliseconds: 120),
-        padding: EdgeInsets.only(bottom: bottomInset),
-        child: SizedBox(
-          height: resolvedMaxHeight,
-          child: Material(
-            color: Theme.of(context).colorScheme.surface,
-            child: Column(
-              mainAxisSize: MainAxisSize.max,
+        : screenHeight * 0.85;
+
+    return Container(
+      height: resolvedMaxHeight,
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      child: Column(
+        children: [
+          // 1. 顶部 Header (简洁风格)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          widget.title ?? '',
-                          style: Theme.of(context).textTheme.titleSmall,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: _submitting ? null : _submit,
-                        child: _submitting
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : Text(widget.submitLabel ?? _defaultSubmit),
-                      ),
-                    ],
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close_rounded),
+                  style: IconButton.styleFrom(
+                    foregroundColor: colorScheme.onSurfaceVariant,
                   ),
                 ),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
-                  child: Row(
-                    children: [
-                      _ToolbarIconButton(
-                        icon: Icons.format_bold,
-                        tooltip: 'Bold',
-                        onPressed: () => _applyWrap(
-                          prefix: '**',
-                          suffix: '**',
-                          placeholder: 'bold',
-                        ),
-                      ),
-                      _ToolbarIconButton(
-                        icon: Icons.format_italic,
-                        tooltip: 'Italic',
-                        onPressed: () => _applyWrap(
-                          prefix: '*',
-                          suffix: '*',
-                          placeholder: 'italic',
-                        ),
-                      ),
-                      _ToolbarIconButton(
-                        icon: Icons.format_quote,
-                        tooltip: 'Quote',
-                        onPressed: () => _applyWrap(
-                          prefix: '> ',
-                          suffix: '',
-                          placeholder: 'quote',
-                        ),
-                      ),
-                      _ToolbarIconButton(
-                        icon: Icons.code,
-                        tooltip: 'Code',
-                        onPressed: () => _applyWrap(
-                          prefix: '```\n',
-                          suffix: '\n```',
-                          placeholder: 'code',
-                        ),
-                      ),
-                      _ToolbarIconButton(
-                        icon: Icons.link,
-                        tooltip: 'Link',
-                        onPressed: () => _insertAtSelection('[text](https://)'),
-                      ),
-                      _ToolbarIconButton(
-                        icon: Icons.sentiment_satisfied_alt_outlined,
-                        tooltip: 'Emoji',
-                        onPressed: _showEmojiPicker,
-                      ),
-                      _ToolbarIconButton(
-                        icon: Icons.image_outlined,
-                        tooltip: 'Image',
-                        loading: _uploadingImage,
-                        onPressed: _pickAndUploadImage,
-                      ),
-                    ],
-                  ),
-                ),
-                Flexible(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                    child: TextField(
-                      controller: _controller,
-                      focusNode: _focusNode,
-                      autofocus: widget.autofocus,
-                      keyboardType: TextInputType.multiline,
-                      maxLines: null,
-                      textInputAction: TextInputAction.newline,
-                      decoration: InputDecoration(
-                        hintText: widget.hintText ?? _defaultHint,
-                        border: const OutlineInputBorder(),
-                        alignLabelWithHint: true,
-                        isDense: true,
-                        filled: true,
-                      ),
+                Expanded(
+                  child: Text(
+                    widget.title ?? '发布内容',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
                     ),
+                    textAlign: TextAlign.center,
                   ),
+                ),
+                // 发送按钮 (使用 TextButton 或 FilledButton，跟随主题)
+                TextButton(
+                  onPressed: _submitting ? null : _submit,
+                  style: TextButton.styleFrom(
+                    foregroundColor: colorScheme.primary,
+                    textStyle: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  child: _submitting
+                      ? SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: colorScheme.primary.withOpacity(0.5),
+                          ),
+                        )
+                      : Text(widget.submitLabel ?? '发送'),
                 ),
               ],
             ),
           ),
-        ),
+
+          const Divider(height: 1, thickness: 0.5),
+
+          // 2. 编辑区域
+          Expanded(
+            child: TextField(
+              controller: _controller,
+              focusNode: _focusNode,
+              autofocus: widget.autofocus,
+              maxLines: null,
+              keyboardType: TextInputType.multiline,
+              style: theme.textTheme.bodyLarge?.copyWith(height: 1.5),
+              decoration: InputDecoration(
+                hintText: widget.hintText ?? '分享你的想法...',
+                hintStyle: TextStyle(color: theme.hintColor.withOpacity(0.5)),
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.all(20),
+              ),
+            ),
+          ),
+
+          // 3. 底部工具栏
+          AnimatedPadding(
+            duration: const Duration(milliseconds: 100),
+            padding: EdgeInsets.only(bottom: bottomInset),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerLow, // 浅色背景区分
+                border: Border(
+                  top: BorderSide(
+                    color: colorScheme.outlineVariant.withOpacity(0.3),
+                  ),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _ToolbarBtn(
+                    icon: Icons.image_outlined,
+                    isActive: _uploadingImage,
+                    onTap: _pickAndUploadImage,
+                  ),
+                  _ToolbarBtn(
+                    icon: Icons.sentiment_satisfied_alt_outlined,
+                    onTap: _showEmojiPicker,
+                  ),
+                  Container(
+                    width: 1,
+                    height: 20,
+                    color: colorScheme.outlineVariant.withOpacity(0.5),
+                  ),
+                  _ToolbarBtn(
+                    icon: Icons.format_bold_rounded,
+                    onTap: () => _applyFormat('**', '**', 'bold'),
+                  ),
+                  _ToolbarBtn(
+                    icon: Icons.format_italic_rounded,
+                    onTap: () => _applyFormat('*', '*', 'italic'),
+                  ),
+                  _ToolbarBtn(
+                    icon: Icons.format_quote_rounded,
+                    onTap: () => _applyFormat('> ', '', 'quote'),
+                  ),
+                  _ToolbarBtn(
+                    icon: Icons.code_rounded,
+                    onTap: () => _applyFormat('```\n', '\n```', 'code'),
+                  ),
+                  _ToolbarBtn(
+                    icon: Icons.link_rounded,
+                    onTap: () => _applyFormat('[', '](url)', 'link'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _ToolbarIconButton extends StatelessWidget {
-  const _ToolbarIconButton({
+class _ToolbarBtn extends StatelessWidget {
+  const _ToolbarBtn({
     required this.icon,
-    required this.tooltip,
-    required this.onPressed,
-    this.loading = false,
+    required this.onTap,
+    this.isActive = false,
   });
 
   final IconData icon;
-  final String tooltip;
-  final VoidCallback onPressed;
-  final bool loading;
+  final VoidCallback onTap;
+  final bool isActive;
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final color = isActive ? colorScheme.primary : colorScheme.onSurfaceVariant;
+
     return IconButton(
-      onPressed: loading ? null : onPressed,
-      tooltip: tooltip,
-      icon: loading
-          ? const SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
+      onPressed: isActive ? null : onTap,
+      icon: isActive
+          ? SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2, color: color),
             )
-          : Icon(icon),
+          : Icon(icon, color: color),
+      style: IconButton.styleFrom(
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        highlightColor: colorScheme.primary.withOpacity(0.1),
+      ),
+    );
+  }
+}
+
+// ===========================================================================
+// 重构后的表情选择面板：多级选择逻辑 (左侧导航 + 右侧内容)
+// ===========================================================================
+
+class _StructuredEmojiPicker extends StatefulWidget {
+  const _StructuredEmojiPicker({
+    required this.emojiUrls,
+    required this.emojiGroups,
+    required this.onSelected,
+  });
+
+  final Map<String, String> emojiUrls;
+  final Map<String, List<String>> emojiGroups;
+  final ValueChanged<String> onSelected;
+
+  @override
+  State<_StructuredEmojiPicker> createState() => _StructuredEmojiPickerState();
+}
+
+class _StructuredEmojiPickerState extends State<_StructuredEmojiPicker> {
+  // 分类列表
+  late List<String> _categories;
+  // 缓存每个分类下的表情 key
+  late Map<String, List<String>> _categoryData;
+  // 当前选中的分类索引
+  int _selectedIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _processData();
+  }
+
+  void _processData() {
+    _categoryData = {};
+    _categories = [];
+
+    // 1. 处理传入的分组
+    widget.emojiGroups.forEach((category, keys) {
+      final validKeys = keys
+          .where((k) => widget.emojiUrls.containsKey(k))
+          .toList();
+      if (validKeys.isNotEmpty) {
+        _categories.add(category);
+        _categoryData[category] = validKeys;
+      }
+    });
+
+    // 2. 如果没有分组，或者想加一个"全部"
+    // 这里如果没有数据，加一个默认的
+    if (_categories.isEmpty && widget.emojiUrls.isNotEmpty) {
+      const defaultCat = '全部';
+      _categories.add(defaultCat);
+      _categoryData[defaultCat] = widget.emojiUrls.keys.toList()..sort();
+    } else if (_categories.isNotEmpty) {
+      // 可选：是否添加“全部”在第一个？
+      // 如果需要，解除下面注释
+      /*
+       final allKeys = widget.emojiUrls.keys.toList()..sort();
+       _categories.insert(0, '全部');
+       _categoryData['全部'] = allKeys;
+       */
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final height = MediaQuery.sizeOf(context).height * 0.45;
+
+    if (_categories.isEmpty) {
+      return Container(
+        height: 200,
+        color: colorScheme.surface,
+        alignment: Alignment.center,
+        child: Text('暂无表情', style: TextStyle(color: theme.hintColor)),
+      );
+    }
+
+    return Container(
+      height: height,
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      child: Column(
+        children: [
+          // 顶部小把手
+          Center(
+            child: Container(
+              margin: const EdgeInsets.symmetric(vertical: 12),
+              width: 32,
+              height: 4,
+              decoration: BoxDecoration(
+                color: colorScheme.outlineVariant.withOpacity(0.5),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          Expanded(
+            child: Row(
+              children: [
+                // 左侧：分类导航 (NavigationRail 风格)
+                Container(
+                  width: 86,
+                  color: colorScheme.surfaceContainerLow.withOpacity(0.5),
+                  child: ListView.builder(
+                    itemCount: _categories.length,
+                    itemBuilder: (context, index) {
+                      final category = _categories[index];
+                      final isSelected = index == _selectedIndex;
+
+                      return InkWell(
+                        onTap: () {
+                          setState(() {
+                            _selectedIndex = index;
+                          });
+                          HapticFeedback.selectionClick();
+                        },
+                        child: Container(
+                          height: 50,
+                          alignment: Alignment.center,
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? colorScheme.secondaryContainer
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Text(
+                              category,
+                              style: TextStyle(
+                                color: isSelected
+                                    ? colorScheme.onSecondaryContainer
+                                    : colorScheme.onSurfaceVariant,
+                                fontWeight: isSelected
+                                    ? FontWeight.w600
+                                    : FontWeight.normal,
+                                fontSize: 13,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+
+                // 右侧：表情网格
+                Expanded(
+                  child: Container(
+                    color: colorScheme.surface,
+                    child: _buildEmojiGrid(theme),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmojiGrid(ThemeData theme) {
+    final currentCategory = _categories[_selectedIndex];
+    final keys = _categoryData[currentCategory] ?? [];
+
+    // 使用 Key 强制刷新 GridView 滚动位置
+    return GridView.builder(
+      key: ValueKey(currentCategory),
+      padding: const EdgeInsets.all(12),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 6,
+        mainAxisSpacing: 12,
+        crossAxisSpacing: 12,
+        childAspectRatio: 1.0,
+      ),
+      itemCount: keys.length,
+      itemBuilder: (context, index) {
+        final key = keys[index];
+        final url = widget.emojiUrls[key];
+
+        return InkWell(
+          onTap: () => widget.onSelected(key),
+          borderRadius: BorderRadius.circular(8),
+          child: CachedNetworkImage(
+            imageUrl: url ?? '',
+            fadeInDuration: const Duration(milliseconds: 150),
+            placeholder: (context, url) => Container(
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHighest.withOpacity(
+                  0.3,
+                ),
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            errorWidget: (context, url, error) => Icon(
+              Icons.broken_image_rounded,
+              size: 16,
+              color: theme.colorScheme.outline,
+            ),
+          ),
+        );
+      },
     );
   }
 }

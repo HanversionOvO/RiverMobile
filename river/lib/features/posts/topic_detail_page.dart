@@ -31,7 +31,7 @@ part 'topic_detail_page_reactions.dart';
 part 'topic_detail_page_loading.dart';
 
 // -----------------------------------------------------------------------------
-// 鐢悂鍣洪懜鍥т紣閸忓嘲鍤遍弫?
+// 閻㈩垱鎮傞崳娲嚋閸パ傜矗闁稿繐鍢查崵閬嶅极?
 // -----------------------------------------------------------------------------
 
 class _ReactionOption {
@@ -109,7 +109,7 @@ Widget _commentCardHeroShuttleBuilder(
 }
 
 // -----------------------------------------------------------------------------
-// 娑撳鐖滈棃?
+// 濞戞挸顭烽悥婊堟?
 // -----------------------------------------------------------------------------
 
 class TopicDetailPreview {
@@ -154,7 +154,6 @@ class _TopicDetailPageState extends State<TopicDetailPage>
   static const double _loadMoreTriggerOffset = 280;
   static const double _showBackToTopOffset = 420;
 
-  // 页面文案常量
   static const String _labelTopicDetail = '帖子详情';
   static const String _labelReplies = '评论';
   static const String _labelRetry = '重试';
@@ -213,14 +212,14 @@ class _TopicDetailPageState extends State<TopicDetailPage>
   );
   String? _error;
 
-  // 閸忋儱鐗崟鏇犳殭閹貉冨煑閸?
+  // 闁稿繈鍎遍悧顒勫礋閺囩姵娈柟璨夊啫鐓戦柛?
   late AnimationController _entranceController;
   late AnimationController _contentRevealController;
 
   @override
   void initState() {
     super.initState();
-    // 閸掓繂顫愰崠鏍у珚閻ｎ偅甯堕崚璺烘珤
+    // 闁告帗绻傞～鎰板礌閺嵮冪彋闁伙綆鍋呯敮鍫曞礆鐠虹儤鐝?
     _entranceController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 800),
@@ -317,130 +316,252 @@ class _TopicDetailPageState extends State<TopicDetailPage>
 
     await showModalBottomSheet<void>(
       context: context,
-      showDragHandle: true,
       isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
       builder: (sheetContext) {
+        final theme = Theme.of(sheetContext);
         return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '閸ョ偛浜?@${quote.ref.username} 閻?#${quote.ref.postNumber}',
-                  style: Theme.of(sheetContext).textTheme.titleSmall,
+          top: false,
+          child: TweenAnimationBuilder<double>(
+            tween: Tween<double>(begin: 0.97, end: 1),
+            duration: const Duration(milliseconds: 260),
+            curve: Curves.easeOutCubic,
+            builder: (context, value, child) {
+              return Opacity(
+                opacity: value,
+                child: Transform.translate(
+                  offset: Offset(0, (1 - value) * 20),
+                  child: child,
                 ),
-                const SizedBox(height: 10),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 280),
-                  child: quotedPostFuture == null
-                      ? SingleChildScrollView(
-                          child: _MarkdownContent(
-                            markdown: quote.contentMarkdown,
-                            cookieHeader: cookieHeader,
-                            emojiUrls: _emojiUrls,
+              );
+            },
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: Material(
+                color: theme.colorScheme.surface.withValues(alpha: 0.98),
+                elevation: 14,
+                shadowColor: theme.colorScheme.shadow.withValues(alpha: 0.2),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(24),
+                  side: BorderSide(
+                    color: theme.colorScheme.outlineVariant.withValues(
+                      alpha: 0.5,
+                    ),
+                  ),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 42,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.outlineVariant.withValues(
+                              alpha: 0.7,
+                            ),
+                            borderRadius: BorderRadius.circular(999),
                           ),
-                        )
-                      : FutureBuilder<RiverSideTopicPostDetail>(
-                          future: quotedPostFuture,
-                          builder: (context, snapshot) {
-                            if (snapshot.connectionState ==
-                                ConnectionState.waiting) {
-                              return const Center(
-                                child: Padding(
-                                  padding: EdgeInsets.symmetric(vertical: 20),
-                                  child: Text(_labelQuoteLoading),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.primaryContainer,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(
+                              Icons.format_quote_rounded,
+                              size: 18,
+                              color: theme.colorScheme.primary,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '回复 @${quote.ref.username} 的 #${quote.ref.postNumber}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
-                              );
-                            }
-
-                            if (snapshot.hasError) {
-                              return SingleChildScrollView(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      _labelQuoteLoadFailed,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall
-                                          ?.copyWith(
-                                            color: Theme.of(
-                                              context,
-                                            ).colorScheme.error,
-                                          ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    _MarkdownContent(
+                                Text(
+                                  '查看完整被回复内容',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            visualDensity: VisualDensity.compact,
+                            tooltip: '关闭',
+                            onPressed: () => Navigator.of(sheetContext).pop(),
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surfaceContainerLow,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: theme.colorScheme.outlineVariant.withValues(
+                              alpha: 0.35,
+                            ),
+                          ),
+                        ),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxHeight: 320),
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                            child: quotedPostFuture == null
+                                ? SingleChildScrollView(
+                                    child: _MarkdownContent(
                                       markdown: quote.contentMarkdown,
                                       cookieHeader: cookieHeader,
                                       emojiUrls: _emojiUrls,
                                     ),
-                                  ],
-                                ),
-                              );
-                            }
+                                  )
+                                : FutureBuilder<RiverSideTopicPostDetail>(
+                                    future: quotedPostFuture,
+                                    builder: (context, snapshot) {
+                                      if (snapshot.connectionState ==
+                                          ConnectionState.waiting) {
+                                        return const Padding(
+                                          padding: EdgeInsets.symmetric(
+                                            vertical: 20,
+                                          ),
+                                          child: Center(
+                                            child: Row(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              children: [
+                                                SizedBox(
+                                                  width: 16,
+                                                  height: 16,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                      ),
+                                                ),
+                                                SizedBox(width: 10),
+                                                Text(_labelQuoteLoading),
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      }
 
-                            final markdown =
-                                snapshot.data?.contentMarkdown ??
-                                quote.contentMarkdown;
-                            return SingleChildScrollView(
-                              child: _MarkdownContent(
-                                markdown: markdown,
-                                cookieHeader: cookieHeader,
-                                emojiUrls: _emojiUrls,
-                              ),
-                            );
-                          },
+                                      if (snapshot.hasError) {
+                                        return SingleChildScrollView(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                _labelQuoteLoadFailed,
+                                                style: theme.textTheme.bodySmall
+                                                    ?.copyWith(
+                                                      color: theme
+                                                          .colorScheme
+                                                          .error,
+                                                    ),
+                                              ),
+                                              const SizedBox(height: 8),
+                                              _MarkdownContent(
+                                                markdown: quote.contentMarkdown,
+                                                cookieHeader: cookieHeader,
+                                                emojiUrls: _emojiUrls,
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      }
+
+                                      final markdown =
+                                          snapshot.data?.contentMarkdown ??
+                                          quote.contentMarkdown;
+                                      return SingleChildScrollView(
+                                        child: _MarkdownContent(
+                                          markdown: markdown,
+                                          cookieHeader: cookieHeader,
+                                          emojiUrls: _emojiUrls,
+                                        ),
+                                      );
+                                    },
+                                  ),
+                          ),
                         ),
-                ),
-                const SizedBox(height: 14),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () async {
-                          Navigator.of(sheetContext).pop();
-                          await _jumpToPostNumber(
-                            postNumber: quote.ref.postNumber,
-                            topicId: quote.ref.topicId,
-                          );
-                        },
-                        child: const Text(_labelJumpToFloor),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: FilledButton(
-                        onPressed: () async {
-                          Navigator.of(sheetContext).pop();
-                          final detailTopicId = _detail?.topicId;
-                          if (detailTopicId == null ||
-                              quote.ref.topicId != detailTopicId) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(_labelCrossTopicQuote),
-                              ),
-                            );
-                            return;
-                          }
-                          await _openReplyComposer(
-                            topicId: quote.ref.topicId,
-                            replyToPostNumber: quote.ref.postNumber,
-                            quoteUsername: quote.ref.username,
-                            quoteTopicId: quote.ref.topicId,
-                            quoteContent: _stripQuotedMarkdown(
-                              quote.contentMarkdown,
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () async {
+                                Navigator.of(sheetContext).pop();
+                                await _jumpToPostNumber(
+                                  postNumber: quote.ref.postNumber,
+                                  topicId: quote.ref.topicId,
+                                );
+                              },
+                              icon: const Icon(Icons.numbers_rounded, size: 18),
+                              label: const Text(_labelJumpToFloor),
                             ),
-                          );
-                        },
-                        child: const Text(_labelReplyContent),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: FilledButton.icon(
+                              onPressed: () async {
+                                Navigator.of(sheetContext).pop();
+                                final detailTopicId = _detail?.topicId;
+                                if (detailTopicId == null ||
+                                    quote.ref.topicId != detailTopicId) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(_labelCrossTopicQuote),
+                                    ),
+                                  );
+                                  return;
+                                }
+                                await _openReplyComposer(
+                                  topicId: quote.ref.topicId,
+                                  replyToPostNumber: quote.ref.postNumber,
+                                  quoteUsername: quote.ref.username,
+                                  quoteTopicId: quote.ref.topicId,
+                                  quoteContent: _stripQuotedMarkdown(
+                                    quote.contentMarkdown,
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.reply_rounded, size: 18),
+                              label: const Text(_labelReplyContent),
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ],
+              ),
             ),
           ),
         );
@@ -731,7 +852,7 @@ class _TopicDetailPageState extends State<TopicDetailPage>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    // 闁奉垵顎冮搹鏇犳倞
+    // 闂佸鍨甸鍐惞閺囩姵鍊?
     if (_error != null && _detail == null) {
       return Scaffold(
         appBar: AppBar(title: const Text(_labelTopicDetail)),
@@ -758,7 +879,7 @@ class _TopicDetailPageState extends State<TopicDetailPage>
       );
     }
 
-    // Loading 閻欌偓閹?
+    // Loading 闁绘瑢鍋撻柟?
     if (_loadingInitial && _detail == null) {
       return _buildInitialLoadingView(theme);
     }
@@ -766,7 +887,7 @@ class _TopicDetailPageState extends State<TopicDetailPage>
     final detail = _detail;
     if (detail == null) return const SizedBox.shrink();
 
-    // 鐟欏摜娅﹂崗銉ョ壃閸曟洜鏆?
+    // 閻熸瑥鎽滃▍锕傚礂閵夈儳澹冮柛鏇熸礈閺?
     if (!_loadingInitial &&
         _entranceController.status == AnimationStatus.dismissed) {
       if (_skipNextEntranceAnimation) {
@@ -912,7 +1033,7 @@ class _TopicDetailPageState extends State<TopicDetailPage>
                   ),
                 ),
 
-                // 2. 娑撴槒甯冨锝嗘瀮 (閸樺鍣搁敍姘垛偓娆掞紒娑撳秴鍟€鐏炴洜銇氬Ο娆擃攽閸滃矂鐗犻崓?
+                // 2. 濞戞挻妲掔敮鍐潰閿濆棙鐎?(闁告ê顭烽崳鎼佹晬濮樺灈鍋撳▎鎺炵磼濞戞挸绉撮崯鈧悘鐐存礈閵囨艾螣濞嗘搩鏀介柛婊冪焸閻楃娀宕?
                 SliverToBoxAdapter(
                   child: _SlideFadeTransition(
                     animation: _entranceController,
@@ -920,7 +1041,7 @@ class _TopicDetailPageState extends State<TopicDetailPage>
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 0,
-                      ), // 閸忋劌顕￠敍灞藉弾闁劍甯堕崚绂dding
+                      ), // 闁稿繈鍔岄锟犳晬鐏炶棄寮鹃梺顔哄妽鐢爼宕氱粋顦嘾ding
                       child: ValueListenableBuilder<bool>(
                         valueListenable: _showBackToTopButtonNotifier,
                         builder: (context, showFloatingReply, _) {
@@ -962,7 +1083,7 @@ class _TopicDetailPageState extends State<TopicDetailPage>
                   ),
                 ),
 
-                // 3. 鐟洝鐝崡鈧?Header
+                // 3. 閻燁厽娲濋悵顐﹀础閳?Header
                 SliverPersistentHeader(
                   pinned: true,
                   delegate: _SectionHeaderDelegate(
@@ -972,7 +1093,7 @@ class _TopicDetailPageState extends State<TopicDetailPage>
                   ),
                 ),
 
-                // 4. 鐟洝鐝崚妤勩€?
+                // 4. 閻燁厽娲濋悵顐﹀礆濡ゅ嫨鈧?
                 if (_comments.isEmpty)
                   const SliverToBoxAdapter(
                     child: Padding(
@@ -1015,7 +1136,7 @@ class _TopicDetailPageState extends State<TopicDetailPage>
                             child: Column(
                               children: [
                                 _CommentCard(
-                                  // 闁插秵顫愬宀€娈戠懎鏇＄彨鐞?
+                                  // 闂佹彃绉甸～鎰嚗瀹€鈧▓鎴犳噹閺囷紕褰ㄩ悶?
                                   key: _keyForPostNumber(post.postNumber),
                                   post: post,
                                   cookieHeader: cookieHeader,
@@ -1050,12 +1171,12 @@ class _TopicDetailPageState extends State<TopicDetailPage>
                                   reactionPulseToken:
                                       _reactionPulseTokenByPostId[post.id] ?? 0,
                                 ),
-                                // 閸掑棗澹婄欢?
+                                // 闁告帒妫楁竟濠勬?
                                 if (index != _comments.length - 1)
                                   Padding(
                                     padding: const EdgeInsets.only(
                                       left: 60,
-                                    ), // 鐏忓秹缍傞弬鍥х摟
+                                    ), // 閻忓繐绉圭紞鍌炲棘閸パ呮憻
                                     child: Divider(
                                       height: 1,
                                       thickness: 0.5,
@@ -1071,7 +1192,7 @@ class _TopicDetailPageState extends State<TopicDetailPage>
                     }, childCount: _comments.length),
                   ),
 
-                // 5. 鎼存洟鍎?Loader
+                // 5. 閹煎瓨娲熼崕?Loader
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.all(32),
@@ -1091,7 +1212,7 @@ class _TopicDetailPageState extends State<TopicDetailPage>
             ),
           ),
 
-          // 杩斿洖椤堕儴鎸夐挳
+          // 鏉╂柨娲栨い鍫曞劥閹稿鎸?
           ValueListenableBuilder<bool>(
             valueListenable: _showBackToTopButtonNotifier,
             builder: (context, visible, _) {
@@ -1137,7 +1258,7 @@ class _TopicDetailPageState extends State<TopicDetailPage>
             },
           ),
 
-          // 鏂拌瘎璁烘彁绀烘诞绐?
+          // 閺傛媽鐦庣拋鐑樺絹缁€鐑樿癁缁?
           Positioned(
             left: 16,
             right: 16,
@@ -1204,7 +1325,7 @@ class _TopicDetailPageState extends State<TopicDetailPage>
                                     ),
                                     const SizedBox(width: 8),
                                     Text(
-                                      '鏈夋柊璇勮',
+                                      '有新评论',
                                       style: theme.textTheme.labelLarge
                                           ?.copyWith(
                                             fontWeight: FontWeight.w700,
@@ -1212,7 +1333,7 @@ class _TopicDetailPageState extends State<TopicDetailPage>
                                     ),
                                     const SizedBox(width: 10),
                                     Text(
-                                      '鐐瑰嚮鍒锋柊',
+                                      '点击刷新',
                                       style: theme.textTheme.labelMedium
                                           ?.copyWith(
                                             color: theme
@@ -1222,7 +1343,7 @@ class _TopicDetailPageState extends State<TopicDetailPage>
                                     ),
                                     const SizedBox(width: 2),
                                     IconButton(
-                                      tooltip: '鍏抽棴',
+                                      tooltip: '关闭',
                                       onPressed: _dismissRealtimeCommentHint,
                                       icon: const Icon(Icons.close, size: 17),
                                       visualDensity: VisualDensity.compact,
@@ -1309,7 +1430,7 @@ class _SkeletonBox extends StatelessWidget {
 }
 
 // -----------------------------------------------------------------------------
-// 閸庮亜瀵插宀€娈戞稉鏄忓竷缁插嫪娆?(濞屽韫堝蹇ョ礉閻掆剝顬挎い宀勫櫢鐟?
+// 闁稿寒浜滅€垫彃顕ュ畝鈧▓鎴炵▔閺勫繐绔风紒鎻掑濞?(婵炲苯顦伴煫鍫濐嚕韫囥儳绀夐柣鎺嗗墲椤寧銇勫畝鍕閻?
 // -----------------------------------------------------------------------------
 class _SlideFadeTransition extends StatelessWidget {
   final AnimationController animation;
@@ -1327,17 +1448,17 @@ class _SlideFadeTransition extends StatelessWidget {
     return AnimatedBuilder(
       animation: animation,
       builder: (context, child) {
-        // 鐟峰牏鐣婚悾璺哄閸忓啰绀岄惃鍕珚閻ｎ偊鈧彃瀹?
-        // 閸曟洜鏆欑缓鑺ユ闂€?800ms閿涘本鍨滈崐鎴濈殻閸忚埖妲х亸鍕煂 0.0 - 1.0
-        // 濮ｅ繐鈧鍘撶槐鐘虫箒閸ュ搫鐣鹃惃鍕闁?(delay ms)
+        // 閻熷嘲鐗忛悾濠氭偩鐠哄搫顤呴柛蹇撳暟缁€宀勬儍閸曨偄鐝氶柣锝庡亰閳ь剚褰冪€?
+        // 闁告洘娲滈弳娆戠紦閼恒儲顎夐梻鈧?800ms闁挎稑鏈崹婊堝磹閹存繄娈婚柛蹇氬煐濡惭呬焊閸曨偄鐓?0.0 - 1.0
+        // 婵絽绻愰埀顒€顑呴崢鎾舵閻樿櫕绠掗柛銉ユ惈閻ｉ箖鎯冮崟顐ｎ偨闂?(delay ms)
         final double delayInSeconds = delay / 1000.0;
         final double animationDurationInSeconds =
             animation.duration!.inMilliseconds / 1000.0;
 
-        // 閸忓啰绀岄惃鍕珚閻ｎ偊鏋婃慨瀣闂佹捇绮?(0.0 - 1.0)
+        // 闁稿繐鍟扮粈宀勬儍閸曨偄鐝氶柣锝庡亰閺嬪﹥鎱ㄧ€ｎ偅顎夐梻浣规崌缁?(0.0 - 1.0)
         final double start = (delayInSeconds / animationDurationInSeconds)
             .clamp(0.0, 0.8);
-        // 閸忓啰绀岄惃鍕珚閻ｎ偅瀵旂痪灞炬闂?(娴ｆ梻闄勯弲鍌炴殾閻ㄥ嫭鐦笟?閿涘矂鈧瑨锛佺懛顓犲仱 0.4 (閸?30% ~ 40% 閻ㄥ嫭妾梺鎾舵暏娓氬棗鐣幋鎰窗閸?
+        // 闁稿繐鍟扮粈宀勬儍閸曨偄鐝氶柣锝庡亝鐎垫梻鐥仦鐐€夐梻?(濞达絾姊婚梽鍕疾閸岀偞娈鹃柣銊ュ閻︻喗绗?闁挎稑鐭傞埀顒佺懆閿涗胶鎳涢鐘蹭槐 0.4 (闁?30% ~ 40% 闁汇劌瀚顏堟⒑閹捐埖鏆忓〒姘閻ｎ剟骞嬮幇顓＄獥闁?
         final double end = (start + 0.4).clamp(0.0, 1.0);
 
         final curve = CurvedAnimation(
