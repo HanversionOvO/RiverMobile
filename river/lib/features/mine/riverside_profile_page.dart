@@ -16,11 +16,13 @@ class RiverSideProfilePage extends StatefulWidget {
     required this.dependencies,
     required this.account,
     this.cookieHeader,
+    this.heroTag, // 新增：接收 Hero Tag
   });
 
   final AppDependencies dependencies;
   final UserAccount account;
   final String? cookieHeader;
+  final String? heroTag;
 
   @override
   State<RiverSideProfilePage> createState() => _RiverSideProfilePageState();
@@ -31,7 +33,6 @@ class _RiverSideProfilePageState extends State<RiverSideProfilePage>
   late TabController _tabController;
   late Future<RiverSideProfileOverview> _overviewFuture;
 
-  // 缓存各个 Tab 的数据 Future
   final Map<
     RiverSideProfileActivityKind,
     Future<List<RiverSideProfileActivityItem>>
@@ -43,7 +44,6 @@ class _RiverSideProfilePageState extends State<RiverSideProfilePage>
 
   bool _openingDetailedProfile = false;
 
-  // 获取 Tab 列表定义
   final List<_ProfileTabDef> _tabs = [
     for (final kind in RiverSideProfileActivityKind.values)
       _ProfileTabDef(title: kind.label, kind: kind),
@@ -66,8 +66,6 @@ class _RiverSideProfilePageState extends State<RiverSideProfilePage>
     _tabController.dispose();
     super.dispose();
   }
-
-  // --- Data Loading Logic (保持原有逻辑) ---
 
   String? _effectiveCookieHeader() {
     final fromWidget = widget.cookieHeader?.trim();
@@ -135,14 +133,6 @@ class _RiverSideProfilePageState extends State<RiverSideProfilePage>
     return _followersFuture ??= _loadFollowUsers(followers: true);
   }
 
-  void _refreshOverview() {
-    setState(() {
-      _overviewFuture = _loadOverview();
-    });
-  }
-
-  // --- Navigation Actions ---
-
   Future<void> _openTopicDetail(int topicId) async {
     await Navigator.of(context).push(
       riverPageRoute<void>(
@@ -209,8 +199,6 @@ class _RiverSideProfilePageState extends State<RiverSideProfilePage>
     }
   }
 
-  // --- UI Building ---
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -225,14 +213,15 @@ class _RiverSideProfilePageState extends State<RiverSideProfilePage>
           return [
             SliverAppBar(
               pinned: true,
-              expandedHeight:
-                  0, // 不使用默认的 ExpandedHeight，内容由 SliverToBoxAdapter 提供
+              expandedHeight: 0,
               title: Text(
                 innerBoxIsScrolled ? displayName : '',
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
               centerTitle: true,
-              backgroundColor: theme.colorScheme.surface.withOpacity(0.95),
+              backgroundColor: theme.colorScheme.surface.withValues(
+                alpha: 0.95,
+              ),
               elevation: 0,
               scrolledUnderElevation: 2,
               actions: [
@@ -261,7 +250,7 @@ class _RiverSideProfilePageState extends State<RiverSideProfilePage>
                   unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
                   indicatorColor: theme.colorScheme.primary,
                   indicatorSize: TabBarIndicatorSize.label,
-                  dividerColor: Colors.transparent, // 移除默认分割线
+                  dividerColor: Colors.transparent,
                   tabs: _tabs.map((t) => Tab(text: t.title)).toList(),
                 ),
                 color: theme.colorScheme.surface,
@@ -332,12 +321,11 @@ class _RiverSideProfilePageState extends State<RiverSideProfilePage>
       future: _overviewFuture,
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
-          // Loading Placeholder
           return Padding(
             padding: const EdgeInsets.all(24.0),
             child: Center(
               child: CircularProgressIndicator(
-                color: theme.colorScheme.primary.withOpacity(0.5),
+                color: theme.colorScheme.primary.withValues(alpha: 0.5),
               ),
             ),
           );
@@ -346,46 +334,48 @@ class _RiverSideProfilePageState extends State<RiverSideProfilePage>
         final overview = snapshot.data!;
         final account = overview.account;
 
+        // 使用传入的 Hero Tag，如果没有则不使用
+        Widget avatarWidget = Container(
+          width: 84,
+          height: 84,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: theme.colorScheme.surfaceContainerHighest,
+              width: 4,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+            image: account.avatarUrl.isNotEmpty
+                ? DecorationImage(
+                    image: NetworkImage(account.avatarUrl),
+                    fit: BoxFit.cover,
+                  )
+                : null,
+          ),
+          child: account.avatarUrl.isEmpty
+              ? Icon(Icons.person, size: 40, color: theme.colorScheme.primary)
+              : null,
+        );
+
+        if (widget.heroTag != null) {
+          avatarWidget = Hero(tag: widget.heroTag!, child: avatarWidget);
+        }
+
         return Container(
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 头像与基本信息行
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    width: 84,
-                    height: 84,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: theme.colorScheme.surfaceContainerHighest,
-                        width: 4,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                      image: account.avatarUrl.isNotEmpty
-                          ? DecorationImage(
-                              image: NetworkImage(account.avatarUrl),
-                              fit: BoxFit.cover,
-                            )
-                          : null,
-                    ),
-                    child: account.avatarUrl.isEmpty
-                        ? Icon(
-                            Icons.person,
-                            size: 40,
-                            color: theme.colorScheme.primary,
-                          )
-                        : null,
-                  ),
+                  avatarWidget,
                   const SizedBox(width: 20),
                   Expanded(
                     child: Column(
@@ -438,7 +428,6 @@ class _RiverSideProfilePageState extends State<RiverSideProfilePage>
 
               const SizedBox(height: 24),
 
-              // 核心数据统计 (类似 Twitter/Weibo 布局)
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
@@ -461,7 +450,6 @@ class _RiverSideProfilePageState extends State<RiverSideProfilePage>
 
               const SizedBox(height: 16),
 
-              // 辅助元数据
               Wrap(
                 spacing: 12,
                 runSpacing: 8,
@@ -514,8 +502,6 @@ class _RiverSideProfilePageState extends State<RiverSideProfilePage>
     return '${date.year}/${date.month}/${date.day}';
   }
 }
-
-// --- Tab Components ---
 
 class _ActivityTab extends StatefulWidget {
   final RiverSideProfileActivityKind kind;
@@ -575,7 +561,7 @@ class _ActivityTabState extends State<_ActivityTab>
 
             return RefreshIndicator(
               onRefresh: widget.onRefresh,
-              edgeOffset: 0, // In nested scroll view, offset handled by header
+              edgeOffset: 0,
               child: ListView.separated(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
@@ -614,7 +600,7 @@ class _ActivityCard extends StatelessWidget {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(
-          color: theme.colorScheme.outlineVariant.withOpacity(0.4),
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
         ),
       ),
       margin: EdgeInsets.zero,
@@ -634,8 +620,8 @@ class _ActivityCard extends StatelessWidget {
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: theme.colorScheme.secondaryContainer.withOpacity(
-                        0.5,
+                      color: theme.colorScheme.secondaryContainer.withValues(
+                        alpha: 0.5,
                       ),
                       borderRadius: BorderRadius.circular(6),
                     ),
@@ -849,8 +835,6 @@ class _UsersTab extends StatelessWidget {
   }
 }
 
-// --- Common Widgets ---
-
 class _ProfileHiddenView extends StatelessWidget {
   const _ProfileHiddenView();
   @override
@@ -886,7 +870,7 @@ class _MetaChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
@@ -946,8 +930,6 @@ class _ErrorRetryView extends StatelessWidget {
     );
   }
 }
-
-// --- Helpers ---
 
 class _StickyTabBarDelegate extends SliverPersistentHeaderDelegate {
   final TabBar _tabBar;

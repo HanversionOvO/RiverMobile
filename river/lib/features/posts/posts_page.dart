@@ -140,9 +140,7 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
               pinned: true,
               floating: true,
               forceElevated: innerBoxIsScrolled,
-              backgroundColor: theme.colorScheme.surface.withValues(
-                alpha: 0.95,
-              ),
+              backgroundColor: theme.colorScheme.surface.withOpacity(0.95),
               // 自定义 Bottom 区域作为主要导航栏
               bottom: PreferredSize(
                 preferredSize: const Size.fromHeight(52), // 稍微增加高度以容纳 padding
@@ -155,8 +153,8 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
                   decoration: BoxDecoration(
                     border: Border(
                       bottom: BorderSide(
-                        color: theme.colorScheme.outlineVariant.withValues(
-                          alpha: 0.2,
+                        color: theme.colorScheme.outlineVariant.withOpacity(
+                          0.2,
                         ),
                         width: 1,
                       ),
@@ -191,8 +189,8 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
                       Container(
                         width: 1,
                         height: 20,
-                        color: theme.colorScheme.outlineVariant.withValues(
-                          alpha: 0.5,
+                        color: theme.colorScheme.outlineVariant.withOpacity(
+                          0.5,
                         ),
                         margin: const EdgeInsets.symmetric(horizontal: 8),
                       ),
@@ -235,7 +233,6 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
       tag: 'board_picker_hero', // Hero 标签
       flightShuttleBuilder:
           (flightContext, animation, direction, fromContext, toContext) {
-            // 飞行过程中使用 Material 包裹防止文字样式丢失
             return Material(color: Colors.transparent, child: toContext.widget);
           },
       child: Material(
@@ -248,13 +245,11 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
             decoration: BoxDecoration(
               color: hasSelection
                   ? theme.colorScheme.primaryContainer
-                  : theme.colorScheme.surfaceContainerHighest.withValues(
-                      alpha: 0.3,
-                    ),
+                  : theme.colorScheme.surfaceContainerHighest.withOpacity(0.3),
               borderRadius: BorderRadius.circular(20),
               border: hasSelection
                   ? Border.all(
-                      color: theme.colorScheme.primary.withValues(alpha: 0.2),
+                      color: theme.colorScheme.primary.withOpacity(0.2),
                     )
                   : null,
             ),
@@ -292,9 +287,7 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
                 Icon(
                   Icons.arrow_drop_down_rounded,
                   size: 18,
-                  color: theme.colorScheme.onSurfaceVariant.withValues(
-                    alpha: 0.6,
-                  ),
+                  color: theme.colorScheme.onSurfaceVariant.withOpacity(0.6),
                 ),
               ],
             ),
@@ -458,10 +451,14 @@ class _TopicListTabState extends State<_TopicListTab>
   }
 
   void _openAuthor(RiverSideTopicSummary topic) {
+    // 生成 Hero Tag
+    final heroTag = 'avatar_${topic.id}_${topic.authorUsername}';
+
     showRiverSideUserProfileSheet(
       context: context,
       dependencies: widget.dependencies,
       username: topic.authorUsername,
+      heroTagAvatar: heroTag, // 传递 Tag，确保 riverside_profile_sheet.dart 已更新支持此参数
     );
   }
 
@@ -499,7 +496,7 @@ class _TopicListTabState extends State<_TopicListTab>
             Icon(
               Icons.inbox_outlined,
               size: 64,
-              color: Colors.grey.withValues(alpha: 0.3),
+              color: Colors.grey.withOpacity(0.3),
             ),
             const SizedBox(height: 16),
             const Text('暂无帖子', style: TextStyle(color: Colors.grey)),
@@ -575,7 +572,6 @@ class _RiverSideBoardPicker extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // 1. Hero Header (标题区域)
-        // 使用与主页按钮相同的 Hero Tag 实现飞入效果
         Hero(
           tag: 'board_picker_hero',
           child: Material(
@@ -608,7 +604,6 @@ class _RiverSideBoardPicker extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
             children: [
               // 2. 优化后的“全部板块”按钮
-              // 作为一个特殊的、醒目的卡片放在最上方
               InkWell(
                 onTap: () => onSelected(null),
                 borderRadius: BorderRadius.circular(16),
@@ -628,14 +623,12 @@ class _RiverSideBoardPicker extends StatelessWidget {
                     ),
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
-                      color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                      color: theme.colorScheme.primary.withOpacity(0.1),
                     ),
                     boxShadow: [
                       if (selectedId == null)
                         BoxShadow(
-                          color: theme.colorScheme.primary.withValues(
-                            alpha: 0.15,
-                          ),
+                          color: theme.colorScheme.primary.withOpacity(0.15),
                           blurRadius: 8,
                           offset: const Offset(0, 4),
                         ),
@@ -771,10 +764,10 @@ class _BoardGroupCard extends StatelessWidget {
                   label: Text(child.name),
                   onSelected: (_) => onSelected(child),
                   side: BorderSide.none,
+                  showCheckmark: false, // 已移除对号
                   backgroundColor: theme.colorScheme.surfaceContainerHighest
-                      .withValues(alpha: 0.3),
+                      .withOpacity(0.3),
                   selectedColor: theme.colorScheme.primaryContainer,
-                  checkmarkColor: theme.colorScheme.primary,
                   labelStyle: TextStyle(
                     color: isSelected
                         ? theme.colorScheme.primary
@@ -821,13 +814,16 @@ class _TopicCard extends StatelessWidget {
     final isPinned = topic.isPinned;
     final isHot = topic.isHot || isHotFeed;
 
+    // 为头像生成唯一的 Hero Tag
+    final avatarHeroTag = 'avatar_${topic.id}_${topic.authorUsername}';
+
     return Container(
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
+            color: Colors.black.withOpacity(0.03),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -848,20 +844,23 @@ class _TopicCard extends StatelessWidget {
                   children: [
                     GestureDetector(
                       onTap: onAuthorTap,
-                      child: CircleAvatar(
-                        radius: 12,
-                        backgroundImage: topic.authorAvatarUrl.isNotEmpty
-                            ? NetworkImage(topic.authorAvatarUrl)
-                            : null,
-                        backgroundColor:
-                            theme.colorScheme.surfaceContainerHighest,
-                        child: topic.authorAvatarUrl.isEmpty
-                            ? Icon(
-                                Icons.person,
-                                size: 14,
-                                color: theme.colorScheme.onSurfaceVariant,
-                              )
-                            : null,
+                      child: Hero(
+                        tag: avatarHeroTag,
+                        child: CircleAvatar(
+                          radius: 12,
+                          backgroundImage: topic.authorAvatarUrl.isNotEmpty
+                              ? NetworkImage(topic.authorAvatarUrl)
+                              : null,
+                          backgroundColor:
+                              theme.colorScheme.surfaceContainerHighest,
+                          child: topic.authorAvatarUrl.isEmpty
+                              ? Icon(
+                                  Icons.person,
+                                  size: 14,
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                )
+                              : null,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -972,7 +971,7 @@ class _TopicCard extends StatelessWidget {
                       ),
                       decoration: BoxDecoration(
                         color: theme.colorScheme.surfaceContainerHighest
-                            .withValues(alpha: 0.5),
+                            .withOpacity(0.5),
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
