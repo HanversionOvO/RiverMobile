@@ -23,7 +23,7 @@ extension RiverSideApiClientParsingMethods on RiverSideApiClient {
         ? displayUsername
         : (name.isNotEmpty
               ? name
-              : (username.isEmpty ? '閸栧灝鎮曢悽銊﹀煕' : username));
+              : (username.isEmpty ? '\u672a\u77e5\u7528\u6237' : username));
     final avatarTemplate = (post['avatar_template'] ?? '').toString();
     final authorTitle = (post['user_title'] ?? post['primary_group_name'] ?? '')
         .toString()

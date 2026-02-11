@@ -1,4 +1,4 @@
-﻿// ignore_for_file: use_build_context_synchronously
+// ignore_for_file: use_build_context_synchronously
 
 import 'dart:async';
 
@@ -11,6 +11,7 @@ import 'package:river/app/app_dependencies.dart';
 import 'package:river/core/constants.dart';
 import 'package:river/core/network/riverside_api_client.dart';
 import 'package:river/core/network/riverside_topic_models.dart';
+import 'package:river/core/realtime/riverside_message_bus_poller.dart';
 import 'package:river/core/widgets/river_image_viewer.dart';
 import 'package:river/core/widgets/river_markdown_editor.dart';
 import 'package:river/features/mine/riverside_profile_sheet.dart';
@@ -172,6 +173,8 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
 
   bool _loadingInitial = true;
   bool _loadingMore = false;
+  bool _hasRealtimeCommentUpdate = false;
+  RiverSideMessageBusPoller? _messageBusPoller;
   final ValueNotifier<bool> _showBackToTopButtonNotifier = ValueNotifier<bool>(
     false,
   );
@@ -181,11 +184,13 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    _restartRealtimePolling();
     _loadInitial();
   }
 
   @override
   void dispose() {
+    _messageBusPoller?.stop();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _showBackToTopButtonNotifier.dispose();
@@ -291,7 +296,7 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '\u56de\u590d @${quote.ref.username} 闂?#${quote.ref.postNumber}',
+                  '\u56de\u590d @${quote.ref.username} \u7684 #${quote.ref.postNumber}',
                   style: Theme.of(sheetContext).textTheme.titleSmall,
                 ),
                 const SizedBox(height: 10),
@@ -518,6 +523,27 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 20),
         children: [
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 180),
+            child: !_hasRealtimeCommentUpdate
+                ? const SizedBox.shrink()
+                : Padding(
+                    key: const ValueKey<String>('realtime-comment-hint'),
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Card(
+                      margin: EdgeInsets.zero,
+                      child: ListTile(
+                        dense: true,
+                        leading: const Icon(Icons.mark_chat_unread_outlined),
+                        title: const Text('有新评论，点击加载'),
+                        trailing: FilledButton.tonal(
+                          onPressed: _consumeRealtimeCommentUpdate,
+                          child: const Text('加载'),
+                        ),
+                      ),
+                    ),
+                  ),
+          ),
           const _SectionHeader(title: _labelMainPost),
           _MainPostCard(
             key: _keyForPostNumber(1),
@@ -598,4 +624,3 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
     );
   }
 }
-

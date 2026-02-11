@@ -3,11 +3,54 @@
 part of 'topic_detail_page.dart';
 
 extension _TopicDetailPageLoading on _TopicDetailPageState {
+  void _restartRealtimePolling() {
+    _messageBusPoller?.stop();
+    _messageBusPoller = null;
+
+    final cookieHeader = _activeCookieHeader();
+    if (cookieHeader == null || cookieHeader.trim().isEmpty) {
+      return;
+    }
+
+    final channel = '/topic/${widget.topicId}';
+    final poller = RiverSideMessageBusPoller(
+      apiClient: widget.dependencies.accountStore.riverSideApiClient,
+      cookieHeader: cookieHeader,
+      channelLastIds: RiverSideMessageBusPoller.buildInitialChannels(<String>[
+        channel,
+      ]),
+      onEvents: (events) {
+        if (!mounted || events.isEmpty) {
+          return;
+        }
+        final hasTopicEvent = events.any((event) => event.channel == channel);
+        if (!hasTopicEvent || _hasRealtimeCommentUpdate) {
+          return;
+        }
+        _mutateState(() {
+          _hasRealtimeCommentUpdate = true;
+        });
+      },
+    );
+    _messageBusPoller = poller;
+    poller.start();
+  }
+
+  Future<void> _consumeRealtimeCommentUpdate() async {
+    if (_hasRealtimeCommentUpdate) {
+      _mutateState(() {
+        _hasRealtimeCommentUpdate = false;
+      });
+    }
+    await _loadInitial();
+  }
+
   Future<void> _loadInitial() async {
     _mutateState(() {
       _loadingInitial = true;
       _loadingMore = false;
       _error = null;
+      _hasRealtimeCommentUpdate = false;
     });
     _showBackToTopButtonNotifier.value = false;
 

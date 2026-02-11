@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:html2md/html2md.dart' as html2md;
 import 'package:http/http.dart' as http;
 import 'package:river/core/account/account_models.dart';
 import 'package:river/core/constants.dart';
+import 'package:river/core/network/riverside_message_bus_models.dart';
 import 'package:river/core/network/riverside_notification_models.dart';
 import 'package:river/core/network/riverside_profile_models.dart';
 import 'package:river/core/network/riverside_search_models.dart';
@@ -17,6 +19,7 @@ part 'riverside_api_client_categories_emojis.dart';
 part 'riverside_api_client_notifications.dart';
 part 'riverside_api_client_chat.dart';
 part 'riverside_api_client_chat_parsing.dart';
+part 'riverside_api_client_message_bus.dart';
 part 'riverside_api_client_search.dart';
 part 'riverside_api_client_parsing.dart';
 part 'riverside_api_client_parsing_uploads.dart';

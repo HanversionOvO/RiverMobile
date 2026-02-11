@@ -36,6 +36,27 @@ extension _PostsPageView on _PostsPageState {
             ],
           ),
         ),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 180),
+          child: !_hasRealtimeTopicUpdate
+              ? const SizedBox.shrink()
+              : Padding(
+                  key: const ValueKey<String>('realtime-topic-hint'),
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: Card(
+                    margin: EdgeInsets.zero,
+                    child: ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.fiber_new_outlined),
+                      title: const Text('有新帖子，点击刷新'),
+                      trailing: FilledButton.tonal(
+                        onPressed: _consumeRealtimeTopicUpdate,
+                        child: const Text('刷新'),
+                      ),
+                    ),
+                  ),
+                ),
+        ),
         Expanded(child: _buildBodyWithActionButton()),
       ],
     );

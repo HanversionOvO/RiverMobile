@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:river/app/app_dependencies.dart';
 import 'package:river/features/compose/compose_topic_page.dart';
 import 'package:river/features/mine/mine_page.dart';
@@ -18,6 +18,7 @@ class HomeShellPage extends StatefulWidget {
 
 class _HomeShellPageState extends State<HomeShellPage> {
   int _selectedTabIndex = 0;
+  int _notificationsUnreadCount = 0;
 
   static const List<String> _titles = <String>[
     '\u5e16\u5b50',
@@ -29,9 +30,32 @@ class _HomeShellPageState extends State<HomeShellPage> {
   late final List<Widget> _pages = <Widget>[
     PostsPage(dependencies: widget.dependencies),
     ComposeTopicPage(dependencies: widget.dependencies),
-    NotificationsPage(dependencies: widget.dependencies),
+    NotificationsPage(
+      dependencies: widget.dependencies,
+      onUnreadCountChanged: _onUnreadCountChanged,
+    ),
     MinePage(dependencies: widget.dependencies),
   ];
+
+  void _onUnreadCountChanged(int value) {
+    if (!mounted || value == _notificationsUnreadCount) {
+      return;
+    }
+    setState(() {
+      _notificationsUnreadCount = value;
+    });
+  }
+
+  Widget _buildNotificationTabIcon({required bool selected}) {
+    final baseIcon = Icon(
+      selected ? Icons.notifications : Icons.notifications_none_outlined,
+    );
+    final count = _notificationsUnreadCount;
+    if (count <= 0) {
+      return baseIcon;
+    }
+    return Badge.count(count: count > 99 ? 99 : count, child: baseIcon);
+  }
 
   Future<void> _openSearchPage() async {
     await Navigator.of(context).push(
@@ -67,23 +91,23 @@ class _HomeShellPageState extends State<HomeShellPage> {
             _selectedTabIndex = index;
           });
         },
-        destinations: const <NavigationDestination>[
-          NavigationDestination(
+        destinations: <NavigationDestination>[
+          const NavigationDestination(
             icon: Icon(Icons.forum_outlined),
             selectedIcon: Icon(Icons.forum),
             label: '\u5e16\u5b50',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.edit_note_outlined),
             selectedIcon: Icon(Icons.edit_note),
             label: '\u53d1\u5e16',
           ),
           NavigationDestination(
-            icon: Icon(Icons.notifications_none_outlined),
-            selectedIcon: Icon(Icons.notifications),
+            icon: _buildNotificationTabIcon(selected: false),
+            selectedIcon: _buildNotificationTabIcon(selected: true),
             label: '\u901a\u77e5',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.person_outline),
             selectedIcon: Icon(Icons.person),
             label: '\u6211\u7684',
@@ -93,4 +117,3 @@ class _HomeShellPageState extends State<HomeShellPage> {
     );
   }
 }
-

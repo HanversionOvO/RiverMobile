@@ -1,7 +1,8 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:river/app/app_dependencies.dart';
 import 'package:river/core/network/riverside_api_client.dart';
 import 'package:river/core/network/riverside_notification_models.dart';
+import 'package:river/core/realtime/riverside_message_bus_poller.dart';
 import 'package:river/features/notifications/chat_detail_page.dart';
 import 'package:river/features/posts/topic_detail_page.dart';
 import 'package:river/core/navigation/river_page_route.dart';
@@ -24,9 +25,14 @@ extension on _NotificationsMode {
 }
 
 class NotificationsPage extends StatefulWidget {
-  const NotificationsPage({super.key, required this.dependencies});
+  const NotificationsPage({
+    super.key,
+    required this.dependencies,
+    this.onUnreadCountChanged,
+  });
 
   final AppDependencies dependencies;
+  final ValueChanged<int>? onUnreadCountChanged;
 
   @override
   State<NotificationsPage> createState() => _NotificationsPageState();
@@ -62,6 +68,27 @@ class _NotificationsPageState extends State<NotificationsPage> {
   int _requestSerial = 0;
   String? _error;
   String? _lastActiveUsername;
+  RiverSideMessageBusPoller? _messageBusPoller;
+  bool _hasRealtimeNotifications = false;
+
+  int get _totalUnreadCount {
+    final unreadNotifications = _notifications
+        .where((item) => !item.read)
+        .length;
+    final unreadChannels = _channelMessages.fold<int>(
+      0,
+      (sum, item) => sum + item.unreadCount,
+    );
+    final unreadDirectMessages = _directMessages.fold<int>(
+      0,
+      (sum, item) => sum + item.unreadCount,
+    );
+    return unreadNotifications + unreadChannels + unreadDirectMessages;
+  }
+
+  void _notifyUnreadCountChanged() {
+    widget.onUnreadCountChanged?.call(_totalUnreadCount);
+  }
 
   @override
   void initState() {
@@ -75,6 +102,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
   @override
   void dispose() {
+    _messageBusPoller?.stop();
     widget.dependencies.accountStore.removeListener(_onAccountStoreChanged);
     _notificationsScrollController
       ..removeListener(_onNotificationsScroll)
@@ -89,6 +117,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
       return;
     }
     _lastActiveUsername = current;
+    _messageBusPoller?.stop();
+    _messageBusPoller = null;
     if (mounted) {
       setState(() {
         _loading = true;
@@ -99,12 +129,15 @@ class _NotificationsPageState extends State<NotificationsPage> {
         _directMessages = const <RiverSideChatChannelItem>[];
         _nextNotificationsPath = '';
         _totalNotifications = null;
+        _hasRealtimeNotifications = false;
       });
     }
     if (_notificationsScrollController.hasClients) {
       _notificationsScrollController.jumpTo(0);
     }
+    _notifyUnreadCountChanged();
     _loadAll(clearExisting: true);
+    _restartRealtimePolling();
   }
 
   void _onNotificationsScroll() {
@@ -154,6 +187,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
         _totalNotifications = null;
         _loadingMoreNotifications = false;
       });
+      _notifyUnreadCountChanged();
       return;
     }
 
@@ -201,6 +235,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
         _loading = false;
         _error = null;
         _loadingMoreNotifications = false;
+        _hasRealtimeNotifications = false;
         _notifications = notificationPage.items;
         _nextNotificationsPath = notificationPage.loadMorePath;
         _totalNotifications = notificationPage.totalRows;
@@ -211,6 +246,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
             .where((item) => item.isDirectMessage)
             .toList(growable: false);
       });
+      _notifyUnreadCountChanged();
+      _restartRealtimePolling();
     } on RiverSideApiException catch (error) {
       if (!mounted || serial != _requestSerial) {
         return;
@@ -240,6 +277,67 @@ class _NotificationsPageState extends State<NotificationsPage> {
     if (topicId == null || topicId <= 0) {
       return;
     }
+
+    if (!item.read) {
+      var markedRemotely = false;
+      final cookieHeader = _activeCookieHeader();
+      if (cookieHeader != null && cookieHeader.trim().isNotEmpty) {
+        try {
+          await widget.dependencies.accountStore.riverSideApiClient
+              .markNotificationsAsRead(
+                cookieHeader: cookieHeader,
+                notificationId: item.id,
+              );
+          markedRemotely = true;
+        } on RiverSideApiException catch (error) {
+          if (mounted) {
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text(error.message)));
+          }
+        } catch (_) {
+          if (mounted) {
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(const SnackBar(content: Text('通知已读状态同步失败')));
+          }
+        }
+      }
+
+      if (mounted && markedRemotely) {
+        setState(() {
+          _notifications = _notifications
+              .map((value) {
+                if (value.id != item.id) {
+                  return value;
+                }
+                return RiverSideNotificationItem(
+                  id: value.id,
+                  type: value.type,
+                  read: true,
+                  highPriority: value.highPriority,
+                  createdAt: value.createdAt,
+                  topicId: value.topicId,
+                  postNumber: value.postNumber,
+                  slug: value.slug,
+                  title: value.title,
+                  excerpt: value.excerpt,
+                  username: value.username,
+                  actionText: value.actionText,
+                  badgeName: value.badgeName,
+                  count: value.count,
+                  avatarUrl: value.avatarUrl,
+                );
+              })
+              .toList(growable: false);
+        });
+        _notifyUnreadCountChanged();
+      }
+    }
+
+    if (!mounted) {
+      return;
+    }
     await Navigator.of(context).push(
       riverPageRoute<void>(
         builder: (_) => TopicDetailPage(
@@ -248,6 +346,70 @@ class _NotificationsPageState extends State<NotificationsPage> {
         ),
       ),
     );
+  }
+
+  Future<void> _restartRealtimePolling() async {
+    _messageBusPoller?.stop();
+    _messageBusPoller = null;
+
+    final cookieHeader = _activeCookieHeader();
+    if (cookieHeader == null || cookieHeader.trim().isEmpty) {
+      return;
+    }
+
+    var userId =
+        widget.dependencies.accountStore.activeRiverSideAccount?.userId;
+    if (userId == null || userId <= 0) {
+      try {
+        final current = await widget
+            .dependencies
+            .accountStore
+            .riverSideApiClient
+            .fetchCurrentUserByCookie(cookieHeader: cookieHeader);
+        userId = current.userId;
+      } catch (_) {
+        userId = null;
+      }
+    }
+
+    if (!mounted || userId == null || userId <= 0) {
+      return;
+    }
+
+    final channel = '/notification/$userId';
+    final poller = RiverSideMessageBusPoller(
+      apiClient: widget.dependencies.accountStore.riverSideApiClient,
+      cookieHeader: cookieHeader,
+      channelLastIds: RiverSideMessageBusPoller.buildInitialChannels(<String>[
+        channel,
+      ]),
+      onEvents: (events) {
+        if (!mounted || events.isEmpty) {
+          return;
+        }
+        final hasNewNotification = events.any(
+          (event) => event.channel == channel,
+        );
+        if (!hasNewNotification || _hasRealtimeNotifications) {
+          return;
+        }
+        setState(() {
+          _hasRealtimeNotifications = true;
+        });
+      },
+    );
+    _messageBusPoller = poller;
+    poller.start();
+  }
+
+  Future<void> _consumeRealtimeNotifications() async {
+    if (_hasRealtimeNotifications) {
+      setState(() {
+        _hasRealtimeNotifications = false;
+      });
+    }
+    await _loadAll(showLoading: false);
+    _notifyUnreadCountChanged();
   }
 
   Future<void> _loadMoreNotifications() async {
@@ -300,6 +462,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
         _totalNotifications = page.totalRows ?? _totalNotifications;
         _loadingMoreNotifications = false;
       });
+      _notifyUnreadCountChanged();
     } on RiverSideApiException catch (error) {
       if (!mounted || serial != _requestSerial) {
         return;
@@ -400,6 +563,27 @@ class _NotificationsPageState extends State<NotificationsPage> {
             ),
           ),
         ),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 180),
+          child: !_hasRealtimeNotifications
+              ? const SizedBox.shrink()
+              : Padding(
+                  key: const ValueKey<String>('realtime-notification-hint'),
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                  child: Card(
+                    margin: EdgeInsets.zero,
+                    child: ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.notifications_active_outlined),
+                      title: const Text('有新通知，点击刷新'),
+                      trailing: FilledButton.tonal(
+                        onPressed: _consumeRealtimeNotifications,
+                        child: const Text('刷新'),
+                      ),
+                    ),
+                  ),
+                ),
+        ),
         if (_mode == _NotificationsMode.notifications &&
             _totalNotifications != null)
           Padding(
@@ -417,4 +601,3 @@ class _NotificationsPageState extends State<NotificationsPage> {
     );
   }
 }
-

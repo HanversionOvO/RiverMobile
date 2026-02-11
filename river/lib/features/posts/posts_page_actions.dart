@@ -9,8 +9,14 @@ extension _PostsPageActions on _PostsPageState {
     }
 
     _lastActiveUsername = current;
+    _messageBusPoller?.stop();
+    _messageBusPoller = null;
+    _mutateState(() {
+      _hasRealtimeTopicUpdate = false;
+    });
     _loadCategories();
     _loadFirstPage(clearExisting: true);
+    _restartRealtimePolling();
   }
 
   void _onScroll() {
@@ -56,6 +62,49 @@ extension _PostsPageActions on _PostsPageState {
     return widget.dependencies.accountStore.riverSideCookieHeaderFor(
       activeUsername,
     );
+  }
+
+  void _restartRealtimePolling() {
+    _messageBusPoller?.stop();
+    _messageBusPoller = null;
+
+    final cookieHeader = _activeCookieHeader();
+    if (cookieHeader == null || cookieHeader.trim().isEmpty) {
+      return;
+    }
+
+    final poller = RiverSideMessageBusPoller(
+      apiClient: widget.dependencies.accountStore.riverSideApiClient,
+      cookieHeader: cookieHeader,
+      channelLastIds: RiverSideMessageBusPoller.buildInitialChannels(
+        const <String>[_PostsPageState._latestTopicChannel],
+      ),
+      onEvents: (events) {
+        if (!mounted || events.isEmpty) {
+          return;
+        }
+        final hasLatestEvent = events.any(
+          (event) => event.channel == _PostsPageState._latestTopicChannel,
+        );
+        if (!hasLatestEvent || _hasRealtimeTopicUpdate) {
+          return;
+        }
+        _mutateState(() {
+          _hasRealtimeTopicUpdate = true;
+        });
+      },
+    );
+    _messageBusPoller = poller;
+    poller.start();
+  }
+
+  Future<void> _consumeRealtimeTopicUpdate() async {
+    if (_hasRealtimeTopicUpdate) {
+      _mutateState(() {
+        _hasRealtimeTopicUpdate = false;
+      });
+    }
+    await _loadFirstPage(clearExisting: false);
   }
 
   Future<void> _loadCategories() async {
@@ -327,6 +376,11 @@ extension _PostsPageActions on _PostsPageState {
   }
 
   Future<void> _onRefresh() async {
+    if (_hasRealtimeTopicUpdate) {
+      _mutateState(() {
+        _hasRealtimeTopicUpdate = false;
+      });
+    }
     await _loadFirstPage(clearExisting: false);
   }
 

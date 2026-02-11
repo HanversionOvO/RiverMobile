@@ -1,8 +1,9 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:river/app/app_dependencies.dart';
 import 'package:river/core/categories/riverside_category_utils.dart';
 import 'package:river/core/network/riverside_api_client.dart';
 import 'package:river/core/network/riverside_topic_models.dart';
+import 'package:river/core/realtime/riverside_message_bus_poller.dart';
 import 'package:river/core/widgets/riverside_category_picker_sheet.dart';
 import 'package:river/features/mine/riverside_profile_sheet.dart';
 import 'package:river/features/posts/topic_detail_page.dart';
@@ -24,6 +25,7 @@ class PostsPage extends StatefulWidget {
 }
 
 class _PostsPageState extends State<PostsPage> {
+  static const String _latestTopicChannel = '/latest';
   static const double _loadMoreTriggerOffset = 280;
   static const double _showActionButtonOffset = 420;
   static const double _actionSwitchDelta = 24;
@@ -46,6 +48,8 @@ class _PostsPageState extends State<PostsPage> {
   double _lastScrollOffset = 0;
   _FloatingActionMode _floatingActionMode = _FloatingActionMode.hidden;
   String? _lastActiveUsername;
+  RiverSideMessageBusPoller? _messageBusPoller;
+  bool _hasRealtimeTopicUpdate = false;
 
   @override
   void initState() {
@@ -56,10 +60,12 @@ class _PostsPageState extends State<PostsPage> {
     _scrollController.addListener(_onScroll);
     _loadCategories();
     _loadFirstPage(clearExisting: true);
+    _restartRealtimePolling();
   }
 
   @override
   void dispose() {
+    _messageBusPoller?.stop();
     widget.dependencies.accountStore.removeListener(_onAccountStoreChanged);
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();

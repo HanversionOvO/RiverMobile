@@ -78,7 +78,6 @@ class _RiverAppState extends State<RiverApp> {
               seedColor: _dependencies.settingsController.themeSeedColor,
             ),
             useMaterial3: true,
-            platform: TargetPlatform.iOS,
           ),
           darkTheme: ThemeData(
             colorScheme: ColorScheme.fromSeed(
@@ -86,7 +85,6 @@ class _RiverAppState extends State<RiverApp> {
               brightness: Brightness.dark,
             ),
             useMaterial3: true,
-            platform: TargetPlatform.iOS,
           ),
           themeMode: _dependencies.settingsController.themeMode,
           home: _buildHome(),

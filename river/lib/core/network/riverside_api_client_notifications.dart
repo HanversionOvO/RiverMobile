@@ -49,6 +49,65 @@ extension RiverSideApiClientNotificationMethods on RiverSideApiClient {
     return page.items;
   }
 
+  Future<void> markNotificationsAsRead({
+    String? cookieHeader,
+    int? notificationId,
+  }) async {
+    final cookie = cookieHeader?.trim() ?? '';
+    if (cookie.isEmpty) {
+      throw const RiverSideApiException('Cookie header is empty.');
+    }
+
+    final csrf = await fetchSessionCsrfToken(cookieHeader: cookie);
+    final headers = <String, String>{
+      'Accept': 'application/json',
+      'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+      'Cookie': cookie,
+      'X-CSRF-Token': csrf,
+      'X-Requested-With': 'XMLHttpRequest',
+      'Origin': riverSideBaseUrl,
+      'Referer': '$riverSideBaseUrl/',
+    };
+    final body = notificationId == null
+        ? <String, String>{}
+        : <String, String>{'id': '$notificationId'};
+
+    var response = await http.put(
+      Uri.parse('$riverSideBaseUrl/notifications/mark-read.json'),
+      headers: headers,
+      body: body,
+      encoding: utf8,
+    );
+    if (response.statusCode == 404) {
+      response = await http.put(
+        Uri.parse('$riverSideBaseUrl/notifications/read.json'),
+        headers: headers,
+        body: body,
+        encoding: utf8,
+      );
+    }
+
+    if (response.statusCode == 403) {
+      throw const RiverSideApiException(
+        'Login session expired. Please sign in again.',
+      );
+    }
+    if (response.statusCode != 200) {
+      throw RiverSideApiException(
+        'Failed to mark notifications as read, HTTP ${response.statusCode}',
+      );
+    }
+
+    final decoded = _decodeJsonObject(
+      response,
+      fallbackMessage: 'Invalid mark notification response format',
+    );
+    final success = (decoded['success'] ?? '').toString().trim().toUpperCase();
+    if (success.isNotEmpty && success != 'OK') {
+      throw const RiverSideApiException('Failed to mark notification as read.');
+    }
+  }
+
   RiverSideNotificationPage _parseNotificationsPage(
     Map<String, dynamic> decoded,
   ) {
