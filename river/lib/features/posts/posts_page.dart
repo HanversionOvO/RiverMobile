@@ -631,11 +631,25 @@ class _TopicListTabState extends State<_TopicListTab>
         );
   }
 
-  void _openDetail(int id) {
+  void _openDetail(RiverSideTopicSummary topic) {
+    final avatarHeroTag = _buildAuthorAvatarHeroTag(topic);
+    final nameHeroTag = _buildAuthorNameHeroTag(topic);
+    final titleHeroTag = 'title_${topic.id}';
     Navigator.of(context).push(
       riverPageRoute(
-        builder: (_) =>
-            TopicDetailPage(dependencies: widget.dependencies, topicId: id),
+        builder: (_) => TopicDetailPage(
+          dependencies: widget.dependencies,
+          topicId: topic.id,
+          preview: TopicDetailPreview(
+            title: topic.title,
+            authorDisplayName: topic.authorDisplayName,
+            authorUsername: topic.authorUsername,
+            authorAvatarUrl: topic.authorAvatarUrl,
+            titleHeroTag: titleHeroTag,
+            authorAvatarHeroTag: avatarHeroTag,
+            authorNameHeroTag: nameHeroTag,
+          ),
+        ),
       ),
     );
   }
@@ -738,7 +752,7 @@ class _TopicListTabState extends State<_TopicListTab>
           return _TopicCard(
             topic: topic,
             isHotFeed: widget.feed == RiverSideTopicFeed.hot,
-            onTap: () => _openDetail(topic.id),
+            onTap: () => _openDetail(topic),
             onAuthorTap: () => _openAuthor(topic),
           );
         },
@@ -998,7 +1012,7 @@ String _buildAuthorNameHeroTag(RiverSideTopicSummary topic) {
 
 class _TopicCard extends StatelessWidget {
   const _TopicCard({
-    super.key, // 推荐加上 super.key
+    super.key, // 鎺ㄨ崘鍔犱笂 super.key
     required this.topic,
     required this.isHotFeed,
     required this.onTap,
@@ -1016,7 +1030,7 @@ class _TopicCard extends StatelessWidget {
     final isPinned = topic.isPinned;
     final isHot = topic.isHot || isHotFeed;
 
-    // 1. 定义 Hero Tags (必须与用户资料 Sheet 保持一致)
+    // 1. 瀹氫箟 Hero Tags (蹇呴』涓庣敤鎴疯祫鏂?Sheet 淇濇寔涓€鑷?
     final avatarHeroTag = _buildAuthorAvatarHeroTag(topic);
     final nameHeroTag = _buildAuthorNameHeroTag(topic);
     final titleHeroTag = 'title_${topic.id}';
@@ -1026,7 +1040,7 @@ class _TopicCard extends StatelessWidget {
         color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
-          // 优化阴影：更柔和、扩散更广
+          // 优化阴影：更柔和、扩散更平滑
           BoxShadow(
             color: theme.shadowColor.withOpacity(0.06),
             blurRadius: 12,
@@ -1034,7 +1048,7 @@ class _TopicCard extends StatelessWidget {
           ),
         ],
       ),
-      clipBehavior: Clip.antiAlias, // 确保水波纹不溢出圆角
+      clipBehavior: Clip.antiAlias, // 纭繚姘存尝绾逛笉婧㈠嚭鍦嗚
       child: Material(
         color: Colors.transparent,
         child: InkWell(
@@ -1046,7 +1060,7 @@ class _TopicCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // --- 顶部信息栏 ---
+                // --- 椤堕儴淇℃伅鏍?---
                 Row(
                   children: [
                     GestureDetector(
@@ -1109,7 +1123,7 @@ class _TopicCard extends StatelessWidget {
                       ),
                     ),
 
-                    // 标签区域
+                    // 鏍囩鍖哄煙
                     if (isPinned)
                       _buildTag(
                         theme,
@@ -1133,26 +1147,38 @@ class _TopicCard extends StatelessWidget {
                 // --- 标题 (Hero 源) ---
                 Hero(
                   tag: titleHeroTag,
-                  // 飞行过程中使用 DefaultTextStyle 避免黄色下划线
-                  flightShuttleBuilder: (_, animation, __, ___, toContext) {
-                    return DefaultTextStyle(
-                      style: DefaultTextStyle.of(toContext).style,
-                      child: toContext.widget,
-                    );
-                  },
-                  child: Text(
-                    topic.title,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      height: 1.3,
-                      fontSize: 17, // 列表页字体稍大
+                  flightShuttleBuilder:
+                      (
+                        flightContext,
+                        animation,
+                        flightDirection,
+                        fromHeroContext,
+                        toHeroContext,
+                      ) {
+                        return DefaultTextStyle.merge(
+                          style:
+                              theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: -0.1,
+                              ) ??
+                              const TextStyle(),
+                          child: (toHeroContext.widget as Hero).child,
+                        );
+                      },
+                  child: Material(
+                    color: Colors.transparent,
+                    child: Text(
+                      topic.title,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.1,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
 
-                // --- 摘要 ---
                 if (topic.excerpt.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Text(
@@ -1169,7 +1195,7 @@ class _TopicCard extends StatelessWidget {
 
                 const SizedBox(height: 14),
 
-                // --- 底部数据栏 ---
+                // --- 搴曢儴鏁版嵁鏍?---
                 Row(
                   children: [
                     Container(

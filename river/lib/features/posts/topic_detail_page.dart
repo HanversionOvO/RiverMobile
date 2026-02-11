@@ -31,7 +31,7 @@ part 'topic_detail_page_reactions.dart';
 part 'topic_detail_page_loading.dart';
 
 // -----------------------------------------------------------------------------
-// 甯搁噺鑸囧伐鍏峰嚱鏁?
+// 鐢悂鍣洪懜鍥т紣閸忓嘲鍤遍弫?
 // -----------------------------------------------------------------------------
 
 class _ReactionOption {
@@ -73,15 +73,8 @@ String _topicPostAuthorNameHeroTag(RiverSideTopicPostDetail post) {
   return 'author_name_${post.topicId}_${post.id}_${post.authorUsername}';
 }
 
-String _formatTimeRelative(DateTime? time) {
-  if (time == null) return '';
-  final now = DateTime.now();
-  final diff = now.difference(time);
-  if (diff.inMinutes < 1) return '刚刚';
-  if (diff.inMinutes < 60) return '${diff.inMinutes}分钟前';
-  if (diff.inHours < 24) return '${diff.inHours}小时前';
-  if (diff.inDays < 7) return '${diff.inDays}天前';
-  return '${time.month}/${time.day}';
+String _reactionHeroTag({required int postId, required String reactionId}) {
+  return 'post_reaction_${postId}_$reactionId';
 }
 
 Widget _commentCardHeroShuttleBuilder(
@@ -116,18 +109,40 @@ Widget _commentCardHeroShuttleBuilder(
 }
 
 // -----------------------------------------------------------------------------
-// 涓婚爜闈?
+// 娑撳鐖滈棃?
 // -----------------------------------------------------------------------------
+
+class TopicDetailPreview {
+  const TopicDetailPreview({
+    required this.title,
+    required this.authorDisplayName,
+    required this.authorUsername,
+    required this.authorAvatarUrl,
+    required this.titleHeroTag,
+    required this.authorAvatarHeroTag,
+    required this.authorNameHeroTag,
+  });
+
+  final String title;
+  final String authorDisplayName;
+  final String authorUsername;
+  final String authorAvatarUrl;
+  final String titleHeroTag;
+  final String authorAvatarHeroTag;
+  final String authorNameHeroTag;
+}
 
 class TopicDetailPage extends StatefulWidget {
   const TopicDetailPage({
     super.key,
     required this.dependencies,
     required this.topicId,
+    this.preview,
   });
 
   final AppDependencies dependencies;
   final int topicId;
+  final TopicDetailPreview? preview;
 
   @override
   State<TopicDetailPage> createState() => _TopicDetailPageState();
@@ -183,28 +198,37 @@ class _TopicDetailPageState extends State<TopicDetailPage>
   List<RiverSideTopicPostDetail> _comments = const <RiverSideTopicPostDetail>[];
   final Set<int> _loadedPostIds = <int>{};
   final Set<int> _reactingPostIds = <int>{};
+  final Map<int, String> _pendingReactionHeroByPostId = <int, String>{};
+  final Map<int, int> _reactionPulseTokenByPostId = <int, int>{};
   Map<String, String> _emojiUrls = const <String, String>{};
   Map<String, List<String>> _emojiGroups = const <String, List<String>>{};
 
   bool _loadingInitial = true;
   bool _loadingMore = false;
   bool _hasRealtimeCommentUpdate = false;
+  bool _skipNextEntranceAnimation = false;
   RiverSideMessageBusPoller? _messageBusPoller;
   final ValueNotifier<bool> _showBackToTopButtonNotifier = ValueNotifier<bool>(
     false,
   );
   String? _error;
 
-  // 鍏ュ牬鍕曠暙鎺у埗鍣?
+  // 閸忋儱鐗崟鏇犳殭閹貉冨煑閸?
   late AnimationController _entranceController;
+  late AnimationController _contentRevealController;
 
   @override
   void initState() {
     super.initState();
-    // 鍒濆鍖栧嫊鐣帶鍒跺櫒
+    // 閸掓繂顫愰崠鏍у珚閻ｎ偅甯堕崚璺烘珤
     _entranceController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 800),
+    );
+    _contentRevealController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 320),
+      value: 1,
     );
 
     _scrollController.addListener(_onScroll);
@@ -215,6 +239,7 @@ class _TopicDetailPageState extends State<TopicDetailPage>
   @override
   void dispose() {
     _entranceController.dispose();
+    _contentRevealController.dispose();
     _messageBusPoller?.stop();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
@@ -303,7 +328,7 @@ class _TopicDetailPageState extends State<TopicDetailPage>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '鍥炲京 @${quote.ref.username} 鐨?#${quote.ref.postNumber}',
+                  '閸ョ偛浜?@${quote.ref.username} 閻?#${quote.ref.postNumber}',
                   style: Theme.of(sheetContext).textTheme.titleSmall,
                 ),
                 const SizedBox(height: 10),
@@ -425,6 +450,7 @@ class _TopicDetailPageState extends State<TopicDetailPage>
 
   Future<void> _onRefresh() async {
     _entranceController.reset();
+    _contentRevealController.value = 1;
     await _loadInitial();
     if (mounted && _detail != null) {
       _entranceController.forward();
@@ -445,6 +471,22 @@ class _TopicDetailPageState extends State<TopicDetailPage>
     _mutateState(() {
       _hasRealtimeCommentUpdate = false;
     });
+  }
+
+  Animation<double> _mainContentRevealAnimation() {
+    return CurvedAnimation(
+      parent: _contentRevealController,
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  Animation<double> _commentRevealAnimation(int index) {
+    final start = (0.08 + index * 0.03).clamp(0.0, 0.82).toDouble();
+    final end = (start + 0.24).clamp(start + 0.08, 1.0).toDouble();
+    return CurvedAnimation(
+      parent: _contentRevealController,
+      curve: Interval(start, end, curve: Curves.easeOutCubic),
+    );
   }
 
   Future<void> _openCommentDetail(RiverSideTopicPostDetail post) async {
@@ -468,11 +510,228 @@ class _TopicDetailPageState extends State<TopicDetailPage>
     }
   }
 
+  String get _titleHeroTag =>
+      widget.preview?.titleHeroTag ?? 'title_${widget.topicId}';
+
+  String? _mainAuthorAvatarHeroTag(RiverSideTopicDetail? detail) {
+    final preview = widget.preview;
+    if (preview != null) {
+      return preview.authorAvatarHeroTag;
+    }
+    if (detail != null) {
+      return _topicPostAuthorAvatarHeroTag(detail.mainPost);
+    }
+    return null;
+  }
+
+  String? _mainAuthorNameHeroTag(RiverSideTopicDetail? detail) {
+    final preview = widget.preview;
+    if (preview != null) {
+      return preview.authorNameHeroTag;
+    }
+    if (detail != null) {
+      return _topicPostAuthorNameHeroTag(detail.mainPost);
+    }
+    return null;
+  }
+
+  Widget _buildInitialLoadingView(ThemeData theme) {
+    final preview = widget.preview;
+    final title = preview?.title ?? _labelTopicDetail;
+    final avatarHeroTag = preview?.authorAvatarHeroTag;
+    final nameHeroTag = preview?.authorNameHeroTag;
+
+    return Scaffold(
+      backgroundColor: theme.colorScheme.surface,
+      body: CustomScrollView(
+        physics: const BouncingScrollPhysics(),
+        slivers: [
+          SliverAppBar(
+            expandedHeight: 126,
+            pinned: true,
+            stretch: true,
+            scrolledUnderElevation: 4,
+            elevation: 0,
+            backgroundColor: theme.colorScheme.surface,
+            surfaceTintColor: theme.colorScheme.surfaceTint,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back_rounded),
+              onPressed: () => Navigator.pop(context),
+              style: IconButton.styleFrom(
+                backgroundColor: theme.colorScheme.surface.withOpacity(0.88),
+                foregroundColor: theme.colorScheme.onSurface,
+              ),
+            ),
+            flexibleSpace: FlexibleSpaceBar(
+              centerTitle: false,
+              titlePadding: const EdgeInsetsDirectional.only(
+                start: 0,
+                bottom: 14,
+                end: 12,
+              ),
+              title: Hero(
+                tag: _titleHeroTag,
+                child: Material(
+                  color: Colors.transparent,
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.1,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              background: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      theme.colorScheme.primary.withOpacity(0.10),
+                      theme.colorScheme.surface,
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: Card(
+              margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+              elevation: 0,
+              color: theme.colorScheme.surfaceContainerLow,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        if (preview != null &&
+                            avatarHeroTag != null &&
+                            avatarHeroTag.isNotEmpty)
+                          Hero(
+                            tag: avatarHeroTag,
+                            child: CircleAvatar(
+                              radius: 20,
+                              backgroundImage: preview.authorAvatarUrl.isEmpty
+                                  ? null
+                                  : NetworkImage(preview.authorAvatarUrl),
+                              child: preview.authorAvatarUrl.isEmpty
+                                  ? const Icon(Icons.person_outline)
+                                  : null,
+                            ),
+                          )
+                        else
+                          const CircleAvatar(
+                            radius: 20,
+                            child: Icon(Icons.person_outline),
+                          ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (preview != null &&
+                                  nameHeroTag != null &&
+                                  nameHeroTag.isNotEmpty)
+                                Hero(
+                                  tag: nameHeroTag,
+                                  child: Material(
+                                    color: Colors.transparent,
+                                    child: Text(
+                                      preview.authorDisplayName,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: theme.textTheme.titleSmall
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                    ),
+                                  ),
+                                )
+                              else
+                                _SkeletonBox(width: 120, height: 14, radius: 7),
+                              const SizedBox(height: 6),
+                              _SkeletonBox(width: 96, height: 11, radius: 6),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    _SkeletonBox(width: double.infinity, height: 13, radius: 6),
+                    const SizedBox(height: 8),
+                    _SkeletonBox(width: double.infinity, height: 13, radius: 6),
+                    const SizedBox(height: 8),
+                    _SkeletonBox(width: 220, height: 13, radius: 6),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: const [
+                        _SkeletonBox(width: 76, height: 30, radius: 15),
+                        SizedBox(width: 8),
+                        _SkeletonBox(width: 76, height: 30, radius: 15),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          SliverList(
+            delegate: SliverChildBuilderDelegate((context, index) {
+              return Card(
+                margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                elevation: 0,
+                color: theme.colorScheme.surfaceContainerLow,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: const Padding(
+                  padding: EdgeInsets.fromLTRB(14, 14, 14, 14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          _SkeletonBox(width: 40, height: 40, radius: 20),
+                          SizedBox(width: 10),
+                          _SkeletonBox(width: 90, height: 12, radius: 6),
+                        ],
+                      ),
+                      SizedBox(height: 12),
+                      _SkeletonBox(
+                        width: double.infinity,
+                        height: 12,
+                        radius: 6,
+                      ),
+                      SizedBox(height: 8),
+                      _SkeletonBox(width: 240, height: 12, radius: 6),
+                    ],
+                  ),
+                ),
+              );
+            }, childCount: 3),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    // 閷铏曠悊
+    // 闁奉垵顎冮搹鏇犳倞
     if (_error != null && _detail == null) {
       return Scaffold(
         appBar: AppBar(title: const Text(_labelTopicDetail)),
@@ -499,28 +758,29 @@ class _TopicDetailPageState extends State<TopicDetailPage>
       );
     }
 
-    // Loading 鐙€鎱?
+    // Loading 閻欌偓閹?
     if (_loadingInitial && _detail == null) {
-      return Scaffold(
-        backgroundColor: theme.colorScheme.surface,
-        appBar: AppBar(elevation: 0, backgroundColor: Colors.transparent),
-        body: const Center(child: CircularProgressIndicator()),
-      );
+      return _buildInitialLoadingView(theme);
     }
 
     final detail = _detail;
     if (detail == null) return const SizedBox.shrink();
 
-    // 瑙哥櫦鍏ュ牬鍕曠暙
+    // 鐟欏摜娅﹂崗銉ョ壃閸曟洜鏆?
     if (!_loadingInitial &&
         _entranceController.status == AnimationStatus.dismissed) {
-      _entranceController.forward();
+      if (_skipNextEntranceAnimation) {
+        _skipNextEntranceAnimation = false;
+        _entranceController.value = 1;
+      } else {
+        _entranceController.forward();
+      }
     }
 
     final cookieHeader = _activeCookieHeader();
-    final avatarHeroTag =
-        'avatar_${detail.topicId}_${detail.mainPost.authorUsername}';
-    final titleHeroTag = 'title_${detail.topicId}';
+    final titleHeroTag = _titleHeroTag;
+    final mainAuthorAvatarHeroTag = _mainAuthorAvatarHeroTag(detail);
+    final mainAuthorNameHeroTag = _mainAuthorNameHeroTag(detail);
 
     return Scaffold(
       backgroundColor: theme.colorScheme.surface,
@@ -535,161 +795,124 @@ class _TopicDetailPageState extends State<TopicDetailPage>
                 parent: BouncingScrollPhysics(),
               ),
               slivers: [
-                // 1. 娌夋蹈寮?Header (璨犺铂灞曠ず妯欓鍜屼綔鑰?
                 SliverAppBar(
-                  expandedHeight: 160.0, // 澧炲姞楂樺害浠ュ绱嶅琛屾椤?
+                  expandedHeight: 126,
                   pinned: true,
                   stretch: true,
+                  scrolledUnderElevation: 4,
+                  elevation: 0,
                   backgroundColor: theme.colorScheme.surface,
                   surfaceTintColor: theme.colorScheme.surfaceTint,
-                  elevation: 0,
                   leading: IconButton(
-                    icon: const Icon(Icons.arrow_back),
+                    icon: const Icon(Icons.arrow_back_rounded),
                     onPressed: () => Navigator.pop(context),
                     style: IconButton.styleFrom(
                       backgroundColor: theme.colorScheme.surface.withOpacity(
-                        0.6,
+                        0.88,
                       ),
+                      foregroundColor: theme.colorScheme.onSurface,
                     ),
                   ),
                   flexibleSpace: FlexibleSpaceBar(
                     stretchModes: const [
                       StretchMode.zoomBackground,
-                      StretchMode.fadeTitle,
+                      StretchMode.blurBackground,
                     ],
-                    centerTitle: false, // 妯欓灞呭乏鏇寸鍚堥柋璁€缈掓叄
+                    centerTitle: false,
                     titlePadding: const EdgeInsetsDirectional.only(
-                      start: 56, // 閬块枊杩斿洖鎸夐垥
-                      bottom: 16,
-                      end: 16,
+                      start: 0,
+                      bottom: 14,
+                      end: 12,
                     ),
-                    // 鏀惰捣鏅傜殑妯欓
-                    title: AnimatedOpacity(
-                      opacity: 1.0,
-                      duration: const Duration(milliseconds: 200),
-                      child: Text(
-                        detail.title,
-                        style: TextStyle(
-                          color: theme.colorScheme.onSurface,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
+                    title: AnimatedBuilder(
+                      animation: _scrollController,
+                      child: Hero(
+                        tag: titleHeroTag,
+                        flightShuttleBuilder:
+                            (
+                              flightContext,
+                              animation,
+                              flightDirection,
+                              fromHeroContext,
+                              toHeroContext,
+                            ) {
+                              return DefaultTextStyle.merge(
+                                style:
+                                    theme.textTheme.titleMedium?.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                    ) ??
+                                    const TextStyle(),
+                                child: (toHeroContext.widget as Hero).child,
+                              );
+                            },
+                        child: Material(
+                          color: Colors.transparent,
+                          child: Text(
+                            detail.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -0.1,
+                            ),
+                          ),
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                       ),
+                      builder: (context, child) {
+                        final offset = _scrollController.hasClients
+                            ? _scrollController.offset
+                            : 0.0;
+                        final t = (offset / 84).clamp(0.0, 1.0);
+                        final left = 8.0 + 48.0 * t;
+                        return Padding(
+                          padding: EdgeInsets.only(left: left),
+                          child: child,
+                        );
+                      },
                     ),
-                    background: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        // 鑳屾櫙瑁濋＞ (闋傞儴婕歌畩)
-                        Container(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                theme.colorScheme.primary.withOpacity(0.08),
-                                theme.colorScheme.surface,
-                              ],
-                            ),
-                          ),
+                    background: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            theme.colorScheme.primary.withOpacity(0.10),
+                            theme.colorScheme.surface,
+                          ],
                         ),
-
-                        // Hero 妯欓 (灞曢枊鏅傞’绀虹殑澶ф椤?
-                        Positioned(
-                          left: 20,
-                          right: 20,
-                          bottom: 60, // 鐣欏嚭绌洪枔绲﹂牠鍍忚
-                          child: Hero(
-                            tag: titleHeroTag,
-                            child: Material(
-                              color: Colors.transparent,
-                              child: SelectableText(
-                                // 鍏佽ū瑜囪＝妯欓
-                                detail.title,
-                                style: theme.textTheme.headlineSmall?.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 22,
-                                  height: 1.3,
-                                  letterSpacing: -0.5,
-                                ),
-                                maxLines: 3,
-                              ),
-                            ),
-                          ),
-                        ),
-
-                        // Hero 闋儚鍜屼綔鑰呬俊鎭?(灞曢枊鏅傞’绀?
-                        Positioned(
-                          left: 20,
-                          bottom: 20,
-                          child: InkWell(
-                            onTap: () =>
-                                _openAuthorProfileSheetForPost(detail.mainPost),
-                            borderRadius: BorderRadius.circular(20),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
+                      ),
+                      child: SafeArea(
+                        bottom: false,
+                        child: Align(
+                          alignment: Alignment.topRight,
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                            child: Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
                               children: [
-                                Hero(
-                                  tag: avatarHeroTag,
-                                  child: CircleAvatar(
-                                    radius: 14,
-                                    backgroundImage:
-                                        detail
-                                            .mainPost
-                                            .authorAvatarUrl
-                                            .isNotEmpty
-                                        ? NetworkImage(
-                                            detail.mainPost.authorAvatarUrl,
-                                          )
-                                        : null,
-                                    backgroundColor:
-                                        theme.colorScheme.primaryContainer,
-                                    child:
-                                        detail.mainPost.authorAvatarUrl.isEmpty
-                                        ? Text(
-                                            detail.mainPost.authorDisplayName
-                                                .substring(0, 1),
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: theme.colorScheme.primary,
-                                            ),
-                                          )
-                                        : null,
-                                  ),
+                                _TopicMetaPill(
+                                  icon: Icons.mode_comment_outlined,
+                                  text: '${detail.replyCount}',
                                 ),
-                                const SizedBox(width: 8),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Text(
-                                      detail.mainPost.authorDisplayName,
-                                      style: theme.textTheme.labelLarge
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.bold,
-                                            color: theme.colorScheme.onSurface,
-                                          ),
-                                    ),
-                                    Text(
-                                      _formatTimeRelative(detail.createdAt),
-                                      style: theme.textTheme.labelSmall
-                                          ?.copyWith(
-                                            color: theme.colorScheme.outline,
-                                          ),
-                                    ),
-                                  ],
+                                _TopicMetaPill(
+                                  icon: Icons.visibility_outlined,
+                                  text: '${detail.viewCount}',
+                                ),
+                                _TopicMetaPill(
+                                  icon: Icons.thumb_up_alt_outlined,
+                                  text: '${detail.likeCount}',
                                 ),
                               ],
                             ),
                           ),
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
 
-                // 2. 涓昏布姝ｆ枃 (鍘婚噸锛氶€欒！涓嶅啀灞曠ず妯欓鍜岄牠鍍?
+                // 2. 娑撴槒甯冨锝嗘瀮 (閸樺鍣搁敍姘垛偓娆掞紒娑撳秴鍟€鐏炴洜銇氬Ο娆擃攽閸滃矂鐗犻崓?
                 SliverToBoxAdapter(
                   child: _SlideFadeTransition(
                     animation: _entranceController,
@@ -697,32 +920,49 @@ class _TopicDetailPageState extends State<TopicDetailPage>
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 0,
-                      ), // 鍏ㄥ锛屽収閮ㄦ帶鍒禤adding
-                      child: _MainPostCard(
-                        // 閲嶅懡鍚嶄甫閲嶆
-                        key: _keyForPostNumber(1),
-                        detail: detail,
-                        cookieHeader: cookieHeader,
-                        emojiUrls: _emojiUrls,
-                        onQuoteTap: _showQuoteBottomSheet,
-                        isReacting: _reactingPostIds.contains(
-                          detail.mainPost.id,
-                        ),
-                        onReactPressed: _onReactPressed,
-                        onReplyPressed: (post) =>
-                            _openReplyComposer(topicId: post.topicId),
-                        onReactionStatusPressed: (post, reactionId) =>
-                            _onReactionStatusPressed(
-                              post: post,
-                              reactionId: reactionId,
+                      ), // 閸忋劌顕￠敍灞藉弾闁劍甯堕崚绂dding
+                      child: ValueListenableBuilder<bool>(
+                        valueListenable: _showBackToTopButtonNotifier,
+                        builder: (context, showFloatingReply, _) {
+                          return _MainPostCard(
+                            key: _keyForPostNumber(1),
+                            detail: detail,
+                            cookieHeader: cookieHeader,
+                            emojiUrls: _emojiUrls,
+                            onQuoteTap: _showQuoteBottomSheet,
+                            isReacting: _reactingPostIds.contains(
+                              detail.mainPost.id,
                             ),
-                        onAuthorTap: _openAuthorProfileSheetForPost,
+                            onReactPressed: _onReactPressed,
+                            onReplyPressed: (post) =>
+                                _openReplyComposer(topicId: post.topicId),
+                            onReactionStatusPressed: (post, reactionId) =>
+                                _onReactionStatusPressed(
+                                  post: post,
+                                  reactionId: reactionId,
+                                ),
+                            onAuthorTap: _openAuthorProfileSheetForPost,
+                            authorAvatarHeroTag: mainAuthorAvatarHeroTag,
+                            authorNameHeroTag: mainAuthorNameHeroTag,
+                            bodyRevealAnimation: _mainContentRevealAnimation(),
+                            pendingHeroReactionId:
+                                _pendingReactionHeroByPostId[detail
+                                    .mainPost
+                                    .id],
+                            reactionPulseToken:
+                                _reactionPulseTokenByPostId[detail
+                                    .mainPost
+                                    .id] ??
+                                0,
+                            showReplyAction: !showFloatingReply,
+                          );
+                        },
                       ),
                     ),
                   ),
                 ),
 
-                // 3. 瑭曡珫鍗€ Header
+                // 3. 鐟洝鐝崡鈧?Header
                 SliverPersistentHeader(
                   pinned: true,
                   delegate: _SectionHeaderDelegate(
@@ -732,7 +972,7 @@ class _TopicDetailPageState extends State<TopicDetailPage>
                   ),
                 ),
 
-                // 4. 瑭曡珫鍒楄〃
+                // 4. 鐟洝鐝崚妤勩€?
                 if (_comments.isEmpty)
                   const SliverToBoxAdapter(
                     child: Padding(
@@ -760,62 +1000,78 @@ class _TopicDetailPageState extends State<TopicDetailPage>
                     delegate: SliverChildBuilderDelegate((context, index) {
                       final post = _comments[index];
                       final delay = (index * 30).clamp(0, 400);
+                      final reveal = _commentRevealAnimation(index);
 
-                      return _SlideFadeTransition(
-                        animation: _entranceController,
-                        delay: 100 + delay,
-                        child: Column(
-                          children: [
-                            _CommentCard(
-                              // 閲嶆寰岀殑瑭曡珫琛?
-                              key: _keyForPostNumber(post.postNumber),
-                              post: post,
-                              cookieHeader: cookieHeader,
-                              emojiUrls: _emojiUrls,
-                              onQuoteTap: _showQuoteBottomSheet,
-                              isReacting: _reactingPostIds.contains(post.id),
-                              onReactPressed: _onReactPressed,
-                              onTap: () => _openCommentDetail(post),
-                              onLongPress: () => _showCommentActions(post),
-                              onAuthorTap: _openAuthorProfileSheetForPost,
-                              onReplyPressed: (target) {
-                                _openReplyComposer(
-                                  topicId: target.topicId,
-                                  replyToPostNumber: target.postNumber,
-                                  quoteUsername: target.authorUsername,
-                                  quoteTopicId: target.topicId,
-                                  quoteContent: _stripQuotedMarkdown(
-                                    target.contentMarkdown,
+                      return FadeTransition(
+                        opacity: reveal,
+                        child: SlideTransition(
+                          position: Tween<Offset>(
+                            begin: const Offset(0, 0.025),
+                            end: Offset.zero,
+                          ).animate(reveal),
+                          child: _SlideFadeTransition(
+                            animation: _entranceController,
+                            delay: 100 + delay,
+                            child: Column(
+                              children: [
+                                _CommentCard(
+                                  // 闁插秵顫愬宀€娈戠懎鏇＄彨鐞?
+                                  key: _keyForPostNumber(post.postNumber),
+                                  post: post,
+                                  cookieHeader: cookieHeader,
+                                  emojiUrls: _emojiUrls,
+                                  onQuoteTap: _showQuoteBottomSheet,
+                                  isReacting: _reactingPostIds.contains(
+                                    post.id,
                                   ),
-                                );
-                              },
-                              onReactionStatusPressed: (post, reactionId) =>
-                                  _onReactionStatusPressed(
-                                    post: post,
-                                    reactionId: reactionId,
-                                  ),
-                              heroTag: _commentHeroTag(post.id),
-                            ),
-                            // 鍒嗗壊绶?
-                            if (index != _comments.length - 1)
-                              Padding(
-                                padding: const EdgeInsets.only(
-                                  left: 60,
-                                ), // 灏嶉綂鏂囧瓧
-                                child: Divider(
-                                  height: 1,
-                                  thickness: 0.5,
-                                  color: theme.colorScheme.outlineVariant
-                                      .withOpacity(0.4),
+                                  onReactPressed: _onReactPressed,
+                                  onTap: () => _openCommentDetail(post),
+                                  onLongPress: () => _showCommentActions(post),
+                                  onAuthorTap: _openAuthorProfileSheetForPost,
+                                  onReplyPressed: (target) {
+                                    _openReplyComposer(
+                                      topicId: target.topicId,
+                                      replyToPostNumber: target.postNumber,
+                                      quoteUsername: target.authorUsername,
+                                      quoteTopicId: target.topicId,
+                                      quoteContent: _stripQuotedMarkdown(
+                                        target.contentMarkdown,
+                                      ),
+                                    );
+                                  },
+                                  onReactionStatusPressed: (post, reactionId) =>
+                                      _onReactionStatusPressed(
+                                        post: post,
+                                        reactionId: reactionId,
+                                      ),
+                                  heroTag: _commentHeroTag(post.id),
+                                  pendingHeroReactionId:
+                                      _pendingReactionHeroByPostId[post.id],
+                                  reactionPulseToken:
+                                      _reactionPulseTokenByPostId[post.id] ?? 0,
                                 ),
-                              ),
-                          ],
+                                // 閸掑棗澹婄欢?
+                                if (index != _comments.length - 1)
+                                  Padding(
+                                    padding: const EdgeInsets.only(
+                                      left: 60,
+                                    ), // 鐏忓秹缍傞弬鍥х摟
+                                    child: Divider(
+                                      height: 1,
+                                      thickness: 0.5,
+                                      color: theme.colorScheme.outlineVariant
+                                          .withOpacity(0.4),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
                         ),
                       );
                     }, childCount: _comments.length),
                   ),
 
-                // 5. 搴曢儴 Loader
+                // 5. 鎼存洟鍎?Loader
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.all(32),
@@ -835,74 +1091,148 @@ class _TopicDetailPageState extends State<TopicDetailPage>
             ),
           ),
 
-          // 鎳告诞鎸夐垥 - 鍥炲埌闋傞儴 (甯跺嫊鐣?
+          // 杩斿洖椤堕儴鎸夐挳
           ValueListenableBuilder<bool>(
             valueListenable: _showBackToTopButtonNotifier,
             builder: (context, visible, _) {
-              final extraBottom = _hasRealtimeCommentUpdate ? 72.0 : 0.0;
               return Positioned(
                 right: 16,
-                bottom: 32 + extraBottom,
-                child: AnimatedScale(
+                bottom: 28,
+                child: AnimatedOpacity(
                   duration: const Duration(milliseconds: 200),
-                  scale: visible ? 1 : 0,
-                  curve: Curves.easeOutBack,
-                  child: FloatingActionButton.small(
-                    heroTag: 'back_to_top_fab',
-                    onPressed: _scrollToTop,
-                    elevation: 4,
-                    child: const Icon(Icons.arrow_upward_rounded),
+                  opacity: visible ? 1 : 0,
+                  child: AnimatedScale(
+                    duration: const Duration(milliseconds: 220),
+                    scale: visible ? 1 : 0.84,
+                    curve: Curves.easeOutBack,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (visible) ...[
+                          FloatingActionButton.small(
+                            heroTag: 'reply_topic_fab_${detail.topicId}',
+                            onPressed: () =>
+                                _openReplyComposer(topicId: detail.topicId),
+                            elevation: 2,
+                            backgroundColor: theme.colorScheme.primaryContainer,
+                            foregroundColor:
+                                theme.colorScheme.onPrimaryContainer,
+                            child: const Icon(Icons.reply_rounded),
+                          ),
+                          const SizedBox(height: 10),
+                        ],
+                        FloatingActionButton.small(
+                          heroTag: 'back_to_top_fab',
+                          onPressed: visible ? _scrollToTop : null,
+                          elevation: 2,
+                          backgroundColor: theme.colorScheme.primaryContainer,
+                          foregroundColor: theme.colorScheme.onPrimaryContainer,
+                          child: const Icon(Icons.arrow_upward_rounded),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               );
             },
           ),
 
-          // 鏂版秷鎭彁閱?
+          // 鏂拌瘎璁烘彁绀烘诞绐?
           Positioned(
-            left: 12,
-            right: 12,
-            bottom: 12,
+            left: 16,
+            right: 16,
+            top: MediaQuery.paddingOf(context).top + kToolbarHeight + 8,
             child: SafeArea(
-              top: false,
+              bottom: false,
               child: IgnorePointer(
                 ignoring: !_hasRealtimeCommentUpdate,
-                child: AnimatedSlide(
-                  duration: const Duration(milliseconds: 250),
-                  curve: Curves.easeOutCubic,
-                  offset: _hasRealtimeCommentUpdate
-                      ? Offset.zero
-                      : const Offset(0, 1.5),
-                  child: Card(
-                    elevation: 8,
-                    shadowColor: Colors.black12,
-                    margin: EdgeInsets.zero,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.mark_chat_unread_rounded,
-                            color: theme.colorScheme.primary,
-                          ),
-                          const SizedBox(width: 12),
-                          const Expanded(
-                            child: Text(
-                              '有新评论，点击刷新',
-                              style: TextStyle(fontWeight: FontWeight.w500),
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 180),
+                  opacity: _hasRealtimeCommentUpdate ? 1 : 0,
+                  child: AnimatedSlide(
+                    duration: const Duration(milliseconds: 280),
+                    curve: Curves.easeOutCubic,
+                    offset: _hasRealtimeCommentUpdate
+                        ? Offset.zero
+                        : const Offset(0, -0.24),
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 460),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: Ink(
+                            decoration: ShapeDecoration(
+                              color: theme.colorScheme.surface.withOpacity(
+                                0.78,
+                              ),
+                              shape: StadiumBorder(
+                                side: BorderSide(
+                                  color: theme.colorScheme.outlineVariant
+                                      .withOpacity(0.45),
+                                ),
+                              ),
+                              shadows: [
+                                BoxShadow(
+                                  color: theme.colorScheme.shadow.withOpacity(
+                                    0.08,
+                                  ),
+                                  blurRadius: 14,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(999),
+                              onTap: () async {
+                                await _scrollToTop();
+                                await _consumeRealtimeCommentUpdate();
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  14,
+                                  10,
+                                  6,
+                                  10,
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.mark_chat_unread_rounded,
+                                      size: 18,
+                                      color: theme.colorScheme.primary,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      '鏈夋柊璇勮',
+                                      style: theme.textTheme.labelLarge
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Text(
+                                      '鐐瑰嚮鍒锋柊',
+                                      style: theme.textTheme.labelMedium
+                                          ?.copyWith(
+                                            color: theme
+                                                .colorScheme
+                                                .onSurfaceVariant,
+                                          ),
+                                    ),
+                                    const SizedBox(width: 2),
+                                    IconButton(
+                                      tooltip: '鍏抽棴',
+                                      onPressed: _dismissRealtimeCommentHint,
+                                      icon: const Icon(Icons.close, size: 17),
+                                      visualDensity: VisualDensity.compact,
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
                           ),
-                          FilledButton.tonal(
-                            onPressed: _consumeRealtimeCommentUpdate,
-                            child: const Text('刷新'),
-                          ),
-                          const SizedBox(width: 4),
-                          IconButton(
-                            tooltip: '关闭',
-                            onPressed: _dismissRealtimeCommentHint,
-                            icon: const Icon(Icons.close, size: 20),
-                          ),
-                        ],
+                        ),
                       ),
                     ),
                   ),
@@ -916,8 +1246,70 @@ class _TopicDetailPageState extends State<TopicDetailPage>
   }
 }
 
+class _TopicMetaPill extends StatelessWidget {
+  const _TopicMetaPill({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface.withOpacity(0.68),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant.withOpacity(0.38),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 15, color: theme.colorScheme.onSurfaceVariant),
+            const SizedBox(width: 4),
+            Text(
+              text,
+              style: theme.textTheme.labelMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SkeletonBox extends StatelessWidget {
+  const _SkeletonBox({
+    required this.width,
+    required this.height,
+    required this.radius,
+  });
+
+  final double width;
+  final double height;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.42),
+        borderRadius: BorderRadius.circular(radius),
+      ),
+    );
+  }
+}
+
 // -----------------------------------------------------------------------------
-// 鍎寲寰岀殑涓昏布绲勪欢 (娌夋蹈寮忥紝鐒℃椤岄噸瑜?
+// 閸庮亜瀵插宀€娈戞稉鏄忓竷缁插嫪娆?(濞屽韫堝蹇ョ礉閻掆剝顬挎い宀勫櫢鐟?
 // -----------------------------------------------------------------------------
 class _SlideFadeTransition extends StatelessWidget {
   final AnimationController animation;
@@ -935,18 +1327,17 @@ class _SlideFadeTransition extends StatelessWidget {
     return AnimatedBuilder(
       animation: animation,
       builder: (context, child) {
-        // 瑷堢畻鐣跺墠鍏冪礌鐨勫嫊鐣€插害
-        // 鍕曠暙绺芥檪闀?800ms锛屾垜鍊戝皣鍏舵槧灏勫埌 0.0 - 1.0
-        // 姣忓€嬪厓绱犳湁鍥哄畾鐨勫欢閬?(delay ms)
-        final double controllerValue = animation.value;
+        // 鐟峰牏鐣婚悾璺哄閸忓啰绀岄惃鍕珚閻ｎ偊鈧彃瀹?
+        // 閸曟洜鏆欑缓鑺ユ闂€?800ms閿涘本鍨滈崐鎴濈殻閸忚埖妲х亸鍕煂 0.0 - 1.0
+        // 濮ｅ繐鈧鍘撶槐鐘虫箒閸ュ搫鐣鹃惃鍕闁?(delay ms)
         final double delayInSeconds = delay / 1000.0;
         final double animationDurationInSeconds =
             animation.duration!.inMilliseconds / 1000.0;
 
-        // 鍏冪礌鐨勫嫊鐣枊濮嬫檪闁撻粸 (0.0 - 1.0)
+        // 閸忓啰绀岄惃鍕珚閻ｎ偊鏋婃慨瀣闂佹捇绮?(0.0 - 1.0)
         final double start = (delayInSeconds / animationDurationInSeconds)
             .clamp(0.0, 0.8);
-        // 鍏冪礌鐨勫嫊鐣寔绾屾檪闁?(浣旂附鏅傞暦鐨勬瘮渚?锛岄€欒！瑷偤 0.4 (鍗?30% ~ 40% 鐨勬檪闁撶敤渚嗗畬鎴愭贰鍏?
+        // 閸忓啰绀岄惃鍕珚閻ｎ偅瀵旂痪灞炬闂?(娴ｆ梻闄勯弲鍌炴殾閻ㄥ嫭鐦笟?閿涘矂鈧瑨锛佺懛顓犲仱 0.4 (閸?30% ~ 40% 閻ㄥ嫭妾梺鎾舵暏娓氬棗鐣幋鎰窗閸?
         final double end = (start + 0.4).clamp(0.0, 1.0);
 
         final curve = CurvedAnimation(
@@ -984,12 +1375,16 @@ class _SectionHeaderDelegate extends SliverPersistentHeaderDelegate {
     double shrinkOffset,
     bool overlapsContent,
   ) {
-    // 瑷堢畻鑳屾櫙閫忔槑搴?(鍚搁爞鏅傛洿涓嶉€忔槑)
-    final double opacity = (shrinkOffset / 10).clamp(0.95, 1.0);
+    final opacity = (shrinkOffset / 12).clamp(0.92, 1.0);
 
     return Container(
-      color: theme.colorScheme.surface.withOpacity(opacity),
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface.withOpacity(opacity),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
       alignment: Alignment.centerLeft,
       child: Row(
         children: [

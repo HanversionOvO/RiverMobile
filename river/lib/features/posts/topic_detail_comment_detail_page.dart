@@ -55,6 +55,9 @@ class _CommentDetailPageState extends State<CommentDetailPage> {
   List<RiverSideTopicPostDetail> _replies = const <RiverSideTopicPostDetail>[];
   Map<String, String> _emojiUrls = const <String, String>{};
   Map<String, List<String>> _emojiGroups = const <String, List<String>>{};
+  final Set<int> _reactingPostIds = <int>{};
+  final Map<int, String> _pendingReactionHeroByPostId = <int, String>{};
+  final Map<int, int> _reactionPulseTokenByPostId = <int, int>{};
   bool _loading = true;
   bool _hasMutations = false;
   String? _error;
@@ -101,7 +104,15 @@ class _CommentDetailPageState extends State<CommentDetailPage> {
                 .fetchEmojiGroups(cookieHeader: cookieHeader)
                 .catchError((_) => const <String, List<String>>{});
 
-      final replies = await repliesFuture;
+      final repliesRaw = await repliesFuture;
+      final replies = <RiverSideTopicPostDetail>[];
+      final replyIds = <int>{};
+      for (final item in repliesRaw) {
+        if (!replyIds.add(item.id) || item.id == _rootPost.id) {
+          continue;
+        }
+        replies.add(item);
+      }
       final emojiUrls = await emojiFuture;
       final emojiGroups = await emojiGroupsFuture;
       if (!mounted) {

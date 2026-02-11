@@ -46,11 +46,17 @@ extension _TopicDetailPageLoading on _TopicDetailPageState {
   }
 
   Future<void> _loadInitial() async {
+    final shouldSkipEntranceAnimation =
+        widget.preview != null && _detail == null;
     _mutateState(() {
       _loadingInitial = true;
       _loadingMore = false;
       _error = null;
       _hasRealtimeCommentUpdate = false;
+      if (shouldSkipEntranceAnimation) {
+        _skipNextEntranceAnimation = true;
+        _contentRevealController.value = 0;
+      }
     });
     _showBackToTopButtonNotifier.value = false;
 
@@ -74,8 +80,15 @@ extension _TopicDetailPageLoading on _TopicDetailPageState {
         return;
       }
 
-      final comments = [...detail.comments]
-        ..sort((a, b) => a.postNumber.compareTo(b.postNumber));
+      final comments = <RiverSideTopicPostDetail>[];
+      final commentIds = <int>{};
+      for (final item in detail.comments) {
+        if (item.postNumber <= 1 || !commentIds.add(item.id)) {
+          continue;
+        }
+        comments.add(item);
+      }
+      comments.sort((a, b) => a.postNumber.compareTo(b.postNumber));
 
       _mutateState(() {
         _detail = detail;
@@ -87,6 +100,11 @@ extension _TopicDetailPageLoading on _TopicDetailPageState {
         _emojiGroups = emojiGroups;
         _loadingInitial = false;
       });
+      if (shouldSkipEntranceAnimation) {
+        unawaited(_contentRevealController.forward(from: 0));
+      } else {
+        _contentRevealController.value = 1;
+      }
       _maybeAutoLoadMore();
     } on RiverSideApiException catch (error) {
       if (!mounted) {
@@ -96,6 +114,7 @@ extension _TopicDetailPageLoading on _TopicDetailPageState {
         _loadingInitial = false;
         _error = error.message;
       });
+      _contentRevealController.value = 1;
     } catch (_) {
       if (!mounted) {
         return;
@@ -105,6 +124,7 @@ extension _TopicDetailPageLoading on _TopicDetailPageState {
         _error =
             '\u5e16\u5b50\u8be6\u60c5\u52a0\u8f7d\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5';
       });
+      _contentRevealController.value = 1;
     }
   }
 

@@ -1,6 +1,199 @@
 part of 'topic_detail_page.dart';
 
 extension _CommentDetailPageActions on _CommentDetailPageState {
+  List<_ReactionOption> _availableReactionOptionsForComment() {
+    final reactionIds = <String>{};
+    reactionIds.addAll(
+      _rootPost.reactions.map((item) => item.id).where((id) => id.isNotEmpty),
+    );
+    for (final post in _replies) {
+      reactionIds.addAll(
+        post.reactions.map((item) => item.id).where((id) => id.isNotEmpty),
+      );
+    }
+    if (reactionIds.isEmpty) {
+      return _defaultReactionOptions;
+    }
+    final filtered = _defaultReactionOptions
+        .where((option) => reactionIds.contains(option.id))
+        .toList(growable: false);
+    return filtered.isEmpty ? _defaultReactionOptions : filtered;
+  }
+
+  Future<void> _onReactPressed(RiverSideTopicPostDetail post) async {
+    final cookieHeader = _activeCookieHeader();
+    if (cookieHeader == null || cookieHeader.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(_TopicDetailPageState._labelReactionNotReady),
+        ),
+      );
+      return;
+    }
+
+    final selected = await showModalBottomSheet<_ReactionOption>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return _ReactionPickerSheet(
+          postId: post.id,
+          options: _availableReactionOptionsForComment(),
+          currentReactionId: post.currentUserReaction?.id,
+          onSelected: (option) {
+            _mutateState(() {
+              _pendingReactionHeroByPostId[post.id] = option.id;
+            });
+            Navigator.of(sheetContext).pop(option);
+          },
+        );
+      },
+    );
+    if (!mounted || selected == null) {
+      return;
+    }
+
+    await _togglePostReaction(
+      post: post,
+      reactionId: selected.id,
+      cookieHeader: cookieHeader,
+    );
+  }
+
+  Future<void> _togglePostReaction({
+    required RiverSideTopicPostDetail post,
+    required String reactionId,
+    required String cookieHeader,
+  }) async {
+    _mutateState(() {
+      _reactingPostIds.add(post.id);
+    });
+
+    try {
+      final state = await widget.dependencies.accountStore.riverSideApiClient
+          .togglePostReaction(
+            postId: post.id,
+            reactionId: reactionId,
+            cookieHeader: cookieHeader,
+          );
+      if (!mounted) {
+        return;
+      }
+      _mutateState(() {
+        _applyPostReactionState(state);
+        _hasMutations = true;
+      });
+    } on RiverSideApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      _mutateState(() {
+        _pendingReactionHeroByPostId.remove(post.id);
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      _mutateState(() {
+        _pendingReactionHeroByPostId.remove(post.id);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('\u70b9\u8d5e\u64cd\u4f5c\u5931\u8d25')),
+      );
+    } finally {
+      _mutateState(() {
+        _reactingPostIds.remove(post.id);
+      });
+    }
+  }
+
+  void _applyPostReactionState(RiverSidePostReactionState state) {
+    final clearCurrent = state.currentUserReaction == null;
+    if (_rootPost.id == state.postId) {
+      _rootPost = _rootPost.copyWith(
+        reactions: state.reactions,
+        currentUserReaction: state.currentUserReaction,
+        clearCurrentUserReaction: clearCurrent,
+        reactionUsersCount: state.reactionUsersCount,
+      );
+    }
+
+    final index = _replies.indexWhere((post) => post.id == state.postId);
+    if (index >= 0) {
+      final next = <RiverSideTopicPostDetail>[..._replies];
+      final current = next[index];
+      next[index] = current.copyWith(
+        reactions: state.reactions,
+        currentUserReaction: state.currentUserReaction,
+        clearCurrentUserReaction: clearCurrent,
+        reactionUsersCount: state.reactionUsersCount,
+      );
+      _replies = next;
+    }
+
+    _pendingReactionHeroByPostId.remove(state.postId);
+    _reactionPulseTokenByPostId[state.postId] =
+        (_reactionPulseTokenByPostId[state.postId] ?? 0) + 1;
+  }
+
+  Future<void> _onReactionStatusPressed({
+    required RiverSideTopicPostDetail post,
+    required String reactionId,
+  }) async {
+    try {
+      final groups = await widget.dependencies.accountStore.riverSideApiClient
+          .fetchPostReactionUsers(
+            postId: post.id,
+            reactionId: reactionId,
+            cookieHeader: _activeCookieHeader(),
+          );
+      if (!mounted) {
+        return;
+      }
+
+      RiverSidePostReactionUsersGroup? group;
+      for (final item in groups) {
+        if (item.id == reactionId) {
+          group = item;
+          break;
+        }
+      }
+      group ??= groups.isEmpty ? null : groups.first;
+
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (sheetContext) {
+          return _ReactionUsersSheet(
+            postId: post.id,
+            reactionId: reactionId,
+            group: group,
+          );
+        },
+      );
+    } on RiverSideApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(_TopicDetailPageState._labelReactionUsersEmpty),
+        ),
+      );
+    }
+  }
+
   Future<void> _openAuthorProfileSheetForPost(
     RiverSideTopicPostDetail post,
   ) async {

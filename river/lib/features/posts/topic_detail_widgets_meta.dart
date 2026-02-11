@@ -6,12 +6,16 @@ class _PostAuthorHeader extends StatelessWidget {
     this.onTap,
     this.heroTagAvatar,
     this.heroTagName,
+    this.enableHero = true,
+    this.trailing,
   });
 
   final RiverSideTopicPostDetail post;
   final VoidCallback? onTap;
   final String? heroTagAvatar;
   final String? heroTagName;
+  final bool enableHero;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -48,7 +52,8 @@ class _PostAuthorHeader extends StatelessWidget {
         ),
       ],
     );
-    final avatarWidget = heroTagAvatar == null || heroTagAvatar!.isEmpty
+    final avatarWidget =
+        !enableHero || heroTagAvatar == null || heroTagAvatar!.isEmpty
         ? avatar
         : Hero(tag: heroTagAvatar!, child: avatar);
 
@@ -56,7 +61,8 @@ class _PostAuthorHeader extends StatelessWidget {
       post.authorDisplayName,
       style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
     );
-    final displayNameWidget = heroTagName == null || heroTagName!.isEmpty
+    final displayNameWidget =
+        !enableHero || heroTagName == null || heroTagName!.isEmpty
         ? displayName
         : Hero(
             tag: heroTagName!,
@@ -99,6 +105,10 @@ class _PostAuthorHeader extends StatelessWidget {
             ],
           ),
         ),
+        if (trailing case final Widget trailingWidget) ...[
+          const SizedBox(width: 8),
+          trailingWidget,
+        ],
       ],
     );
 
