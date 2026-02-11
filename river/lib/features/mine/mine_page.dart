@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:river/app/app_dependencies.dart';
 import 'package:river/core/account/account_models.dart';
-import 'package:river/core/constants.dart';
 import 'package:river/core/platform/riverside_webview_support.dart';
 import 'package:river/features/login/riverside_external_fallback_page.dart';
 import 'package:river/features/login/riverside_login_flow_mode.dart';
@@ -9,7 +8,6 @@ import 'package:river/features/login/riverside_login_webview_page.dart';
 import 'package:river/features/mine/about_page.dart';
 import 'package:river/features/mine/appearance_settings_page.dart';
 import 'package:river/features/mine/riverside_profile_page.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 part 'mine_page_widgets.dart';
 
@@ -154,11 +152,6 @@ class _MinePageState extends State<MinePage> {
       return;
     }
 
-    final support = await RiverSideWebViewSupport.check();
-    if (!mounted) {
-      return;
-    }
-
     final cookieHeader = widget.dependencies.accountStore
         .riverSideCookieHeaderFor(account.username);
     if (cookieHeader == null || cookieHeader.trim().isEmpty) {
@@ -166,28 +159,15 @@ class _MinePageState extends State<MinePage> {
       return;
     }
 
-    if (support.canUseEmbeddedWebView) {
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => RiverSideProfilePage(
-            account: account,
-            cookieHeader: cookieHeader,
-          ),
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => RiverSideProfilePage(
+          dependencies: widget.dependencies,
+          account: account,
+          cookieHeader: cookieHeader,
         ),
-      );
-      return;
-    }
-
-    final profileUrl = Uri.parse(
-      '$riverSideBaseUrl/u/${Uri.encodeComponent(account.username)}',
+      ),
     );
-    final launched = await launchUrl(
-      profileUrl,
-      mode: LaunchMode.externalApplication,
-    );
-    if (!launched && mounted) {
-      _showMessage('Unable to open profile page.');
-    }
   }
 
   void _onToggleDeleteMode(List<UserAccount> accounts) {

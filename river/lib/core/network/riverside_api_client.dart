@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:river/core/account/account_models.dart';
 import 'package:river/core/constants.dart';
 import 'package:river/core/network/riverside_notification_models.dart';
+import 'package:river/core/network/riverside_profile_models.dart';
 import 'package:river/core/network/riverside_search_models.dart';
 import 'package:river/core/network/riverside_topic_models.dart';
 

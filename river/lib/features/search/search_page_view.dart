@@ -1,6 +1,77 @@
 part of 'search_page.dart';
 
 extension _SearchPageView on _SearchPageState {
+  Widget _buildPage(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text(_SearchPageState._labelSearch),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: Center(
+              child: Hero(
+                tag: postsSearchHeroTag,
+                child: Icon(
+                  Icons.search,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+            child: TextField(
+              controller: _keywordController,
+              focusNode: _keywordFocusNode,
+              autofocus: true,
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                hintText: _SearchPageState._labelSearchHint,
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.send_outlined),
+                  onPressed: () => _runSearch(reset: true),
+                  tooltip: _SearchPageState._labelSearch,
+                ),
+                border: const OutlineInputBorder(),
+              ),
+              onSubmitted: (_) => _runSearch(reset: true),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: SegmentedButton<_SearchMode>(
+                segments: _SearchMode.values
+                    .map(
+                      (mode) => ButtonSegment<_SearchMode>(
+                        value: mode,
+                        label: Text(mode.label),
+                      ),
+                    )
+                    .toList(growable: false),
+                selected: <_SearchMode>{_searchMode},
+                showSelectedIcon: false,
+                onSelectionChanged: (selection) {
+                  if (selection.isEmpty) {
+                    return;
+                  }
+                  _onModeChanged(selection.first);
+                },
+              ),
+            ),
+          ),
+          Expanded(child: _buildBody()),
+        ],
+      ),
+    );
+  }
+
   Widget _buildBody() {
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
