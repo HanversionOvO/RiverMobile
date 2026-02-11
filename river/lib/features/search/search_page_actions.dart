@@ -1,4 +1,4 @@
-part of 'search_page.dart';
+﻿part of 'search_page.dart';
 
 extension _SearchPageActions on _SearchPageState {
   void _onAccountStoreChanged() {
@@ -257,7 +257,7 @@ extension _SearchPageActions on _SearchPageState {
 
   Future<void> _openTopicDetail(int topicId) async {
     await Navigator.of(context).push(
-      MaterialPageRoute<void>(
+      riverPageRoute<void>(
         builder: (_) => TopicDetailPage(
           dependencies: widget.dependencies,
           topicId: topicId,
@@ -275,7 +275,7 @@ extension _SearchPageActions on _SearchPageState {
       avatarUrl: user.avatarUrl,
     );
     await Navigator.of(context).push(
-      MaterialPageRoute<void>(
+      riverPageRoute<void>(
         builder: (_) => RiverSideProfilePage(
           dependencies: widget.dependencies,
           account: account,
@@ -309,3 +309,4 @@ extension _SearchPageActions on _SearchPageState {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 }
+

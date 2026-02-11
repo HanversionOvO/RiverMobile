@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:river/app/app_dependencies.dart';
 import 'package:river/core/account/account_models.dart';
 import 'package:river/core/platform/riverside_webview_support.dart';
@@ -8,6 +8,7 @@ import 'package:river/features/login/riverside_login_webview_page.dart';
 import 'package:river/features/mine/about_page.dart';
 import 'package:river/features/mine/appearance_settings_page.dart';
 import 'package:river/features/mine/riverside_profile_page.dart';
+import 'package:river/core/navigation/river_page_route.dart';
 
 part 'mine_page_widgets.dart';
 
@@ -33,7 +34,7 @@ class _MinePageState extends State<MinePage> {
     });
 
     final profile = await Navigator.of(context).push<UserAccount>(
-      MaterialPageRoute<UserAccount>(
+      riverPageRoute<UserAccount>(
         builder: (_) => RiverSideExternalFallbackPage(
           dependencies: widget.dependencies,
           detectedWebViewVersion: detectedWebViewVersion,
@@ -76,7 +77,7 @@ class _MinePageState extends State<MinePage> {
     });
 
     final profile = await Navigator.of(context).push<UserAccount>(
-      MaterialPageRoute<UserAccount>(
+      riverPageRoute<UserAccount>(
         builder: (_) => RiverSideLoginWebViewPage(
           dependencies: widget.dependencies,
           flowMode: RiverSideLoginFlowMode.addAccount,
@@ -160,7 +161,7 @@ class _MinePageState extends State<MinePage> {
     }
 
     await Navigator.of(context).push(
-      MaterialPageRoute<void>(
+      riverPageRoute<void>(
         builder: (_) => RiverSideProfilePage(
           dependencies: widget.dependencies,
           account: account,
@@ -305,7 +306,7 @@ class _MinePageState extends State<MinePage> {
 
   void _openAppearanceSettings() {
     Navigator.of(context).push(
-      MaterialPageRoute<void>(
+      riverPageRoute<void>(
         builder: (_) => AppearanceSettingsPage(
           settingsController: widget.dependencies.settingsController,
         ),
@@ -316,7 +317,7 @@ class _MinePageState extends State<MinePage> {
   void _openAboutPage() {
     Navigator.of(
       context,
-    ).push(MaterialPageRoute<void>(builder: (_) => const AboutPage()));
+    ).push(riverPageRoute<void>(builder: (_) => const AboutPage()));
   }
 
   String _normalizeUsername(String username) {
@@ -405,3 +406,4 @@ class _MinePageState extends State<MinePage> {
     );
   }
 }
+

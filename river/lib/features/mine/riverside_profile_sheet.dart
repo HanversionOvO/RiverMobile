@@ -4,6 +4,7 @@ import 'package:river/core/account/account_models.dart';
 import 'package:river/core/network/riverside_api_client.dart';
 import 'package:river/core/network/riverside_profile_models.dart';
 import 'package:river/features/mine/riverside_profile_page.dart';
+import 'package:river/core/navigation/river_page_route.dart';
 
 Future<void> showRiverSideUserProfileSheet({
   required BuildContext context,
@@ -30,7 +31,7 @@ Future<void> showRiverSideUserProfileSheet({
     isScrollControlled: true,
     useSafeArea: true,
     backgroundColor: Colors.transparent,
-    builder: (sheetContext) {
+    builder: (_) {
       return _RiverSideUserProfileSheet(
         dependencies: dependencies,
         username: normalizedUsername,
@@ -40,16 +41,12 @@ Future<void> showRiverSideUserProfileSheet({
     },
   );
 
-  if (result == null || !result.openFull) {
-    return;
-  }
-
-  if (!context.mounted) {
+  if (result == null || !result.openFull || !context.mounted) {
     return;
   }
 
   await Navigator.of(context).push(
-    MaterialPageRoute<void>(
+    riverPageRoute<void>(
       builder: (_) => RiverSideProfilePage(
         dependencies: dependencies,
         account: result.account,
@@ -306,24 +303,36 @@ class _RiverSideUserProfileSheetState
                       ),
                     ),
                   ],
+                  if (overview.isProfileHidden) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      '该用户已隐藏资料',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
           ],
         ),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            _StatChip(label: '主题', value: overview.topicCount),
-            _StatChip(label: '帖子', value: overview.postCount),
-            _StatChip(label: '获赞', value: overview.likesReceived),
-            _StatChip(label: '关注', value: overview.followingCount),
-            _StatChip(label: '粉丝', value: overview.followersCount),
-          ],
-        ),
-        if (overview.bio.trim().isNotEmpty) ...[
+        if (!overview.isProfileHidden) ...[
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _StatChip(label: '主题', value: overview.topicCount),
+              _StatChip(label: '帖子', value: overview.postCount),
+              _StatChip(label: '获赞', value: overview.likesReceived),
+              _StatChip(label: '关注', value: overview.followingCount),
+              _StatChip(label: '粉丝', value: overview.followersCount),
+            ],
+          ),
+        ],
+        if (!overview.isProfileHidden && overview.bio.trim().isNotEmpty) ...[
           const SizedBox(height: 12),
           Text(
             overview.bio.trim(),

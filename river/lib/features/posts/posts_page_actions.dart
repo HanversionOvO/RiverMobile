@@ -176,17 +176,10 @@ extension _PostsPageActions on _PostsPageState {
   }
 
   String _displayCategoryName(RiverSideCategoryOption category) {
-    final parentId = category.parentCategoryId;
-    if (parentId == null) {
-      return category.name;
-    }
-
-    for (final item in _categories) {
-      if (item.id == parentId) {
-        return '${item.name} / ${category.name}';
-      }
-    }
-    return category.name;
+    return displayRiverSideCategoryName(
+      category: category,
+      allCategories: _categories,
+    );
   }
 
   Future<void> _loadFirstPage({required bool clearExisting}) async {
@@ -379,8 +372,8 @@ extension _PostsPageActions on _PostsPageState {
       context: context,
       showDragHandle: true,
       builder: (sheetContext) {
-        return _CategoryPickerSheet(
-          groups: _buildCategoryGroups(),
+        return RiverSideCategoryPickerSheet(
+          groups: buildRiverSideCategoryGroups(_categories),
           selectedCategoryId: _selectedCategoryId,
           onSelected: (category) => Navigator.of(sheetContext).pop(category),
         );
@@ -403,67 +396,6 @@ extension _PostsPageActions on _PostsPageState {
     _loadFirstPage(clearExisting: true);
   }
 
-  List<_CategoryGroup> _buildCategoryGroups() {
-    final byId = <int, RiverSideCategoryOption>{
-      for (final item in _categories) item.id: item,
-    };
-
-    final childrenByParent = <int, List<RiverSideCategoryOption>>{};
-    for (final item in _categories) {
-      final parentId = item.parentCategoryId;
-      if (parentId == null || !byId.containsKey(parentId)) {
-        continue;
-      }
-      childrenByParent.putIfAbsent(parentId, () => <RiverSideCategoryOption>[]);
-      childrenByParent[parentId]!.add(item);
-    }
-
-    for (final entry in childrenByParent.entries) {
-      entry.value.sort((a, b) {
-        final byPosition = a.position.compareTo(b.position);
-        if (byPosition != 0) {
-          return byPosition;
-        }
-        return a.id.compareTo(b.id);
-      });
-    }
-
-    final groups = <_CategoryGroup>[];
-    final handledParentIds = <int>{};
-    for (final item in _categories) {
-      if (item.parentCategoryId != null || handledParentIds.contains(item.id)) {
-        continue;
-      }
-      handledParentIds.add(item.id);
-      groups.add(
-        _CategoryGroup(
-          parent: item,
-          children:
-              childrenByParent[item.id] ?? const <RiverSideCategoryOption>[],
-        ),
-      );
-    }
-
-    for (final item in _categories) {
-      if (item.parentCategoryId != null &&
-          byId.containsKey(item.parentCategoryId)) {
-        continue;
-      }
-      if (handledParentIds.contains(item.id)) {
-        continue;
-      }
-      handledParentIds.add(item.id);
-      groups.add(
-        _CategoryGroup(
-          parent: item,
-          children: const <RiverSideCategoryOption>[],
-        ),
-      );
-    }
-
-    return groups;
-  }
-
   void _onFeedChanged(RiverSideTopicFeed nextFeed) {
     if (nextFeed == _selectedFeed) {
       return;
@@ -482,7 +414,7 @@ extension _PostsPageActions on _PostsPageState {
 
   Future<void> _openTopicDetail(int topicId) async {
     await Navigator.of(context).push(
-      MaterialPageRoute<void>(
+      riverPageRoute<void>(
         builder: (_) => TopicDetailPage(
           dependencies: widget.dependencies,
           topicId: topicId,

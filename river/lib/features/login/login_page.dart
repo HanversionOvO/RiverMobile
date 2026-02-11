@@ -6,6 +6,7 @@ import 'package:river/core/platform/riverside_webview_support.dart';
 import 'package:river/features/home/home_shell_page.dart';
 import 'package:river/features/login/riverside_external_fallback_page.dart';
 import 'package:river/features/login/riverside_login_webview_page.dart';
+import 'package:river/core/navigation/river_page_route.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key, required this.dependencies});
@@ -21,7 +22,7 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> _openCredentialLogin({String? detectedWebViewVersion}) async {
     final profile = await Navigator.of(context).push<UserAccount>(
-      MaterialPageRoute<UserAccount>(
+      riverPageRoute<UserAccount>(
         builder: (_) => RiverSideExternalFallbackPage(
           dependencies: widget.dependencies,
           detectedWebViewVersion: detectedWebViewVersion,
@@ -34,7 +35,7 @@ class _LoginPageState extends State<LoginPage> {
     }
 
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute<void>(
+      riverPageRoute<void>(
         builder: (_) => HomeShellPage(dependencies: widget.dependencies),
       ),
       (_) => false,
@@ -61,7 +62,7 @@ class _LoginPageState extends State<LoginPage> {
 
     if (support.canUseEmbeddedWebView) {
       await Navigator.of(context).push(
-        MaterialPageRoute<void>(
+        riverPageRoute<void>(
           builder: (_) =>
               RiverSideLoginWebViewPage(dependencies: widget.dependencies),
         ),
@@ -117,7 +118,7 @@ class _LoginPageState extends State<LoginPage> {
                             color: Colors.white,
                           ),
                         )
-                      : const Text('登录至RiverSide'),
+                      : const Text('登录至 RiverSide'),
                 ),
               ),
               const SizedBox(height: 12),

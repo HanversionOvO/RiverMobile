@@ -6,6 +6,7 @@ import 'package:river/core/network/riverside_profile_models.dart';
 import 'package:river/core/platform/riverside_webview_support.dart';
 import 'package:river/features/mine/riverside_profile_webview_page.dart';
 import 'package:river/features/posts/topic_detail_page.dart';
+import 'package:river/core/navigation/river_page_route.dart';
 
 class RiverSideProfilePage extends StatefulWidget {
   const RiverSideProfilePage({
@@ -156,7 +157,7 @@ class _RiverSideProfilePageState extends State<RiverSideProfilePage> {
 
   Future<void> _openTopicDetail(int topicId) async {
     await Navigator.of(context).push(
-      MaterialPageRoute<void>(
+      riverPageRoute<void>(
         builder: (_) => TopicDetailPage(
           dependencies: widget.dependencies,
           topicId: topicId,
@@ -175,7 +176,7 @@ class _RiverSideProfilePageState extends State<RiverSideProfilePage> {
     );
 
     await Navigator.of(context).push(
-      MaterialPageRoute<void>(
+      riverPageRoute<void>(
         builder: (_) => RiverSideProfilePage(
           dependencies: widget.dependencies,
           account: account,
@@ -209,7 +210,7 @@ class _RiverSideProfilePageState extends State<RiverSideProfilePage> {
       }
 
       await Navigator.of(context).push(
-        MaterialPageRoute<void>(
+        riverPageRoute<void>(
           builder: (_) => RiverSideProfileWebViewPage(
             username: _username,
             title: widget.account.displayName,
@@ -332,7 +333,7 @@ class _RiverSideProfilePageState extends State<RiverSideProfilePage> {
         final account = overview.account;
         final subtitle = account.title.isEmpty
             ? '@${account.username}'
-            : '@${account.username} · ${account.title}';
+            : '@${account.username} 路 ${account.title}';
 
         return Padding(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
@@ -372,62 +373,77 @@ class _RiverSideProfilePageState extends State<RiverSideProfilePage> {
                               overflow: TextOverflow.ellipsis,
                               style: Theme.of(context).textTheme.bodySmall,
                             ),
+                            if (overview.isProfileHidden) ...[
+                              const SizedBox(height: 6),
+                              Text(
+                                '该用户已隐藏资料',
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.primary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 6,
-                    children: [
-                      _StatPill(label: '信任', value: '${overview.trustLevel}'),
-                      _StatPill(label: '徽章', value: '${overview.badgeCount}'),
-                      _StatPill(label: '主题', value: '${overview.topicCount}'),
-                      _StatPill(label: '帖子', value: '${overview.postCount}'),
-                      _StatPill(
-                        label: '获赞',
-                        value: '${overview.likesReceived}',
-                      ),
-                      _StatPill(label: '点赞', value: '${overview.likesGiven}'),
-                      _StatPill(
-                        label: '粉丝',
-                        value: '${overview.followersCount}',
-                      ),
-                      _StatPill(
-                        label: '关注',
-                        value: '${overview.followingCount}',
+                  if (!overview.isProfileHidden) ...[
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 6,
+                      children: [
+                        _StatPill(label: '信任', value: '${overview.trustLevel}'),
+                        _StatPill(label: '徽章', value: '${overview.badgeCount}'),
+                        _StatPill(label: '主题', value: '${overview.topicCount}'),
+                        _StatPill(label: '帖子', value: '${overview.postCount}'),
+                        _StatPill(
+                          label: '获赞',
+                          value: '${overview.likesReceived}',
+                        ),
+                        _StatPill(label: '点赞', value: '${overview.likesGiven}'),
+                        _StatPill(
+                          label: '粉丝',
+                          value: '${overview.followersCount}',
+                        ),
+                        _StatPill(
+                          label: '关注',
+                          value: '${overview.followingCount}',
+                        ),
+                      ],
+                    ),
+                    if (overview.bio.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        overview.bio,
+                        maxLines: 4,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
-                  ),
-                  if (overview.bio.isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    Text(
-                      overview.bio,
-                      maxLines: 4,
-                      overflow: TextOverflow.ellipsis,
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 4,
+                      children: [
+                        _MetaText(
+                          icon: Icons.schedule_outlined,
+                          text: '注册：${_formatDateTime(overview.createdAt)}',
+                        ),
+                        _MetaText(
+                          icon: Icons.visibility_outlined,
+                          text: '访问：${overview.profileViewCount}',
+                        ),
+                        _MetaText(
+                          icon: Icons.access_time,
+                          text: '最近在线：${_formatDateTime(overview.lastSeenAt)}',
+                        ),
+                      ],
                     ),
                   ],
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 4,
-                    children: [
-                      _MetaText(
-                        icon: Icons.schedule_outlined,
-                        text: '注册：${_formatDateTime(overview.createdAt)}',
-                      ),
-                      _MetaText(
-                        icon: Icons.visibility_outlined,
-                        text: '访问：${overview.profileViewCount}',
-                      ),
-                      _MetaText(
-                        icon: Icons.access_time,
-                        text: '最近在线：${_formatDateTime(overview.lastSeenAt)}',
-                      ),
-                    ],
-                  ),
                 ],
               ),
             ),
@@ -438,187 +454,217 @@ class _RiverSideProfilePageState extends State<RiverSideProfilePage> {
   }
 
   Widget _buildActivityTab(RiverSideProfileActivityKind kind) {
-    return FutureBuilder<List<RiverSideProfileActivityItem>>(
-      future: _ensureActivityFuture(kind),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+    return FutureBuilder<RiverSideProfileOverview>(
+      future: _overviewFuture,
+      builder: (context, overviewSnapshot) {
+        if (overviewSnapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
-        if (snapshot.hasError) {
-          final message = snapshot.error is RiverSideApiException
-              ? (snapshot.error as RiverSideApiException).message
-              : '加载动态失败';
-          return _ErrorRetryView(
-            message: message,
-            onRetry: () => _refreshActivities(kind),
-          );
+        if (overviewSnapshot.data?.isProfileHidden == true) {
+          return _buildProfileHiddenPlaceholder();
         }
 
-        final items = snapshot.data ?? const <RiverSideProfileActivityItem>[];
-        if (items.isEmpty) {
-          return RefreshIndicator(
-            onRefresh: () => _refreshActivities(kind),
-            child: ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              children: const [
-                SizedBox(height: 180),
-                Center(child: Text('暂无内容')),
-              ],
-            ),
-          );
-        }
+        return FutureBuilder<List<RiverSideProfileActivityItem>>(
+          future: _ensureActivityFuture(kind),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              final message = snapshot.error is RiverSideApiException
+                  ? (snapshot.error as RiverSideApiException).message
+                  : '加载动态失败';
+              return _ErrorRetryView(
+                message: message,
+                onRetry: () => _refreshActivities(kind),
+              );
+            }
 
-        return RefreshIndicator(
-          onRefresh: () => _refreshActivities(kind),
-          child: ListView.separated(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
-            itemCount: items.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 8),
-            itemBuilder: (context, index) {
-              final item = items[index];
-              return Card(
-                clipBehavior: Clip.antiAlias,
-                child: InkWell(
-                  onTap: () => _openTopicDetail(item.topicId),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            CircleAvatar(
-                              radius: 14,
-                              backgroundImage: item.authorAvatarUrl.isEmpty
-                                  ? null
-                                  : NetworkImage(item.authorAvatarUrl),
-                              child: item.authorAvatarUrl.isEmpty
-                                  ? const Icon(Icons.person_outline, size: 14)
-                                  : null,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                item.authorDisplayName,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.titleSmall,
-                              ),
-                            ),
-                            Text(
-                              _formatDateTime(item.createdAt),
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          item.title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        if (item.excerpt.isNotEmpty) ...[
-                          const SizedBox(height: 6),
-                          Text(
-                            item.excerpt,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodyMedium,
-                          ),
-                        ],
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 6,
-                          children: [
-                            _MetaText(
-                              icon: Icons.label_outline,
-                              text: item.categoryName,
-                            ),
-                            _MetaText(
-                              icon: Icons.chat_bubble_outline,
-                              text: '${item.replyCount}',
-                            ),
-                            _MetaText(
-                              icon: Icons.visibility_outlined,
-                              text: '${item.viewCount}',
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
+            final items =
+                snapshot.data ?? const <RiverSideProfileActivityItem>[];
+            if (items.isEmpty) {
+              return RefreshIndicator(
+                onRefresh: () => _refreshActivities(kind),
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  children: const [
+                    SizedBox(height: 180),
+                    Center(child: Text('暂无内容')),
+                  ],
                 ),
               );
-            },
-          ),
+            }
+
+            return RefreshIndicator(
+              onRefresh: () => _refreshActivities(kind),
+              child: ListView.separated(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
+                itemCount: items.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 8),
+                itemBuilder: (context, index) {
+                  final item = items[index];
+                  return Card(
+                    clipBehavior: Clip.antiAlias,
+                    child: InkWell(
+                      onTap: () => _openTopicDetail(item.topicId),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 14,
+                                  backgroundImage: item.authorAvatarUrl.isEmpty
+                                      ? null
+                                      : NetworkImage(item.authorAvatarUrl),
+                                  child: item.authorAvatarUrl.isEmpty
+                                      ? const Icon(
+                                          Icons.person_outline,
+                                          size: 14,
+                                        )
+                                      : null,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    item.authorDisplayName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.titleSmall,
+                                  ),
+                                ),
+                                Text(
+                                  _formatDateTime(item.createdAt),
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              item.title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            if (item.excerpt.isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              Text(
+                                item.excerpt,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodyMedium,
+                              ),
+                            ],
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 10,
+                              runSpacing: 6,
+                              children: [
+                                _MetaText(
+                                  icon: Icons.label_outline,
+                                  text: item.categoryName,
+                                ),
+                                _MetaText(
+                                  icon: Icons.chat_bubble_outline,
+                                  text: '${item.replyCount}',
+                                ),
+                                _MetaText(
+                                  icon: Icons.visibility_outlined,
+                                  text: '${item.viewCount}',
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            );
+          },
         );
       },
     );
   }
 
   Widget _buildBadgesTab() {
-    return FutureBuilder<List<RiverSideProfileBadge>>(
-      future: _ensureBadgesFuture(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+    return FutureBuilder<RiverSideProfileOverview>(
+      future: _overviewFuture,
+      builder: (context, overviewSnapshot) {
+        if (overviewSnapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
-        if (snapshot.hasError) {
-          final message = snapshot.error is RiverSideApiException
-              ? (snapshot.error as RiverSideApiException).message
-              : '加载徽章失败';
-          return _ErrorRetryView(message: message, onRetry: _refreshBadges);
+        if (overviewSnapshot.data?.isProfileHidden == true) {
+          return _buildProfileHiddenPlaceholder();
         }
 
-        final items = snapshot.data ?? const <RiverSideProfileBadge>[];
-        if (items.isEmpty) {
-          return RefreshIndicator(
-            onRefresh: _refreshBadges,
-            child: ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              children: const [
-                SizedBox(height: 180),
-                Center(child: Text('暂无徽章')),
-              ],
-            ),
-          );
-        }
+        return FutureBuilder<List<RiverSideProfileBadge>>(
+          future: _ensureBadgesFuture(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              final message = snapshot.error is RiverSideApiException
+                  ? (snapshot.error as RiverSideApiException).message
+                  : '加载徽章失败';
+              return _ErrorRetryView(message: message, onRetry: _refreshBadges);
+            }
 
-        return RefreshIndicator(
-          onRefresh: _refreshBadges,
-          child: ListView.separated(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
-            itemCount: items.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 8),
-            itemBuilder: (context, index) {
-              final badge = items[index];
-              return Card(
-                clipBehavior: Clip.antiAlias,
-                child: ListTile(
-                  leading: badge.imageUrl.isEmpty
-                      ? const CircleAvatar(
-                          child: Icon(Icons.military_tech_outlined),
-                        )
-                      : CircleAvatar(
-                          backgroundImage: NetworkImage(badge.imageUrl),
-                        ),
-                  title: Text(
-                    badge.name.isEmpty ? '徽章 #${badge.id}' : badge.name,
-                  ),
-                  subtitle: Text(
-                    badge.description.isEmpty
-                        ? '${badge.badgeTypeName} · 授予 ${badge.grantCount}'
-                        : '${badge.description}\n${badge.badgeTypeName} · 授予 ${badge.grantCount}',
-                  ),
-                  isThreeLine: badge.description.isNotEmpty,
+            final items = snapshot.data ?? const <RiverSideProfileBadge>[];
+            if (items.isEmpty) {
+              return RefreshIndicator(
+                onRefresh: _refreshBadges,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  children: const [
+                    SizedBox(height: 180),
+                    Center(child: Text('暂无徽章')),
+                  ],
                 ),
               );
-            },
-          ),
+            }
+
+            return RefreshIndicator(
+              onRefresh: _refreshBadges,
+              child: ListView.separated(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
+                itemCount: items.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 8),
+                itemBuilder: (context, index) {
+                  final badge = items[index];
+                  return Card(
+                    clipBehavior: Clip.antiAlias,
+                    child: ListTile(
+                      leading: badge.imageUrl.isEmpty
+                          ? const CircleAvatar(
+                              child: Icon(Icons.military_tech_outlined),
+                            )
+                          : CircleAvatar(
+                              backgroundImage: NetworkImage(badge.imageUrl),
+                            ),
+                      title: Text(
+                        badge.name.isEmpty ? '徽章 #${badge.id}' : badge.name,
+                      ),
+                      subtitle: Text(
+                        badge.description.isEmpty
+                            ? '${badge.badgeTypeName} · 授予 ${badge.grantCount}'
+                            : '${badge.description}\n${badge.badgeTypeName} · 授予 ${badge.grantCount}',
+                      ),
+                      isThreeLine: badge.description.isNotEmpty,
+                    ),
+                  );
+                },
+              ),
+            );
+          },
         );
       },
     );
@@ -645,63 +691,95 @@ class _RiverSideProfilePageState extends State<RiverSideProfilePage> {
     required Future<void> Function() onRefresh,
     required String emptyText,
   }) {
-    return FutureBuilder<List<RiverSideProfileFollowUser>>(
-      future: future,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+    return FutureBuilder<RiverSideProfileOverview>(
+      future: _overviewFuture,
+      builder: (context, overviewSnapshot) {
+        if (overviewSnapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
-        if (snapshot.hasError) {
-          final message = snapshot.error is RiverSideApiException
-              ? (snapshot.error as RiverSideApiException).message
-              : '加载用户列表失败';
-          return _ErrorRetryView(message: message, onRetry: onRefresh);
+        if (overviewSnapshot.data?.isProfileHidden == true) {
+          return _buildProfileHiddenPlaceholder();
         }
 
-        final users = snapshot.data ?? const <RiverSideProfileFollowUser>[];
-        if (users.isEmpty) {
-          return RefreshIndicator(
-            onRefresh: onRefresh,
-            child: ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              children: [
-                const SizedBox(height: 180),
-                Center(child: Text(emptyText)),
-              ],
-            ),
-          );
-        }
+        return FutureBuilder<List<RiverSideProfileFollowUser>>(
+          future: future,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              final message = snapshot.error is RiverSideApiException
+                  ? (snapshot.error as RiverSideApiException).message
+                  : '加载用户列表失败';
+              return _ErrorRetryView(message: message, onRetry: onRefresh);
+            }
 
-        return RefreshIndicator(
-          onRefresh: onRefresh,
-          child: ListView.separated(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
-            itemCount: users.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 8),
-            itemBuilder: (context, index) {
-              final user = users[index];
-              return Card(
-                clipBehavior: Clip.antiAlias,
-                child: ListTile(
-                  leading: CircleAvatar(
-                    backgroundImage: user.avatarUrl.isEmpty
-                        ? null
-                        : NetworkImage(user.avatarUrl),
-                    child: user.avatarUrl.isEmpty
-                        ? const Icon(Icons.person_outline)
-                        : null,
-                  ),
-                  title: Text(user.displayName),
-                  subtitle: Text('@${user.username}'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => _openRelatedProfile(user),
+            final users = snapshot.data ?? const <RiverSideProfileFollowUser>[];
+            if (users.isEmpty) {
+              return RefreshIndicator(
+                onRefresh: onRefresh,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  children: [
+                    const SizedBox(height: 180),
+                    Center(child: Text(emptyText)),
+                  ],
                 ),
               );
-            },
-          ),
+            }
+
+            return RefreshIndicator(
+              onRefresh: onRefresh,
+              child: ListView.separated(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
+                itemCount: users.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 8),
+                itemBuilder: (context, index) {
+                  final user = users[index];
+                  return Card(
+                    clipBehavior: Clip.antiAlias,
+                    child: ListTile(
+                      leading: CircleAvatar(
+                        backgroundImage: user.avatarUrl.isEmpty
+                            ? null
+                            : NetworkImage(user.avatarUrl),
+                        child: user.avatarUrl.isEmpty
+                            ? const Icon(Icons.person_outline)
+                            : null,
+                      ),
+                      title: Text(user.displayName),
+                      subtitle: Text('@${user.username}'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => _openRelatedProfile(user),
+                    ),
+                  );
+                },
+              ),
+            );
+          },
         );
       },
+    );
+  }
+
+  Widget _buildProfileHiddenPlaceholder() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.visibility_off_outlined,
+              size: 26,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(height: 10),
+            const Text('该用户已隐藏资料，该分区内容不可见', textAlign: TextAlign.center),
+          ],
+        ),
+      ),
     );
   }
 

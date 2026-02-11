@@ -106,15 +106,15 @@ extension _ComposeTopicPageActions on _ComposeTopicPageState {
       return;
     }
 
-    final selected = await showModalBottomSheet<int>(
+    final selected = await showModalBottomSheet<RiverSideCategoryOption>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
-      builder: (_) {
-        return _ComposeCategoryPickerSheet(
-          categories: _categories,
+      builder: (sheetContext) {
+        return RiverSideCategoryPickerSheet(
+          groups: buildRiverSideCategoryGroups(_categories),
           selectedCategoryId: _selectedCategoryId,
-          categoryNameBuilder: _displayCategoryName,
+          onSelected: (category) => Navigator.of(sheetContext).pop(category),
         );
       },
     );
@@ -122,21 +122,15 @@ extension _ComposeTopicPageActions on _ComposeTopicPageState {
       return;
     }
     _mutateState(() {
-      _selectedCategoryId = selected;
+      _selectedCategoryId = selected.id;
     });
   }
 
   RiverSideCategoryOption? _selectedCategory() {
-    final id = _selectedCategoryId;
-    if (id == null) {
-      return null;
-    }
-    for (final item in _categories) {
-      if (item.id == id) {
-        return item;
-      }
-    }
-    return null;
+    return findRiverSideCategoryById(
+      id: _selectedCategoryId,
+      categories: _categories,
+    );
   }
 
   bool get _hasDraftContent {
@@ -187,16 +181,10 @@ extension _ComposeTopicPageActions on _ComposeTopicPageState {
   }
 
   String _displayCategoryName(RiverSideCategoryOption category) {
-    final parentId = category.parentCategoryId;
-    if (parentId == null) {
-      return category.name;
-    }
-    for (final item in _categories) {
-      if (item.id == parentId) {
-        return '${item.name} / ${category.name}';
-      }
-    }
-    return category.name;
+    return displayRiverSideCategoryName(
+      category: category,
+      allCategories: _categories,
+    );
   }
 
   bool _validateBeforeSubmit({
@@ -239,7 +227,7 @@ extension _ComposeTopicPageActions on _ComposeTopicPageState {
     }
     final category = _selectedCategory();
     await Navigator.of(context).push(
-      MaterialPageRoute<void>(
+      riverPageRoute<void>(
         builder: (_) => ComposeTopicPreviewPage(
           title: _titleController.text.trim(),
           categoryName: category == null ? '' : _displayCategoryName(category),
@@ -282,7 +270,7 @@ extension _ComposeTopicPageActions on _ComposeTopicPageState {
         context,
       ).showSnackBar(const SnackBar(content: Text('发帖成功')));
       await Navigator.of(context).push(
-        MaterialPageRoute<void>(
+        riverPageRoute<void>(
           builder: (_) => TopicDetailPage(
             dependencies: widget.dependencies,
             topicId: result.topicId,

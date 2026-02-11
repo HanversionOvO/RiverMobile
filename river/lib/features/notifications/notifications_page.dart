@@ -1,9 +1,10 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:river/app/app_dependencies.dart';
 import 'package:river/core/network/riverside_api_client.dart';
 import 'package:river/core/network/riverside_notification_models.dart';
 import 'package:river/features/notifications/chat_detail_page.dart';
 import 'package:river/features/posts/topic_detail_page.dart';
+import 'package:river/core/navigation/river_page_route.dart';
 
 part 'notifications_page_view.dart';
 
@@ -240,7 +241,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       return;
     }
     await Navigator.of(context).push(
-      MaterialPageRoute<void>(
+      riverPageRoute<void>(
         builder: (_) => TopicDetailPage(
           dependencies: widget.dependencies,
           topicId: topicId,
@@ -329,7 +330,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
   Future<void> _openChatDetail(RiverSideChatChannelItem channel) async {
     await Navigator.of(context).push(
-      MaterialPageRoute<void>(
+      riverPageRoute<void>(
         builder: (_) =>
             ChatDetailPage(dependencies: widget.dependencies, channel: channel),
       ),
@@ -416,3 +417,4 @@ class _NotificationsPageState extends State<NotificationsPage> {
     );
   }
 }
+

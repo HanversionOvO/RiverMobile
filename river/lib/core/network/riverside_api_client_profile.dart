@@ -217,6 +217,7 @@ extension RiverSideApiClientProfileMethods on RiverSideApiClient {
 
     return RiverSideProfileOverview(
       account: account,
+      isProfileHidden: _asBool(user['profile_hidden']),
       bio: (profile['bio_raw'] ?? user['bio_raw'] ?? '').toString().trim(),
       location: (profile['location'] ?? '').toString().trim(),
       website: (profile['website'] ?? '').toString().trim(),
@@ -278,6 +279,7 @@ extension RiverSideApiClientProfileMethods on RiverSideApiClient {
         headers: _buildJsonHeaders(cookieHeader: cookieHeader),
       );
       if (response.statusCode == 404) {
+        // Hidden profiles may not expose activity endpoints.
         continue;
       }
       if (response.statusCode == 403) {
@@ -304,11 +306,10 @@ extension RiverSideApiClientProfileMethods on RiverSideApiClient {
         'Login session expired. Please sign in again.',
       );
     }
-    if (hasSuccessfulResponse) {
+    if (hasSuccessfulResponse || lastError == null) {
       return const <RiverSideProfileActivityItem>[];
     }
-    throw lastError ??
-        const RiverSideApiException('Failed to fetch profile activity.');
+    throw lastError;
   }
 
   List<RiverSideProfileActivityItem> _parseProfileActivities(dynamic decoded) {
@@ -628,6 +629,9 @@ extension RiverSideApiClientProfileMethods on RiverSideApiClient {
         'Login session expired. Please sign in again.',
       );
     }
+    if (response.statusCode == 404) {
+      return const <RiverSideProfileBadge>[];
+    }
     if (response.statusCode != 200) {
       throw RiverSideApiException(
         'Failed to fetch badges, HTTP ${response.statusCode}',
@@ -705,6 +709,9 @@ extension RiverSideApiClientProfileMethods on RiverSideApiClient {
       throw const RiverSideApiException(
         'Login session expired. Please sign in again.',
       );
+    }
+    if (response.statusCode == 404) {
+      return const <RiverSideProfileFollowUser>[];
     }
     if (response.statusCode != 200) {
       throw RiverSideApiException(

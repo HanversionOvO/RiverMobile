@@ -23,6 +23,7 @@ extension RiverSideProfileActivityKindExtension
 class RiverSideProfileOverview {
   const RiverSideProfileOverview({
     required this.account,
+    required this.isProfileHidden,
     required this.bio,
     required this.location,
     required this.website,
@@ -41,6 +42,7 @@ class RiverSideProfileOverview {
   });
 
   final UserAccount account;
+  final bool isProfileHidden;
   final String bio;
   final String location;
   final String website;

@@ -1,4 +1,4 @@
-// ignore_for_file: use_build_context_synchronously
+﻿// ignore_for_file: use_build_context_synchronously
 
 import 'dart:async';
 
@@ -14,6 +14,7 @@ import 'package:river/core/network/riverside_topic_models.dart';
 import 'package:river/core/widgets/river_image_viewer.dart';
 import 'package:river/core/widgets/river_markdown_editor.dart';
 import 'package:river/features/mine/riverside_profile_sheet.dart';
+import 'package:river/core/navigation/river_page_route.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 part 'topic_detail_comment_detail_page.dart';
@@ -427,7 +428,7 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
 
   Future<void> _openCommentDetail(RiverSideTopicPostDetail post) async {
     final hasMutations = await Navigator.of(context).push<bool>(
-      MaterialPageRoute<bool>(
+      riverPageRoute<bool>(
         builder: (_) => CommentDetailPage(
           dependencies: widget.dependencies,
           rootPost: post,
@@ -597,3 +598,4 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
     );
   }
 }
+

@@ -8,6 +8,7 @@ import 'package:river/features/home/home_shell_page.dart';
 import 'package:river/features/login/riverside_external_fallback_page.dart';
 import 'package:river/features/login/riverside_login_flow_mode.dart';
 import 'package:river/features/login/riverside_session_reader.dart';
+import 'package:river/core/navigation/river_page_route.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 class RiverSideLoginWebViewPage extends StatefulWidget {
@@ -96,7 +97,7 @@ class _RiverSideLoginWebViewPageState extends State<RiverSideLoginWebViewPage> {
     _openingExternalFallback = true;
     try {
       final profile = await Navigator.of(context).push<UserAccount>(
-        MaterialPageRoute<UserAccount>(
+        riverPageRoute<UserAccount>(
           builder: (_) =>
               RiverSideExternalFallbackPage(dependencies: widget.dependencies),
         ),
@@ -109,7 +110,7 @@ class _RiverSideLoginWebViewPageState extends State<RiverSideLoginWebViewPage> {
       if (widget.flowMode == RiverSideLoginFlowMode.initialLogin) {
         _completedFlow = true;
         Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute<void>(
+          riverPageRoute<void>(
             builder: (_) => HomeShellPage(dependencies: widget.dependencies),
           ),
           (_) => false,
@@ -196,7 +197,7 @@ class _RiverSideLoginWebViewPageState extends State<RiverSideLoginWebViewPage> {
     _completedFlow = true;
 
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute<void>(
+      riverPageRoute<void>(
         builder: (_) => HomeShellPage(dependencies: widget.dependencies),
       ),
       (_) => false,

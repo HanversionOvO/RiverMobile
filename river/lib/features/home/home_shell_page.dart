@@ -1,10 +1,11 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:river/app/app_dependencies.dart';
 import 'package:river/features/compose/compose_topic_page.dart';
 import 'package:river/features/mine/mine_page.dart';
 import 'package:river/features/notifications/notifications_page.dart';
 import 'package:river/features/posts/posts_page.dart';
 import 'package:river/features/search/search_page.dart';
+import 'package:river/core/navigation/river_page_route.dart';
 
 class HomeShellPage extends StatefulWidget {
   const HomeShellPage({super.key, required this.dependencies});
@@ -34,7 +35,7 @@ class _HomeShellPageState extends State<HomeShellPage> {
 
   Future<void> _openSearchPage() async {
     await Navigator.of(context).push(
-      MaterialPageRoute<void>(
+      riverPageRoute<void>(
         builder: (_) => SearchPage(dependencies: widget.dependencies),
       ),
     );
@@ -92,3 +93,4 @@ class _HomeShellPageState extends State<HomeShellPage> {
     );
   }
 }
+

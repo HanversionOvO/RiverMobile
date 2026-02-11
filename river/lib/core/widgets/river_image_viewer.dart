@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:river/core/constants.dart';
+import 'package:river/core/navigation/river_page_route.dart';
 
 part 'river_image_viewer_components.dart';
 
@@ -63,7 +64,8 @@ class RiverImageViewerPage extends StatefulWidget {
     }
     final safeIndex = initialIndex.clamp(0, items.length - 1);
     await Navigator.of(context).push(
-      MaterialPageRoute<void>(
+      riverPageRoute<void>(
+        enableFullScreenSwipeBack: false,
         builder: (_) => RiverImageViewerPage(
           items: items,
           initialIndex: safeIndex,

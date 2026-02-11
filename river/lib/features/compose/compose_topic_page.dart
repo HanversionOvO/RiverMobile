@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:river/app/app_dependencies.dart';
 import 'package:river/core/account/account_models.dart';
+import 'package:river/core/categories/riverside_category_utils.dart';
 import 'package:river/core/network/riverside_api_client.dart';
 import 'package:river/core/network/riverside_topic_models.dart';
+import 'package:river/core/widgets/riverside_category_picker_sheet.dart';
 import 'package:river/core/widgets/river_markdown_editor.dart';
 import 'package:river/features/compose/compose_topic_preview_page.dart';
 import 'package:river/features/posts/topic_detail_page.dart';
+import 'package:river/core/navigation/river_page_route.dart';
 
 part 'compose_topic_page_view.dart';
 part 'compose_topic_page_actions.dart';
