@@ -249,7 +249,7 @@ class _RiverSideLoginWebViewPageState extends State<RiverSideLoginWebViewPage> {
   @override
   Widget build(BuildContext context) {
     final title = widget.flowMode == RiverSideLoginFlowMode.initialLogin
-        ? 'RiverSide Login'
+        ? '登录到RiverSide'
         : 'Add RiverSide Account';
 
     return Scaffold(
