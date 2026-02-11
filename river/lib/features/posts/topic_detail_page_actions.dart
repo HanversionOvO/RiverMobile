@@ -189,7 +189,6 @@ extension _TopicDetailPageCommentActions on _TopicDetailPageState {
     await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
-      showDragHandle: true,
       builder: (sheetContext) {
         return RiverMarkdownEditor(
           title: _TopicDetailPageState._labelReplyEditorTitle,
@@ -350,7 +349,6 @@ extension _TopicDetailPageCommentActions on _TopicDetailPageState {
     await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
-      showDragHandle: true,
       builder: (sheetContext) {
         return RiverMarkdownEditor(
           title: _TopicDetailPageState._labelEditCommentTitle,

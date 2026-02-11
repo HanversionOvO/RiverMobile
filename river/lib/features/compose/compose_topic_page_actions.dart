@@ -65,7 +65,6 @@ extension _ComposeTopicPageActions on _ComposeTopicPageState {
     final saved = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
-      showDragHandle: true,
       builder: (_) {
         return RiverMarkdownEditor(
           title: '编辑帖子内容',
