@@ -107,6 +107,15 @@ extension _PostsPageActions on _PostsPageState {
     await _loadFirstPage(clearExisting: false);
   }
 
+  void _dismissRealtimeTopicUpdateHint() {
+    if (!_hasRealtimeTopicUpdate) {
+      return;
+    }
+    _mutateState(() {
+      _hasRealtimeTopicUpdate = false;
+    });
+  }
+
   Future<void> _loadCategories() async {
     if (_loadingCategories) {
       return;

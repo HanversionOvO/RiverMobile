@@ -15,10 +15,29 @@ part 'posts_page_actions.dart';
 
 enum _FloatingActionMode { hidden, backToTop, refresh }
 
+class PostsPageController {
+  _PostsPageState? _state;
+
+  void _attach(_PostsPageState state) {
+    _state = state;
+  }
+
+  void _detach(_PostsPageState state) {
+    if (_state == state) {
+      _state = null;
+    }
+  }
+
+  Future<void> scrollToTopAndRefresh() async {
+    await _state?._scrollToTopAndRefresh();
+  }
+}
+
 class PostsPage extends StatefulWidget {
-  const PostsPage({super.key, required this.dependencies});
+  const PostsPage({super.key, required this.dependencies, this.controller});
 
   final AppDependencies dependencies;
+  final PostsPageController? controller;
 
   @override
   State<PostsPage> createState() => _PostsPageState();
@@ -54,6 +73,7 @@ class _PostsPageState extends State<PostsPage> {
   @override
   void initState() {
     super.initState();
+    widget.controller?._attach(this);
     _lastActiveUsername =
         widget.dependencies.accountStore.activeRiverSideUsername;
     widget.dependencies.accountStore.addListener(_onAccountStoreChanged);
@@ -65,6 +85,7 @@ class _PostsPageState extends State<PostsPage> {
 
   @override
   void dispose() {
+    widget.controller?._detach(this);
     _messageBusPoller?.stop();
     widget.dependencies.accountStore.removeListener(_onAccountStoreChanged);
     _scrollController.removeListener(_onScroll);
@@ -77,6 +98,17 @@ class _PostsPageState extends State<PostsPage> {
       return;
     }
     setState(action);
+  }
+
+  Future<void> _scrollToTopAndRefresh() async {
+    if (_scrollController.hasClients) {
+      await _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
+      );
+    }
+    await _onRefresh();
   }
 
   @override

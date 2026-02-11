@@ -36,27 +36,6 @@ extension _PostsPageView on _PostsPageState {
             ],
           ),
         ),
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 180),
-          child: !_hasRealtimeTopicUpdate
-              ? const SizedBox.shrink()
-              : Padding(
-                  key: const ValueKey<String>('realtime-topic-hint'),
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                  child: Card(
-                    margin: EdgeInsets.zero,
-                    child: ListTile(
-                      dense: true,
-                      leading: const Icon(Icons.fiber_new_outlined),
-                      title: const Text('有新帖子，点击刷新'),
-                      trailing: FilledButton.tonal(
-                        onPressed: _consumeRealtimeTopicUpdate,
-                        child: const Text('刷新'),
-                      ),
-                    ),
-                  ),
-                ),
-        ),
         Expanded(child: _buildBodyWithActionButton()),
       ],
     );
@@ -88,8 +67,56 @@ extension _PostsPageView on _PostsPageState {
       children: [
         Positioned.fill(child: _buildBody()),
         Positioned(
+          left: 12,
+          right: 12,
+          bottom: 12,
+          child: SafeArea(
+            top: false,
+            child: IgnorePointer(
+              ignoring: !_hasRealtimeTopicUpdate,
+              child: AnimatedSlide(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOutCubic,
+                offset: _hasRealtimeTopicUpdate
+                    ? Offset.zero
+                    : const Offset(0, 1.2),
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 180),
+                  opacity: _hasRealtimeTopicUpdate ? 1 : 0,
+                  child: Card(
+                    margin: EdgeInsets.zero,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.fiber_new_outlined, size: 18),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              '\u6709\u65b0\u5e16\u5b50\uff0c\u70b9\u51fb\u5237\u65b0',
+                            ),
+                          ),
+                          FilledButton.tonal(
+                            onPressed: _consumeRealtimeTopicUpdate,
+                            child: const Text('\u5237\u65b0'),
+                          ),
+                          IconButton(
+                            tooltip: '\u5173\u95ed',
+                            onPressed: _dismissRealtimeTopicUpdateHint,
+                            icon: const Icon(Icons.close),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        Positioned(
           right: 16,
-          bottom: 20,
+          bottom: _hasRealtimeTopicUpdate ? 92 : 20,
           child: AnimatedScale(
             duration: const Duration(milliseconds: 180),
             scale: _floatingActionMode == _FloatingActionMode.hidden ? 0 : 1,

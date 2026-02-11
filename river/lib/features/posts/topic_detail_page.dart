@@ -431,6 +431,15 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
     );
   }
 
+  void _dismissRealtimeCommentHint() {
+    if (!_hasRealtimeCommentUpdate) {
+      return;
+    }
+    _mutateState(() {
+      _hasRealtimeCommentUpdate = false;
+    });
+  }
+
   Future<void> _openCommentDetail(RiverSideTopicPostDetail post) async {
     final hasMutations = await Navigator.of(context).push<bool>(
       riverPageRoute<bool>(
@@ -462,19 +471,82 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
           overflow: TextOverflow.ellipsis,
         ),
       ),
-      body: _buildBody(),
+      body: Stack(
+        children: [
+          Positioned.fill(child: _buildBody()),
+          ValueListenableBuilder<bool>(
+            valueListenable: _showBackToTopButtonNotifier,
+            builder: (context, showFab, _) {
+              return Positioned(
+                left: 12,
+                right: 12,
+                bottom: 12,
+                child: SafeArea(
+                  top: false,
+                  child: IgnorePointer(
+                    ignoring: !_hasRealtimeCommentUpdate,
+                    child: AnimatedSlide(
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOutCubic,
+                      offset: _hasRealtimeCommentUpdate
+                          ? Offset.zero
+                          : const Offset(0, 1.2),
+                      child: AnimatedOpacity(
+                        duration: const Duration(milliseconds: 180),
+                        opacity: _hasRealtimeCommentUpdate ? 1 : 0,
+                        child: Card(
+                          margin: EdgeInsets.zero,
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.mark_chat_unread_outlined),
+                                const SizedBox(width: 8),
+                                const Expanded(
+                                  child: Text(
+                                    '\u6709\u65b0\u8bc4\u8bba\uff0c\u70b9\u51fb\u52a0\u8f7d',
+                                  ),
+                                ),
+                                FilledButton.tonal(
+                                  onPressed: _consumeRealtimeCommentUpdate,
+                                  child: const Text('\u52a0\u8f7d'),
+                                ),
+                                IconButton(
+                                  tooltip: '\u5173\u95ed',
+                                  onPressed: _dismissRealtimeCommentHint,
+                                  icon: const Icon(Icons.close),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
       floatingActionButton: ValueListenableBuilder<bool>(
         valueListenable: _showBackToTopButtonNotifier,
         builder: (context, visible, _) {
+          final extraBottom = _hasRealtimeCommentUpdate ? 72.0 : 0.0;
           return AnimatedScale(
             duration: const Duration(milliseconds: 180),
             scale: visible ? 1 : 0,
-            child: visible
-                ? FloatingActionButton.small(
-                    onPressed: _scrollToTop,
-                    child: const Icon(Icons.vertical_align_top),
-                  )
-                : const SizedBox.shrink(),
+            child: AnimatedPadding(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOutCubic,
+              padding: EdgeInsets.only(bottom: extraBottom),
+              child: visible
+                  ? FloatingActionButton.small(
+                      onPressed: _scrollToTop,
+                      child: const Icon(Icons.vertical_align_top),
+                    )
+                  : const SizedBox.shrink(),
+            ),
           );
         },
       ),
@@ -523,27 +595,6 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 20),
         children: [
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 180),
-            child: !_hasRealtimeCommentUpdate
-                ? const SizedBox.shrink()
-                : Padding(
-                    key: const ValueKey<String>('realtime-comment-hint'),
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: Card(
-                      margin: EdgeInsets.zero,
-                      child: ListTile(
-                        dense: true,
-                        leading: const Icon(Icons.mark_chat_unread_outlined),
-                        title: const Text('有新评论，点击加载'),
-                        trailing: FilledButton.tonal(
-                          onPressed: _consumeRealtimeCommentUpdate,
-                          child: const Text('加载'),
-                        ),
-                      ),
-                    ),
-                  ),
-          ),
           const _SectionHeader(title: _labelMainPost),
           _MainPostCard(
             key: _keyForPostNumber(1),

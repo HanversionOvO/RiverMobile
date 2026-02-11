@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:river/app/app_dependencies.dart';
 import 'package:river/features/compose/compose_topic_page.dart';
@@ -17,8 +19,12 @@ class HomeShellPage extends StatefulWidget {
 }
 
 class _HomeShellPageState extends State<HomeShellPage> {
+  static const Duration _postsTabDoubleTapWindow = Duration(milliseconds: 320);
+
   int _selectedTabIndex = 0;
   int _notificationsUnreadCount = 0;
+  DateTime? _lastPostsTabTapAt;
+  final PostsPageController _postsPageController = PostsPageController();
 
   static const List<String> _titles = <String>[
     '\u5e16\u5b50',
@@ -28,7 +34,10 @@ class _HomeShellPageState extends State<HomeShellPage> {
   ];
 
   late final List<Widget> _pages = <Widget>[
-    PostsPage(dependencies: widget.dependencies),
+    PostsPage(
+      dependencies: widget.dependencies,
+      controller: _postsPageController,
+    ),
     ComposeTopicPage(dependencies: widget.dependencies),
     NotificationsPage(
       dependencies: widget.dependencies,
@@ -65,6 +74,33 @@ class _HomeShellPageState extends State<HomeShellPage> {
     );
   }
 
+  void _onDestinationSelected(int index) {
+    if (index == 0) {
+      if (_selectedTabIndex == 0) {
+        final now = DateTime.now();
+        final lastTapAt = _lastPostsTabTapAt;
+        if (lastTapAt != null &&
+            now.difference(lastTapAt) <= _postsTabDoubleTapWindow) {
+          _lastPostsTabTapAt = null;
+          unawaited(_postsPageController.scrollToTopAndRefresh());
+          return;
+        }
+        _lastPostsTabTapAt = now;
+        return;
+      }
+      _lastPostsTabTapAt = DateTime.now();
+    } else {
+      _lastPostsTabTapAt = null;
+    }
+
+    if (index == _selectedTabIndex) {
+      return;
+    }
+    setState(() {
+      _selectedTabIndex = index;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -86,11 +122,7 @@ class _HomeShellPageState extends State<HomeShellPage> {
       body: IndexedStack(index: _selectedTabIndex, children: _pages),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedTabIndex,
-        onDestinationSelected: (index) {
-          setState(() {
-            _selectedTabIndex = index;
-          });
-        },
+        onDestinationSelected: _onDestinationSelected,
         destinations: <NavigationDestination>[
           const NavigationDestination(
             icon: Icon(Icons.forum_outlined),

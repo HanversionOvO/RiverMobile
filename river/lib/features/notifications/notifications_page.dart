@@ -412,6 +412,15 @@ class _NotificationsPageState extends State<NotificationsPage> {
     _notifyUnreadCountChanged();
   }
 
+  void _dismissRealtimeNotificationsHint() {
+    if (!_hasRealtimeNotifications) {
+      return;
+    }
+    setState(() {
+      _hasRealtimeNotifications = false;
+    });
+  }
+
   Future<void> _loadMoreNotifications() async {
     final serial = _requestSerial;
     final usernameAtStart =
@@ -532,71 +541,98 @@ class _NotificationsPageState extends State<NotificationsPage> {
       );
     }
 
-    return Column(
+    return Stack(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: SegmentedButton<_NotificationsMode>(
-                segments: _NotificationsMode.values
-                    .map(
-                      (mode) => ButtonSegment<_NotificationsMode>(
-                        value: mode,
-                        label: Text(mode.label),
-                      ),
-                    )
-                    .toList(growable: false),
-                selected: <_NotificationsMode>{_mode},
-                showSelectedIcon: false,
-                onSelectionChanged: (selection) {
-                  if (selection.isEmpty) {
-                    return;
-                  }
-                  setState(() {
-                    _mode = selection.first;
-                  });
-                },
+        Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: SegmentedButton<_NotificationsMode>(
+                    segments: _NotificationsMode.values
+                        .map(
+                          (mode) => ButtonSegment<_NotificationsMode>(
+                            value: mode,
+                            label: Text(mode.label),
+                          ),
+                        )
+                        .toList(growable: false),
+                    selected: <_NotificationsMode>{_mode},
+                    showSelectedIcon: false,
+                    onSelectionChanged: (selection) {
+                      if (selection.isEmpty) {
+                        return;
+                      }
+                      setState(() {
+                        _mode = selection.first;
+                      });
+                    },
+                  ),
+                ),
               ),
             ),
-          ),
+            if (_mode == _NotificationsMode.notifications &&
+                _totalNotifications != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '\u5171 $_totalNotifications \u6761\u901a\u77e5',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+              ),
+            Expanded(child: _buildModeBody()),
+          ],
         ),
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 180),
-          child: !_hasRealtimeNotifications
-              ? const SizedBox.shrink()
-              : Padding(
-                  key: const ValueKey<String>('realtime-notification-hint'),
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+        Positioned(
+          left: 12,
+          right: 12,
+          bottom: 12,
+          child: SafeArea(
+            top: false,
+            child: IgnorePointer(
+              ignoring: !_hasRealtimeNotifications,
+              child: AnimatedSlide(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOutCubic,
+                offset: _hasRealtimeNotifications
+                    ? Offset.zero
+                    : const Offset(0, 1.2),
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 180),
+                  opacity: _hasRealtimeNotifications ? 1 : 0,
                   child: Card(
                     margin: EdgeInsets.zero,
-                    child: ListTile(
-                      dense: true,
-                      leading: const Icon(Icons.notifications_active_outlined),
-                      title: const Text('有新通知，点击刷新'),
-                      trailing: FilledButton.tonal(
-                        onPressed: _consumeRealtimeNotifications,
-                        child: const Text('刷新'),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.notifications_active_outlined),
+                          const SizedBox(width: 8),
+                          const Expanded(child: Text('有新通知，点击刷新')),
+                          FilledButton.tonal(
+                            onPressed: _consumeRealtimeNotifications,
+                            child: const Text('刷新'),
+                          ),
+                          IconButton(
+                            tooltip: '关闭',
+                            onPressed: _dismissRealtimeNotificationsHint,
+                            icon: const Icon(Icons.close),
+                          ),
+                        ],
                       ),
                     ),
                   ),
                 ),
-        ),
-        if (_mode == _NotificationsMode.notifications &&
-            _totalNotifications != null)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                '\u5171 $_totalNotifications \u6761\u901a\u77e5',
-                style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
           ),
-        Expanded(child: _buildModeBody()),
+        ),
       ],
     );
   }
