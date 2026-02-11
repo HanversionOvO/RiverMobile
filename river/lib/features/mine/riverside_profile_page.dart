@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:river/app/app_dependencies.dart';
 import 'package:river/core/account/account_models.dart';
@@ -24,35 +26,54 @@ class RiverSideProfilePage extends StatefulWidget {
   State<RiverSideProfilePage> createState() => _RiverSideProfilePageState();
 }
 
-class _RiverSideProfilePageState extends State<RiverSideProfilePage> {
+class _RiverSideProfilePageState extends State<RiverSideProfilePage>
+    with TickerProviderStateMixin {
+  late TabController _tabController;
   late Future<RiverSideProfileOverview> _overviewFuture;
+
+  // 缓存各个 Tab 的数据 Future
   final Map<
     RiverSideProfileActivityKind,
     Future<List<RiverSideProfileActivityItem>>
   >
-  _activityFutures =
-      <
-        RiverSideProfileActivityKind,
-        Future<List<RiverSideProfileActivityItem>>
-      >{};
+  _activityFutures = {};
   Future<List<RiverSideProfileBadge>>? _badgesFuture;
   Future<List<RiverSideProfileFollowUser>>? _followingFuture;
   Future<List<RiverSideProfileFollowUser>>? _followersFuture;
 
   bool _openingDetailedProfile = false;
 
+  // 获取 Tab 列表定义
+  final List<_ProfileTabDef> _tabs = [
+    for (final kind in RiverSideProfileActivityKind.values)
+      _ProfileTabDef(title: kind.label, kind: kind),
+    const _ProfileTabDef(title: '徽章'),
+    const _ProfileTabDef(title: '关注中'),
+    const _ProfileTabDef(title: '粉丝'),
+  ];
+
   String get _username => widget.account.username;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: _tabs.length, vsync: this);
+    _overviewFuture = _loadOverview();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  // --- Data Loading Logic (保持原有逻辑) ---
 
   String? _effectiveCookieHeader() {
     final fromWidget = widget.cookieHeader?.trim();
-    if (fromWidget != null && fromWidget.isNotEmpty) {
-      return fromWidget;
-    }
-
+    if (fromWidget != null && fromWidget.isNotEmpty) return fromWidget;
     final active = widget.dependencies.accountStore.activeRiverSideUsername;
-    if (active == null || active.isEmpty) {
-      return null;
-    }
+    if (active == null || active.isEmpty) return null;
     return widget.dependencies.accountStore.riverSideCookieHeaderFor(active);
   }
 
@@ -62,12 +83,6 @@ class _RiverSideProfilePageState extends State<RiverSideProfilePage> {
       throw const RiverSideApiException('当前账号登录态缺失，请重新登录后查看资料');
     }
     return cookie;
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _overviewFuture = _loadOverview();
   }
 
   Future<RiverSideProfileOverview> _loadOverview() async {
@@ -126,34 +141,7 @@ class _RiverSideProfilePageState extends State<RiverSideProfilePage> {
     });
   }
 
-  Future<void> _refreshActivities(RiverSideProfileActivityKind kind) async {
-    setState(() {
-      _activityFutures[kind] = _loadActivities(kind);
-    });
-    await _activityFutures[kind];
-  }
-
-  Future<void> _refreshBadges() async {
-    setState(() {
-      _badgesFuture = _loadBadges();
-    });
-    await _badgesFuture;
-  }
-
-  Future<void> _refreshFollowUsers({required bool followers}) async {
-    if (followers) {
-      setState(() {
-        _followersFuture = _loadFollowUsers(followers: true);
-      });
-      await _followersFuture;
-      return;
-    }
-
-    setState(() {
-      _followingFuture = _loadFollowUsers(followers: false);
-    });
-    await _followingFuture;
-  }
+  // --- Navigation Actions ---
 
   Future<void> _openTopicDetail(int topicId) async {
     await Navigator.of(context).push(
@@ -187,25 +175,18 @@ class _RiverSideProfilePageState extends State<RiverSideProfilePage> {
   }
 
   Future<void> _openDetailedProfile() async {
-    if (_openingDetailedProfile) {
-      return;
-    }
-
-    setState(() {
-      _openingDetailedProfile = true;
-    });
+    if (_openingDetailedProfile) return;
+    setState(() => _openingDetailedProfile = true);
 
     try {
       final cookie = _requiredCookieHeader();
       final support = await RiverSideWebViewSupport.check();
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
 
       if (!support.canUseEmbeddedWebView) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('当前设备不支持内置 WebView，无法在登录态下打开详细资料')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('当前设备不支持内置 WebView')));
         return;
       }
 
@@ -219,622 +200,308 @@ class _RiverSideProfilePageState extends State<RiverSideProfilePage> {
         ),
       );
     } on RiverSideApiException catch (error) {
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(error.message)));
     } finally {
-      if (mounted) {
-        setState(() {
-          _openingDetailedProfile = false;
-        });
-      }
+      if (mounted) setState(() => _openingDetailedProfile = false);
     }
   }
 
+  // --- UI Building ---
+
   @override
   Widget build(BuildContext context) {
-    final title = widget.account.displayName.isEmpty
-        ? widget.account.username
-        : widget.account.displayName;
+    final theme = Theme.of(context);
+    final displayName = widget.account.displayName.isNotEmpty
+        ? widget.account.displayName
+        : widget.account.username;
 
-    return DefaultTabController(
-      length: RiverSideProfileActivityKind.values.length + 3,
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(title),
-          actions: [
-            IconButton(
-              onPressed: _openingDetailedProfile ? null : _openDetailedProfile,
-              icon: _openingDetailedProfile
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.open_in_browser_outlined),
-              tooltip: '查看详细资料',
-            ),
-          ],
-          bottom: TabBar(
-            isScrollable: true,
-            tabs: [
-              for (final kind in RiverSideProfileActivityKind.values)
-                Tab(text: kind.label),
-              const Tab(text: '徽章'),
-              const Tab(text: '关注中'),
-              const Tab(text: '关注者'),
-            ],
-          ),
-        ),
-        body: Column(
-          children: [
-            _buildOverviewHeader(),
-            const Divider(height: 1),
-            Expanded(
-              child: TabBarView(
-                children: [
-                  for (final kind in RiverSideProfileActivityKind.values)
-                    _buildActivityTab(kind),
-                  _buildBadgesTab(),
-                  _buildFollowingTab(),
-                  _buildFollowersTab(),
-                ],
+    return Scaffold(
+      backgroundColor: theme.colorScheme.surface,
+      body: NestedScrollView(
+        headerSliverBuilder: (context, innerBoxIsScrolled) {
+          return [
+            SliverAppBar(
+              pinned: true,
+              expandedHeight:
+                  0, // 不使用默认的 ExpandedHeight，内容由 SliverToBoxAdapter 提供
+              title: Text(
+                innerBoxIsScrolled ? displayName : '',
+                style: const TextStyle(fontWeight: FontWeight.bold),
               ),
+              centerTitle: true,
+              backgroundColor: theme.colorScheme.surface.withOpacity(0.95),
+              elevation: 0,
+              scrolledUnderElevation: 2,
+              actions: [
+                IconButton(
+                  onPressed: _openingDetailedProfile
+                      ? null
+                      : _openDetailedProfile,
+                  icon: _openingDetailedProfile
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.open_in_browser_rounded),
+                  tooltip: '网页版详细资料',
+                ),
+              ],
             ),
-          ],
+            SliverToBoxAdapter(child: _buildProfileHeader(theme, displayName)),
+            SliverPersistentHeader(
+              delegate: _StickyTabBarDelegate(
+                TabBar(
+                  controller: _tabController,
+                  isScrollable: true,
+                  labelColor: theme.colorScheme.primary,
+                  unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
+                  indicatorColor: theme.colorScheme.primary,
+                  indicatorSize: TabBarIndicatorSize.label,
+                  dividerColor: Colors.transparent, // 移除默认分割线
+                  tabs: _tabs.map((t) => Tab(text: t.title)).toList(),
+                ),
+                color: theme.colorScheme.surface,
+              ),
+              pinned: true,
+            ),
+          ];
+        },
+        body: TabBarView(
+          controller: _tabController,
+          children: _tabs.map((tab) {
+            if (tab.kind != null) {
+              return _ActivityTab(
+                kind: tab.kind!,
+                overviewFuture: _overviewFuture,
+                activityFuture: _ensureActivityFuture(tab.kind!),
+                onRefresh: () async {
+                  setState(() {
+                    _activityFutures[tab.kind!] = _loadActivities(tab.kind!);
+                  });
+                  await _activityFutures[tab.kind!];
+                },
+                onItemTap: (item) => _openTopicDetail(item.topicId),
+              );
+            } else if (tab.title == '徽章') {
+              return _BadgesTab(
+                overviewFuture: _overviewFuture,
+                badgesFuture: _ensureBadgesFuture(),
+                onRefresh: () async {
+                  setState(() => _badgesFuture = _loadBadges());
+                  await _badgesFuture;
+                },
+              );
+            } else {
+              final isFollowers = tab.title == '粉丝';
+              return _UsersTab(
+                overviewFuture: _overviewFuture,
+                usersFuture: isFollowers
+                    ? _ensureFollowersFuture()
+                    : _ensureFollowingFuture(),
+                onRefresh: () async {
+                  if (isFollowers) {
+                    setState(
+                      () =>
+                          _followersFuture = _loadFollowUsers(followers: true),
+                    );
+                    await _followersFuture;
+                  } else {
+                    setState(
+                      () =>
+                          _followingFuture = _loadFollowUsers(followers: false),
+                    );
+                    await _followingFuture;
+                  }
+                },
+                onUserTap: _openRelatedProfile,
+                emptyText: isFollowers ? '暂无粉丝' : '暂无关注',
+              );
+            }
+          }).toList(),
         ),
       ),
     );
   }
 
-  Widget _buildOverviewHeader() {
+  Widget _buildProfileHeader(ThemeData theme, String displayName) {
     return FutureBuilder<RiverSideProfileOverview>(
       future: _overviewFuture,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Padding(
-            padding: EdgeInsets.all(12),
-            child: LinearProgressIndicator(minHeight: 2),
-          );
-        }
-
-        if (snapshot.hasError) {
-          final message = snapshot.error is RiverSideApiException
-              ? (snapshot.error as RiverSideApiException).message
-              : '加载个人资料失败';
+        if (!snapshot.hasData) {
+          // Loading Placeholder
           return Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Row(
-                  children: [
-                    Expanded(child: Text(message)),
-                    const SizedBox(width: 8),
-                    FilledButton(
-                      onPressed: _refreshOverview,
-                      child: const Text('重试'),
-                    ),
-                  ],
-                ),
+            padding: const EdgeInsets.all(24.0),
+            child: Center(
+              child: CircularProgressIndicator(
+                color: theme.colorScheme.primary.withOpacity(0.5),
               ),
             ),
           );
         }
 
-        final overview = snapshot.data;
-        if (overview == null) {
-          return const SizedBox.shrink();
-        }
-
+        final overview = snapshot.data!;
         final account = overview.account;
-        final subtitle = account.title.isEmpty
-            ? '@${account.username}'
-            : '@${account.username} 路 ${account.title}';
 
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-          child: Card(
-            margin: EdgeInsets.zero,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
-              child: Column(
+        return Container(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 头像与基本信息行
+              Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 24,
-                        backgroundImage: account.avatarUrl.isEmpty
-                            ? null
-                            : NetworkImage(account.avatarUrl),
-                        child: account.avatarUrl.isEmpty
-                            ? const Icon(Icons.person_outline)
-                            : null,
+                  Container(
+                    width: 84,
+                    height: 84,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: theme.colorScheme.surfaceContainerHighest,
+                        width: 4,
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              account.displayName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              subtitle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                            if (overview.isProfileHidden) ...[
-                              const SizedBox(height: 6),
-                              Text(
-                                '该用户已隐藏资料',
-                                style: Theme.of(context).textTheme.bodySmall
-                                    ?.copyWith(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.primary,
-                                      fontWeight: FontWeight.w600,
-                                    ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                      image: account.avatarUrl.isNotEmpty
+                          ? DecorationImage(
+                              image: NetworkImage(account.avatarUrl),
+                              fit: BoxFit.cover,
+                            )
+                          : null,
+                    ),
+                    child: account.avatarUrl.isEmpty
+                        ? Icon(
+                            Icons.person,
+                            size: 40,
+                            color: theme.colorScheme.primary,
+                          )
+                        : null,
+                  ),
+                  const SizedBox(width: 20),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 8),
+                        Text(
+                          displayName,
+                          style: theme.textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            height: 1.1,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          '@${account.username}',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        if (overview.location.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.location_on_outlined,
+                                size: 14,
+                                color: theme.colorScheme.secondary,
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  overview.location,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.secondary,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
                             ],
-                          ],
-                        ),
-                      ),
-                    ],
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
-                  if (!overview.isProfileHidden) ...[
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 6,
-                      children: [
-                        _StatPill(label: '信任', value: '${overview.trustLevel}'),
-                        _StatPill(label: '徽章', value: '${overview.badgeCount}'),
-                        _StatPill(label: '主题', value: '${overview.topicCount}'),
-                        _StatPill(label: '帖子', value: '${overview.postCount}'),
-                        _StatPill(
-                          label: '获赞',
-                          value: '${overview.likesReceived}',
-                        ),
-                        _StatPill(label: '点赞', value: '${overview.likesGiven}'),
-                        _StatPill(
-                          label: '粉丝',
-                          value: '${overview.followersCount}',
-                        ),
-                        _StatPill(
-                          label: '关注',
-                          value: '${overview.followingCount}',
-                        ),
-                      ],
-                    ),
-                    if (overview.bio.isNotEmpty) ...[
-                      const SizedBox(height: 10),
-                      Text(
-                        overview.bio,
-                        maxLines: 4,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 4,
-                      children: [
-                        _MetaText(
-                          icon: Icons.schedule_outlined,
-                          text: '注册：${_formatDateTime(overview.createdAt)}',
-                        ),
-                        _MetaText(
-                          icon: Icons.visibility_outlined,
-                          text: '访问：${overview.profileViewCount}',
-                        ),
-                        _MetaText(
-                          icon: Icons.access_time,
-                          text: '最近在线：${_formatDateTime(overview.lastSeenAt)}',
-                        ),
-                      ],
-                    ),
-                  ],
                 ],
               ),
-            ),
+
+              const SizedBox(height: 24),
+
+              // 核心数据统计 (类似 Twitter/Weibo 布局)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _buildStatItem(context, '${overview.postCount}', '帖子'),
+                  _buildStatItem(context, '${overview.followingCount}', '关注'),
+                  _buildStatItem(context, '${overview.followersCount}', '粉丝'),
+                  _buildStatItem(context, '${overview.likesReceived}', '获赞'),
+                ],
+              ),
+
+              if (overview.bio.isNotEmpty) ...[
+                const SizedBox(height: 24),
+                Text(
+                  overview.bio,
+                  style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
+                  maxLines: 6,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+
+              const SizedBox(height: 16),
+
+              // 辅助元数据
+              Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                children: [
+                  _MetaChip(
+                    label: '信任等级 ${overview.trustLevel}',
+                    icon: Icons.verified_user_outlined,
+                    color: Colors.green,
+                  ),
+                  if (overview.lastSeenAt != null)
+                    _MetaChip(
+                      label: '最近活跃 ${_formatDateShort(overview.lastSeenAt!)}',
+                      icon: Icons.access_time,
+                    ),
+                  if (overview.createdAt != null)
+                    _MetaChip(
+                      label: '加入于 ${_formatDateShort(overview.createdAt!)}',
+                      icon: Icons.calendar_today_outlined,
+                    ),
+                ],
+              ),
+            ],
           ),
         );
       },
     );
   }
 
-  Widget _buildActivityTab(RiverSideProfileActivityKind kind) {
-    return FutureBuilder<RiverSideProfileOverview>(
-      future: _overviewFuture,
-      builder: (context, overviewSnapshot) {
-        if (overviewSnapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (overviewSnapshot.data?.isProfileHidden == true) {
-          return _buildProfileHiddenPlaceholder();
-        }
-
-        return FutureBuilder<List<RiverSideProfileActivityItem>>(
-          future: _ensureActivityFuture(kind),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (snapshot.hasError) {
-              final message = snapshot.error is RiverSideApiException
-                  ? (snapshot.error as RiverSideApiException).message
-                  : '加载动态失败';
-              return _ErrorRetryView(
-                message: message,
-                onRetry: () => _refreshActivities(kind),
-              );
-            }
-
-            final items =
-                snapshot.data ?? const <RiverSideProfileActivityItem>[];
-            if (items.isEmpty) {
-              return RefreshIndicator(
-                onRefresh: () => _refreshActivities(kind),
-                child: ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  children: const [
-                    SizedBox(height: 180),
-                    Center(child: Text('暂无内容')),
-                  ],
-                ),
-              );
-            }
-
-            return RefreshIndicator(
-              onRefresh: () => _refreshActivities(kind),
-              child: ListView.separated(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
-                itemCount: items.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 8),
-                itemBuilder: (context, index) {
-                  final item = items[index];
-                  return Card(
-                    clipBehavior: Clip.antiAlias,
-                    child: InkWell(
-                      onTap: () => _openTopicDetail(item.topicId),
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                CircleAvatar(
-                                  radius: 14,
-                                  backgroundImage: item.authorAvatarUrl.isEmpty
-                                      ? null
-                                      : NetworkImage(item.authorAvatarUrl),
-                                  child: item.authorAvatarUrl.isEmpty
-                                      ? const Icon(
-                                          Icons.person_outline,
-                                          size: 14,
-                                        )
-                                      : null,
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    item.authorDisplayName,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.titleSmall,
-                                  ),
-                                ),
-                                Text(
-                                  _formatDateTime(item.createdAt),
-                                  style: Theme.of(context).textTheme.bodySmall,
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              item.title,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                            if (item.excerpt.isNotEmpty) ...[
-                              const SizedBox(height: 6),
-                              Text(
-                                item.excerpt,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.bodyMedium,
-                              ),
-                            ],
-                            const SizedBox(height: 8),
-                            Wrap(
-                              spacing: 10,
-                              runSpacing: 6,
-                              children: [
-                                _MetaText(
-                                  icon: Icons.label_outline,
-                                  text: item.categoryName,
-                                ),
-                                _MetaText(
-                                  icon: Icons.chat_bubble_outline,
-                                  text: '${item.replyCount}',
-                                ),
-                                _MetaText(
-                                  icon: Icons.visibility_outlined,
-                                  text: '${item.viewCount}',
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildBadgesTab() {
-    return FutureBuilder<RiverSideProfileOverview>(
-      future: _overviewFuture,
-      builder: (context, overviewSnapshot) {
-        if (overviewSnapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (overviewSnapshot.data?.isProfileHidden == true) {
-          return _buildProfileHiddenPlaceholder();
-        }
-
-        return FutureBuilder<List<RiverSideProfileBadge>>(
-          future: _ensureBadgesFuture(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (snapshot.hasError) {
-              final message = snapshot.error is RiverSideApiException
-                  ? (snapshot.error as RiverSideApiException).message
-                  : '加载徽章失败';
-              return _ErrorRetryView(message: message, onRetry: _refreshBadges);
-            }
-
-            final items = snapshot.data ?? const <RiverSideProfileBadge>[];
-            if (items.isEmpty) {
-              return RefreshIndicator(
-                onRefresh: _refreshBadges,
-                child: ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  children: const [
-                    SizedBox(height: 180),
-                    Center(child: Text('暂无徽章')),
-                  ],
-                ),
-              );
-            }
-
-            return RefreshIndicator(
-              onRefresh: _refreshBadges,
-              child: ListView.separated(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
-                itemCount: items.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 8),
-                itemBuilder: (context, index) {
-                  final badge = items[index];
-                  return Card(
-                    clipBehavior: Clip.antiAlias,
-                    child: ListTile(
-                      leading: badge.imageUrl.isEmpty
-                          ? const CircleAvatar(
-                              child: Icon(Icons.military_tech_outlined),
-                            )
-                          : CircleAvatar(
-                              backgroundImage: NetworkImage(badge.imageUrl),
-                            ),
-                      title: Text(
-                        badge.name.isEmpty ? '徽章 #${badge.id}' : badge.name,
-                      ),
-                      subtitle: Text(
-                        badge.description.isEmpty
-                            ? '${badge.badgeTypeName} · 授予 ${badge.grantCount}'
-                            : '${badge.description}\n${badge.badgeTypeName} · 授予 ${badge.grantCount}',
-                      ),
-                      isThreeLine: badge.description.isNotEmpty,
-                    ),
-                  );
-                },
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildFollowingTab() {
-    return _buildFollowUsersTab(
-      future: _ensureFollowingFuture(),
-      onRefresh: () => _refreshFollowUsers(followers: false),
-      emptyText: '暂无关注用户',
-    );
-  }
-
-  Widget _buildFollowersTab() {
-    return _buildFollowUsersTab(
-      future: _ensureFollowersFuture(),
-      onRefresh: () => _refreshFollowUsers(followers: true),
-      emptyText: '暂无关注者',
-    );
-  }
-
-  Widget _buildFollowUsersTab({
-    required Future<List<RiverSideProfileFollowUser>> future,
-    required Future<void> Function() onRefresh,
-    required String emptyText,
-  }) {
-    return FutureBuilder<RiverSideProfileOverview>(
-      future: _overviewFuture,
-      builder: (context, overviewSnapshot) {
-        if (overviewSnapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (overviewSnapshot.data?.isProfileHidden == true) {
-          return _buildProfileHiddenPlaceholder();
-        }
-
-        return FutureBuilder<List<RiverSideProfileFollowUser>>(
-          future: future,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (snapshot.hasError) {
-              final message = snapshot.error is RiverSideApiException
-                  ? (snapshot.error as RiverSideApiException).message
-                  : '加载用户列表失败';
-              return _ErrorRetryView(message: message, onRetry: onRefresh);
-            }
-
-            final users = snapshot.data ?? const <RiverSideProfileFollowUser>[];
-            if (users.isEmpty) {
-              return RefreshIndicator(
-                onRefresh: onRefresh,
-                child: ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  children: [
-                    const SizedBox(height: 180),
-                    Center(child: Text(emptyText)),
-                  ],
-                ),
-              );
-            }
-
-            return RefreshIndicator(
-              onRefresh: onRefresh,
-              child: ListView.separated(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
-                itemCount: users.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 8),
-                itemBuilder: (context, index) {
-                  final user = users[index];
-                  return Card(
-                    clipBehavior: Clip.antiAlias,
-                    child: ListTile(
-                      leading: CircleAvatar(
-                        backgroundImage: user.avatarUrl.isEmpty
-                            ? null
-                            : NetworkImage(user.avatarUrl),
-                        child: user.avatarUrl.isEmpty
-                            ? const Icon(Icons.person_outline)
-                            : null,
-                      ),
-                      title: Text(user.displayName),
-                      subtitle: Text('@${user.username}'),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => _openRelatedProfile(user),
-                    ),
-                  );
-                },
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildProfileHiddenPlaceholder() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.visibility_off_outlined,
-              size: 26,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-            const SizedBox(height: 10),
-            const Text('该用户已隐藏资料，该分区内容不可见', textAlign: TextAlign.center),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _formatDateTime(DateTime? value) {
-    if (value == null) {
-      return '--';
-    }
-    final local = value.toLocal();
-    String two(int n) => n < 10 ? '0$n' : '$n';
-    return '${local.year}-${two(local.month)}-${two(local.day)} '
-        '${two(local.hour)}:${two(local.minute)}';
-  }
-}
-
-class _StatPill extends StatelessWidget {
-  const _StatPill({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        '$label $value',
-        style: Theme.of(context).textTheme.bodySmall,
-      ),
-    );
-  }
-}
-
-class _MetaText extends StatelessWidget {
-  const _MetaText({required this.icon, required this.text});
-
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
+  Widget _buildStatItem(BuildContext context, String value, String label) {
+    return Column(
       children: [
-        Icon(
-          icon,
-          size: 15,
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
-        ),
-        const SizedBox(width: 4),
         Text(
-          text,
+          value,
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
+        ),
+        Text(
+          label,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
             color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
@@ -842,32 +509,474 @@ class _MetaText extends StatelessWidget {
       ],
     );
   }
+
+  String _formatDateShort(DateTime date) {
+    return '${date.year}/${date.month}/${date.day}';
+  }
 }
 
-class _ErrorRetryView extends StatelessWidget {
-  const _ErrorRetryView({required this.message, required this.onRetry});
+// --- Tab Components ---
 
-  final String message;
-  final Future<void> Function() onRetry;
+class _ActivityTab extends StatefulWidget {
+  final RiverSideProfileActivityKind kind;
+  final Future<RiverSideProfileOverview> overviewFuture;
+  final Future<List<RiverSideProfileActivityItem>> activityFuture;
+  final Future<void> Function() onRefresh;
+  final ValueChanged<RiverSideProfileActivityItem> onItemTap;
+
+  const _ActivityTab({
+    required this.kind,
+    required this.overviewFuture,
+    required this.activityFuture,
+    required this.onRefresh,
+    required this.onItemTap,
+  });
+
+  @override
+  State<_ActivityTab> createState() => _ActivityTabState();
+}
+
+class _ActivityTabState extends State<_ActivityTab>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.redAccent),
-            ),
-            const SizedBox(height: 12),
-            FilledButton(onPressed: onRetry, child: const Text('重试')),
-          ],
+    super.build(context);
+    return FutureBuilder<RiverSideProfileOverview>(
+      future: widget.overviewFuture,
+      builder: (context, overviewSnap) {
+        if (!overviewSnap.hasData) return const SizedBox();
+        if (overviewSnap.data!.isProfileHidden) {
+          return const _ProfileHiddenView();
+        }
+
+        return FutureBuilder<List<RiverSideProfileActivityItem>>(
+          future: widget.activityFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return _ErrorRetryView(
+                message: '加载失败',
+                onRetry: widget.onRefresh,
+              );
+            }
+
+            final items = snapshot.data ?? [];
+            if (items.isEmpty) {
+              return _EmptyView(
+                message: '暂无${widget.kind.label}动态',
+                onRefresh: widget.onRefresh,
+              );
+            }
+
+            return RefreshIndicator(
+              onRefresh: widget.onRefresh,
+              edgeOffset: 0, // In nested scroll view, offset handled by header
+              child: ListView.separated(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                itemCount: items.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 12),
+                itemBuilder: (context, index) {
+                  final item = items[index];
+                  return _ActivityCard(
+                    item: item,
+                    onTap: () => widget.onItemTap(item),
+                  );
+                },
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _ActivityCard extends StatelessWidget {
+  const _ActivityCard({required this.item, required this.onTap});
+
+  final RiverSideProfileActivityItem item;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      elevation: 0,
+      color: theme.colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: theme.colorScheme.outlineVariant.withOpacity(0.4),
+        ),
+      ),
+      margin: EdgeInsets.zero,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.secondaryContainer.withOpacity(
+                        0.5,
+                      ),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      item.categoryName,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: theme.colorScheme.onSecondaryContainer,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    _formatTime(item.createdAt),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.outline,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                item.title,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  height: 1.3,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              if (item.excerpt.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  item.excerpt.replaceAll('\n', ' '),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  _IconStat(
+                    Icons.chat_bubble_outline_rounded,
+                    '${item.replyCount}',
+                  ),
+                  const SizedBox(width: 16),
+                  _IconStat(Icons.remove_red_eye_outlined, '${item.viewCount}'),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
+
+  String _formatTime(DateTime? dt) {
+    if (dt == null) return '';
+    return '${dt.month}/${dt.day}';
+  }
+}
+
+class _IconStat extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  const _IconStat(this.icon, this.text);
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Icon(icon, size: 14, color: theme.colorScheme.outline),
+        const SizedBox(width: 4),
+        Text(
+          text,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.outline,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _BadgesTab extends StatelessWidget {
+  final Future<RiverSideProfileOverview> overviewFuture;
+  final Future<List<RiverSideProfileBadge>> badgesFuture;
+  final Future<void> Function() onRefresh;
+
+  const _BadgesTab({
+    required this.overviewFuture,
+    required this.badgesFuture,
+    required this.onRefresh,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<RiverSideProfileOverview>(
+      future: overviewFuture,
+      builder: (context, overviewSnap) {
+        if (overviewSnap.hasData && overviewSnap.data!.isProfileHidden) {
+          return const _ProfileHiddenView();
+        }
+        return FutureBuilder<List<RiverSideProfileBadge>>(
+          future: badgesFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting)
+              return const Center(child: CircularProgressIndicator());
+            final items = snapshot.data ?? [];
+            if (items.isEmpty)
+              return _EmptyView(message: '暂无徽章', onRefresh: onRefresh);
+
+            return RefreshIndicator(
+              onRefresh: onRefresh,
+              child: ListView.separated(
+                padding: const EdgeInsets.all(16),
+                itemCount: items.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 12),
+                itemBuilder: (context, index) {
+                  final badge = items[index];
+                  return ListTile(
+                    tileColor: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerLow,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    leading: badge.imageUrl.isNotEmpty
+                        ? Image.network(badge.imageUrl, width: 40)
+                        : const Icon(Icons.shield_outlined, size: 40),
+                    title: Text(badge.name),
+                    subtitle: Text(
+                      badge.description.isNotEmpty
+                          ? badge.description
+                          : badge.badgeTypeName,
+                    ),
+                  );
+                },
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _UsersTab extends StatelessWidget {
+  final Future<RiverSideProfileOverview> overviewFuture;
+  final Future<List<RiverSideProfileFollowUser>> usersFuture;
+  final Future<void> Function() onRefresh;
+  final ValueChanged<RiverSideProfileFollowUser> onUserTap;
+  final String emptyText;
+
+  const _UsersTab({
+    required this.overviewFuture,
+    required this.usersFuture,
+    required this.onRefresh,
+    required this.onUserTap,
+    required this.emptyText,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<RiverSideProfileOverview>(
+      future: overviewFuture,
+      builder: (context, overviewSnap) {
+        if (overviewSnap.hasData && overviewSnap.data!.isProfileHidden) {
+          return const _ProfileHiddenView();
+        }
+        return FutureBuilder<List<RiverSideProfileFollowUser>>(
+          future: usersFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting)
+              return const Center(child: CircularProgressIndicator());
+            final items = snapshot.data ?? [];
+            if (items.isEmpty)
+              return _EmptyView(message: emptyText, onRefresh: onRefresh);
+
+            return RefreshIndicator(
+              onRefresh: onRefresh,
+              child: ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                itemCount: items.length,
+                itemBuilder: (context, index) {
+                  final user = items[index];
+                  return ListTile(
+                    leading: CircleAvatar(
+                      backgroundImage: user.avatarUrl.isNotEmpty
+                          ? NetworkImage(user.avatarUrl)
+                          : null,
+                      child: user.avatarUrl.isEmpty
+                          ? const Icon(Icons.person)
+                          : null,
+                    ),
+                    title: Text(user.displayName),
+                    subtitle: Text('@${user.username}'),
+                    onTap: () => onUserTap(user),
+                  );
+                },
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+// --- Common Widgets ---
+
+class _ProfileHiddenView extends StatelessWidget {
+  const _ProfileHiddenView();
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.visibility_off_outlined,
+            size: 48,
+            color: Colors.grey.shade400,
+          ),
+          const SizedBox(height: 16),
+          const Text('用户已隐藏资料', style: TextStyle(color: Colors.grey)),
+        ],
+      ),
+    );
+  }
+}
+
+class _MetaChip extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color? color;
+
+  const _MetaChip({required this.label, required this.icon, this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final finalColor = color ?? theme.colorScheme.onSurfaceVariant;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: finalColor),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              color: finalColor,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmptyView extends StatelessWidget {
+  final String message;
+  final VoidCallback onRefresh;
+  const _EmptyView({required this.message, required this.onRefresh});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(message, style: const TextStyle(color: Colors.grey)),
+          TextButton(onPressed: onRefresh, child: const Text('刷新')),
+        ],
+      ),
+    );
+  }
+}
+
+class _ErrorRetryView extends StatelessWidget {
+  final String message;
+  final VoidCallback onRetry;
+  const _ErrorRetryView({required this.message, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(message, style: const TextStyle(color: Colors.red)),
+          const SizedBox(height: 8),
+          FilledButton.tonal(onPressed: onRetry, child: const Text('重试')),
+        ],
+      ),
+    );
+  }
+}
+
+// --- Helpers ---
+
+class _StickyTabBarDelegate extends SliverPersistentHeaderDelegate {
+  final TabBar _tabBar;
+  final Color color;
+
+  _StickyTabBarDelegate(this._tabBar, {required this.color});
+
+  @override
+  double get minExtent => _tabBar.preferredSize.height;
+  @override
+  double get maxExtent => _tabBar.preferredSize.height;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return Container(color: color, child: _tabBar);
+  }
+
+  @override
+  bool shouldRebuild(_StickyTabBarDelegate oldDelegate) {
+    return _tabBar != oldDelegate._tabBar;
+  }
+}
+
+class _ProfileTabDef {
+  final String title;
+  final RiverSideProfileActivityKind? kind;
+  const _ProfileTabDef({required this.title, this.kind});
 }
