@@ -13,6 +13,7 @@ import 'package:river/core/network/riverside_api_client.dart';
 import 'package:river/core/network/riverside_topic_models.dart';
 import 'package:river/core/widgets/river_image_viewer.dart';
 import 'package:river/core/widgets/river_markdown_editor.dart';
+import 'package:river/features/mine/riverside_profile_sheet.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 part 'topic_detail_comment_detail_page.dart';
@@ -531,6 +532,7 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
             onReactionStatusPressed: (post, reactionId) {
               _onReactionStatusPressed(post: post, reactionId: reactionId);
             },
+            onAuthorTap: _openAuthorProfileSheetForPost,
           ),
           const SizedBox(height: 10),
           _SectionHeader(
@@ -555,6 +557,7 @@ class _TopicDetailPageState extends State<TopicDetailPage> {
                 heroTag: _commentHeroTag(post.id),
                 onTap: () => _openCommentDetail(post),
                 onLongPress: () => _showCommentActions(post),
+                onAuthorTap: _openAuthorProfileSheetForPost,
                 onReplyPressed: (target) {
                   _openReplyComposer(
                     topicId: target.topicId,

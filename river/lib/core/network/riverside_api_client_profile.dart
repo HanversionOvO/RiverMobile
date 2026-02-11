@@ -248,24 +248,31 @@ extension RiverSideApiClientProfileMethods on RiverSideApiClient {
     }
 
     final encoded = Uri.encodeComponent(resolvedUsername);
-    final pathCandidates = switch (kind) {
-      RiverSideProfileActivityKind.all => <String>['/u/$encoded/activity.json'],
-      RiverSideProfileActivityKind.topics => <String>[
-        '/u/$encoded/activity/topics.json',
-      ],
-      RiverSideProfileActivityKind.replies => <String>[
-        '/u/$encoded/activity/replies.json',
-        '/u/$encoded/activity/replies',
-      ],
-      RiverSideProfileActivityKind.likesGiven => <String>[
-        '/u/$encoded/activity/likes-given.json',
-        '/u/$encoded/activity/likes-given',
-      ],
-    };
+    final uriCandidates = <Uri>[
+      ...switch (kind) {
+        RiverSideProfileActivityKind.all => <Uri>[
+          Uri.parse('$riverSideBaseUrl/u/$encoded/activity.json'),
+        ],
+        RiverSideProfileActivityKind.topics => <Uri>[
+          Uri.parse('$riverSideBaseUrl/u/$encoded/activity/topics.json'),
+        ],
+        RiverSideProfileActivityKind.replies => <Uri>[
+          Uri.parse('$riverSideBaseUrl/u/$encoded/activity/replies.json'),
+          Uri.parse('$riverSideBaseUrl/u/$encoded/activity/replies'),
+        ],
+        RiverSideProfileActivityKind.likesGiven => <Uri>[
+          Uri.parse('$riverSideBaseUrl/u/$encoded/activity/likes-given.json'),
+          Uri.parse('$riverSideBaseUrl/u/$encoded/activity/likes-given'),
+        ],
+      },
+      _buildUserActionsUri(username: resolvedUsername, kind: kind),
+    ];
 
     RiverSideApiException? lastError;
-    for (final path in pathCandidates) {
-      final uri = Uri.parse('$riverSideBaseUrl$path');
+    var hasForbidden = false;
+    var hasSuccessfulResponse = false;
+
+    for (final uri in uriCandidates) {
       final response = await http.get(
         uri,
         headers: _buildJsonHeaders(cookieHeader: cookieHeader),
@@ -274,9 +281,8 @@ extension RiverSideApiClientProfileMethods on RiverSideApiClient {
         continue;
       }
       if (response.statusCode == 403) {
-        throw const RiverSideApiException(
-          'Login session expired. Please sign in again.',
-        );
+        hasForbidden = true;
+        continue;
       }
       if (response.statusCode != 200) {
         lastError = RiverSideApiException(
@@ -285,32 +291,44 @@ extension RiverSideApiClientProfileMethods on RiverSideApiClient {
         continue;
       }
 
-      final decoded = _decodeJsonObject(
-        response,
-        fallbackMessage: 'Invalid profile activity response format',
-      );
-      return _parseProfileActivities(decoded);
+      hasSuccessfulResponse = true;
+      final decoded = _parseJsonDynamic(response.bodyBytes);
+      final parsed = _parseProfileActivities(decoded);
+      if (parsed.isNotEmpty) {
+        return parsed;
+      }
     }
 
+    if (hasForbidden) {
+      throw const RiverSideApiException(
+        'Login session expired. Please sign in again.',
+      );
+    }
+    if (hasSuccessfulResponse) {
+      return const <RiverSideProfileActivityItem>[];
+    }
     throw lastError ??
         const RiverSideApiException('Failed to fetch profile activity.');
   }
 
-  List<RiverSideProfileActivityItem> _parseProfileActivities(
-    Map<String, dynamic> decoded,
-  ) {
+  List<RiverSideProfileActivityItem> _parseProfileActivities(dynamic decoded) {
+    final payload = _normalizeProfileActivityPayload(decoded);
+    if (payload.isEmpty) {
+      return const <RiverSideProfileActivityItem>[];
+    }
+
     final usersById = _extractUsersById(
-      decoded['users'] ?? _toStringMap(decoded['topic_list'])['users'],
+      payload['users'] ?? _toStringMap(payload['topic_list'])['users'],
     );
-    final categoriesById = _extractProfileCategoryNames(decoded);
+    final categoriesById = _extractProfileCategoryNames(payload);
 
     final fromTopics = _parseProfileActivitiesFromTopicList(
-      decoded,
+      payload,
       usersById: usersById,
       categoriesById: categoriesById,
     );
     final fromActions = _parseProfileActivitiesFromUserActions(
-      decoded,
+      payload,
       usersById: usersById,
       categoriesById: categoriesById,
     );
@@ -329,6 +347,7 @@ extension RiverSideApiClientProfileMethods on RiverSideApiClient {
           '${item.topicId}-${item.postNumber ?? 0}-${item.actionType ?? 0}';
       deduped.putIfAbsent(key, () => item);
     }
+
     final result = deduped.values.toList(growable: false);
     result.sort((a, b) {
       final at = a.createdAt;
@@ -347,13 +366,53 @@ extension RiverSideApiClientProfileMethods on RiverSideApiClient {
     return result;
   }
 
+  Uri _buildUserActionsUri({
+    required String username,
+    required RiverSideProfileActivityKind kind,
+  }) {
+    final query = <String, String>{'username': username, 'offset': '0'};
+    final filter = switch (kind) {
+      RiverSideProfileActivityKind.all => null,
+      RiverSideProfileActivityKind.topics => '4',
+      RiverSideProfileActivityKind.replies => '5',
+      RiverSideProfileActivityKind.likesGiven => '1',
+    };
+    if (filter != null) {
+      query['filter'] = filter;
+    }
+    return Uri.parse(
+      '$riverSideBaseUrl/user_actions.json',
+    ).replace(queryParameters: query);
+  }
+
+  dynamic _parseJsonDynamic(List<int> bytes) {
+    final body = utf8.decode(bytes);
+    return jsonDecode(body);
+  }
+
+  Map<String, dynamic> _normalizeProfileActivityPayload(dynamic decoded) {
+    if (decoded is Map<String, dynamic>) {
+      return decoded;
+    }
+    if (decoded is Map) {
+      return decoded.map((key, value) => MapEntry('$key', value));
+    }
+    if (decoded is List) {
+      if (decoded.isEmpty) {
+        return const <String, dynamic>{};
+      }
+      return <String, dynamic>{'user_actions': decoded};
+    }
+    return const <String, dynamic>{};
+  }
+
   List<RiverSideProfileActivityItem> _parseProfileActivitiesFromTopicList(
     Map<String, dynamic> decoded, {
     required Map<int, Map<String, dynamic>> usersById,
     required Map<int, String> categoriesById,
   }) {
     final topicList = _toStringMap(decoded['topic_list']);
-    final topicsRaw = topicList['topics'];
+    final topicsRaw = topicList['topics'] ?? decoded['topics'];
     if (topicsRaw is! List) {
       return const <RiverSideProfileActivityItem>[];
     }
@@ -369,7 +428,7 @@ extension RiverSideApiClientProfileMethods on RiverSideApiClient {
       final title = _sanitizeExcerpt((topic['title'] ?? '').toString());
       final excerpt = _sanitizeExcerpt((topic['excerpt'] ?? '').toString());
       final categoryId = _asInt(topic['category_id']);
-      final categoryName = categoriesById[categoryId] ?? '未分类';
+      final categoryName = categoriesById[categoryId] ?? 'Uncategorized';
       final userId = _findPrimaryPosterUserId(
         topic['posters'] ?? topic['poster_users'],
       );
@@ -397,12 +456,12 @@ extension RiverSideApiClientProfileMethods on RiverSideApiClient {
         RiverSideProfileActivityItem(
           topicId: topicId,
           postNumber: null,
-          title: title.isEmpty ? '帖子 #$topicId' : title,
+          title: title.isEmpty ? 'Topic #$topicId' : title,
           excerpt: excerpt,
           categoryName: categoryName,
           authorUsername: username,
           authorDisplayName: displayName.isEmpty
-              ? (username.isEmpty ? '未知用户' : username)
+              ? (username.isEmpty ? 'Unknown user' : username)
               : displayName,
           authorAvatarUrl: _normalizeAvatarUrl(
             (topic['avatar_template'] ?? user?['avatar_template'] ?? '')
@@ -439,10 +498,14 @@ extension RiverSideApiClientProfileMethods on RiverSideApiClient {
     final items = <RiverSideProfileActivityItem>[];
     for (final rawAction in actionsRaw) {
       final action = _toStringMap(rawAction);
-      final topicId = _asInt(action['topic_id']) ?? _asInt(action['id']);
+      final topicId =
+          _asInt(action['topic_id']) ??
+          _asInt(action['target_topic_id']) ??
+          _asInt(action['id']);
       if (topicId == null || topicId <= 0) {
         continue;
       }
+
       final actionType = _asInt(action['action_type']);
       final categoryId = _asInt(action['category_id']);
       final userId =
@@ -480,17 +543,20 @@ extension RiverSideApiClientProfileMethods on RiverSideApiClient {
         RiverSideProfileActivityItem(
           topicId: topicId,
           postNumber: _asInt(action['post_number']),
-          title: title.isEmpty ? '帖子 #$topicId' : title,
+          title: title.isEmpty ? 'Topic #$topicId' : title,
           excerpt: excerpt,
           categoryName: categoryName.isEmpty
-              ? (categoriesById[categoryId] ?? '未分类')
+              ? (categoriesById[categoryId] ?? 'Uncategorized')
               : categoryName,
           authorUsername: username,
           authorDisplayName: displayName.isEmpty
-              ? (username.isEmpty ? '未知用户' : username)
+              ? (username.isEmpty ? 'Unknown user' : username)
               : displayName,
           authorAvatarUrl: _normalizeAvatarUrl(
-            (action['avatar_template'] ?? user?['avatar_template'] ?? '')
+            (action['avatar_template'] ??
+                    action['acting_avatar_template'] ??
+                    user?['avatar_template'] ??
+                    '')
                 .toString(),
           ),
           replyCount: _asInt(action['reply_count']) ?? 0,

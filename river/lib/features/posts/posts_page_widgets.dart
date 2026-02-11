@@ -1,4 +1,4 @@
-﻿part of 'posts_page.dart';
+part of 'posts_page.dart';
 
 class _CategoryGroup {
   const _CategoryGroup({required this.parent, required this.children});
@@ -110,11 +110,13 @@ class _TopicCard extends StatelessWidget {
     required this.topic,
     required this.showHotIcon,
     required this.onTap,
+    required this.onAuthorTap,
   });
 
   final RiverSideTopicSummary topic;
   final bool showHotIcon;
   final VoidCallback onTap;
+  final VoidCallback onAuthorTap;
 
   @override
   Widget build(BuildContext context) {
@@ -133,24 +135,45 @@ class _TopicCard extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  CircleAvatar(
-                    radius: 18,
-                    backgroundImage: topic.authorAvatarUrl.isEmpty
-                        ? null
-                        : NetworkImage(topic.authorAvatarUrl),
-                    child: topic.authorAvatarUrl.isEmpty
-                        ? const Icon(Icons.person_outline, size: 18)
-                        : null,
-                  ),
-                  const SizedBox(width: 10),
                   Expanded(
-                    child: Text(
-                      topic.authorDisplayName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: textTheme.titleSmall,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: onAuthorTap,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 18,
+                              backgroundImage: topic.authorAvatarUrl.isEmpty
+                                  ? null
+                                  : NetworkImage(topic.authorAvatarUrl),
+                              child: topic.authorAvatarUrl.isEmpty
+                                  ? const Icon(Icons.person_outline, size: 18)
+                                  : null,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                topic.authorDisplayName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: textTheme.titleSmall,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
+                  if (topic.isPinned)
+                    Icon(
+                      Icons.push_pin_outlined,
+                      color: Theme.of(context).colorScheme.primary,
+                      size: 18,
+                    ),
+                  if (topic.isPinned && (showHotIcon || topic.isHot))
+                    const SizedBox(width: 6),
                   if (showHotIcon || topic.isHot)
                     const Icon(
                       Icons.local_fire_department_outlined,

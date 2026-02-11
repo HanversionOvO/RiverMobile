@@ -167,6 +167,7 @@ extension _PostsPageView on _PostsPageState {
             topic: topic,
             showHotIcon: showHotIcon,
             onTap: () => _openTopicDetail(topic.id),
+            onAuthorTap: () => _openTopicAuthorProfile(topic),
           );
         },
       ),

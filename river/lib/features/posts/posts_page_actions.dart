@@ -163,6 +163,7 @@ extension _PostsPageActions on _PostsPageState {
           authorUsername: topic.authorUsername,
           authorAvatarUrl: topic.authorAvatarUrl,
           isHot: topic.isHot,
+          isPinned: topic.isPinned,
         ),
       );
     }
@@ -487,6 +488,16 @@ extension _PostsPageActions on _PostsPageState {
           topicId: topicId,
         ),
       ),
+    );
+  }
+
+  Future<void> _openTopicAuthorProfile(RiverSideTopicSummary topic) async {
+    await showRiverSideUserProfileSheet(
+      context: context,
+      dependencies: widget.dependencies,
+      username: topic.authorUsername,
+      displayName: topic.authorDisplayName,
+      avatarUrl: topic.authorAvatarUrl,
     );
   }
 }

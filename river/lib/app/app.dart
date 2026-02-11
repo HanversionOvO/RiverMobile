@@ -35,6 +35,7 @@ class _RiverAppState extends State<RiverApp> {
   }
 
   Future<void> _bootstrap() async {
+    await _dependencies.settingsController.initialize();
     await _dependencies.accountStore.initialize();
     if (!mounted) {
       return;
@@ -61,15 +62,26 @@ class _RiverAppState extends State<RiverApp> {
         return MaterialApp(
           title: 'River Login',
           debugShowCheckedModeBanner: false,
+          builder: (context, child) {
+            final data = MediaQuery.of(context);
+            return MediaQuery(
+              data: data.copyWith(
+                textScaler: TextScaler.linear(
+                  _dependencies.settingsController.fontScale,
+                ),
+              ),
+              child: child ?? const SizedBox.shrink(),
+            );
+          },
           theme: ThemeData(
             colorScheme: ColorScheme.fromSeed(
-              seedColor: const Color(0xFF12457A),
+              seedColor: _dependencies.settingsController.themeSeedColor,
             ),
             useMaterial3: true,
           ),
           darkTheme: ThemeData(
             colorScheme: ColorScheme.fromSeed(
-              seedColor: const Color(0xFF12457A),
+              seedColor: _dependencies.settingsController.themeSeedColor,
               brightness: Brightness.dark,
             ),
             useMaterial3: true,

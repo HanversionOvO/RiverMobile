@@ -1,0 +1,16 @@
+{
+    "user": {
+        "id": 879,
+        "username": "小烟雾",
+        "name": "爷爷，",
+        "avatar_template": "/user_avatar/river-side.cc/小烟雾/{size}/28899_2.png",
+        "profile_hidden": true,
+        "title": "河畔先驱者",
+        "topic_post_count": {
+            "4751": 1
+        },
+        "primary_group_name": "verified_uestcer",
+        "can_send_private_message_to_user": true,
+        "can_chat_user": true
+    }
+}

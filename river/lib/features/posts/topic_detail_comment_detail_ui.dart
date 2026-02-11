@@ -28,6 +28,7 @@ extension _CommentDetailPageUi on _CommentDetailPageState {
                 onQuoteTap: _showQuoteBottomSheet,
                 heroTag: widget.heroTag,
                 onLongPress: () => _showCommentActions(_rootPost),
+                onAuthorTap: _openAuthorProfileSheetForPost,
                 onReplyPressed: (post) {
                   _openReplyComposer(
                     replyToPostNumber: post.postNumber,
@@ -85,6 +86,7 @@ extension _CommentDetailPageUi on _CommentDetailPageState {
                     emojiUrls: _emojiUrls,
                     onQuoteTap: _showQuoteBottomSheet,
                     onLongPress: () => _showCommentActions(post),
+                    onAuthorTap: _openAuthorProfileSheetForPost,
                     onReplyPressed: (target) {
                       _openReplyComposer(
                         replyToPostNumber: target.postNumber,

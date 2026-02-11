@@ -44,6 +44,7 @@ class RiverSideTopicSummary {
     required this.authorUsername,
     required this.authorAvatarUrl,
     required this.isHot,
+    required this.isPinned,
   });
 
   final int id;
@@ -58,6 +59,7 @@ class RiverSideTopicSummary {
   final String authorUsername;
   final String authorAvatarUrl;
   final bool isHot;
+  final bool isPinned;
 }
 
 class RiverSideCategoryOption {

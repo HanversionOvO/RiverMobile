@@ -1,9 +1,10 @@
-﻿part of 'topic_detail_page.dart';
+part of 'topic_detail_page.dart';
 
 class _PostAuthorHeader extends StatelessWidget {
-  const _PostAuthorHeader({required this.post});
+  const _PostAuthorHeader({required this.post, this.onTap});
 
   final RiverSideTopicPostDetail post;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -12,7 +13,7 @@ class _PostAuthorHeader extends StatelessWidget {
     final onlineState = _onlineStateText(post.isOnline);
     final onlineColor = _onlineStateColor(post.isOnline, context);
 
-    return Row(
+    final child = Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         CircleAvatar(
@@ -71,6 +72,19 @@ class _PostAuthorHeader extends StatelessWidget {
           ),
         ),
       ],
+    );
+
+    if (onTap == null) {
+      return child;
+    }
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: child,
+      ),
     );
   }
 }

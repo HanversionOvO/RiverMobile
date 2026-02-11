@@ -125,6 +125,8 @@ extension RiverSideApiClientTopicMethods on RiverSideApiClient {
           authorUsername: username,
           authorAvatarUrl: _normalizeAvatarUrl(avatarTemplate),
           isHot: feed == RiverSideTopicFeed.hot || _asBool(topic['is_hot']),
+          isPinned:
+              _asBool(topic['pinned']) || _asBool(topic['pinned_globally']),
         ),
       );
     }

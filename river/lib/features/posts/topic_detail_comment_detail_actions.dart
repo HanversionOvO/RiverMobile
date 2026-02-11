@@ -1,6 +1,18 @@
 part of 'topic_detail_page.dart';
 
 extension _CommentDetailPageActions on _CommentDetailPageState {
+  Future<void> _openAuthorProfileSheetForPost(
+    RiverSideTopicPostDetail post,
+  ) async {
+    await showRiverSideUserProfileSheet(
+      context: context,
+      dependencies: widget.dependencies,
+      username: post.authorUsername,
+      displayName: post.authorDisplayName,
+      avatarUrl: post.authorAvatarUrl,
+    );
+  }
+
   String _buildReplyPayload({
     required String markdown,
     String? quoteUsername,

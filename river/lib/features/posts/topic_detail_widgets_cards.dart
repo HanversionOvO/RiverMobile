@@ -38,6 +38,7 @@ class _MainPostCard extends StatefulWidget {
     required this.onReactPressed,
     required this.onReplyPressed,
     required this.onReactionStatusPressed,
+    required this.onAuthorTap,
   });
 
   final RiverSideTopicDetail detail;
@@ -49,6 +50,7 @@ class _MainPostCard extends StatefulWidget {
   final ValueChanged<RiverSideTopicPostDetail> onReplyPressed;
   final void Function(RiverSideTopicPostDetail post, String reactionId)
   onReactionStatusPressed;
+  final ValueChanged<RiverSideTopicPostDetail> onAuthorTap;
 
   @override
   State<_MainPostCard> createState() => _MainPostCardState();
@@ -72,7 +74,10 @@ class _MainPostCardState extends State<_MainPostCard>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _PostAuthorHeader(post: post),
+            _PostAuthorHeader(
+              post: post,
+              onTap: () => widget.onAuthorTap(post),
+            ),
             const SizedBox(height: 10),
             Wrap(
               spacing: 12,
@@ -139,6 +144,7 @@ class _CommentCard extends StatefulWidget {
     this.onTap,
     this.onLongPress,
     required this.onReactionStatusPressed,
+    required this.onAuthorTap,
   });
 
   final RiverSideTopicPostDetail post;
@@ -153,6 +159,7 @@ class _CommentCard extends StatefulWidget {
   final VoidCallback? onLongPress;
   final void Function(RiverSideTopicPostDetail post, String reactionId)
   onReactionStatusPressed;
+  final ValueChanged<RiverSideTopicPostDetail> onAuthorTap;
 
   @override
   State<_CommentCard> createState() => _CommentCardState();
@@ -185,7 +192,10 @@ class _CommentCardState extends State<_CommentCard>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _PostAuthorHeader(post: widget.post),
+                  _PostAuthorHeader(
+                    post: widget.post,
+                    onTap: () => widget.onAuthorTap(widget.post),
+                  ),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 12,
@@ -239,6 +249,7 @@ class _CommentDetailPostCard extends StatelessWidget {
     required this.emojiUrls,
     required this.onQuoteTap,
     required this.onReplyPressed,
+    required this.onAuthorTap,
     this.onLongPress,
     this.heroTag,
   });
@@ -248,6 +259,7 @@ class _CommentDetailPostCard extends StatelessWidget {
   final Map<String, String> emojiUrls;
   final ValueChanged<_QuoteBlock> onQuoteTap;
   final ValueChanged<RiverSideTopicPostDetail> onReplyPressed;
+  final ValueChanged<RiverSideTopicPostDetail> onAuthorTap;
   final VoidCallback? onLongPress;
   final String? heroTag;
 
@@ -265,7 +277,7 @@ class _CommentDetailPostCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _PostAuthorHeader(post: post),
+              _PostAuthorHeader(post: post, onTap: () => onAuthorTap(post)),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 12,
