@@ -1,9 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:river/app/app_dependencies.dart';
 import 'package:river/core/account/account_models.dart';
 import 'package:river/core/network/riverside_api_client.dart';
 import 'package:river/core/network/riverside_profile_models.dart';
+import 'package:river/core/navigation/river_page_route.dart';
+import 'package:river/features/mine/riverside_profile_action_bar.dart';
 import 'package:river/features/mine/riverside_profile_page.dart';
+import 'package:river/features/notifications/chat_detail_page.dart';
 
 Future<void> showRiverSideUserProfileSheet({
   required BuildContext context,
@@ -140,12 +145,22 @@ class _RiverSideUserProfileSheetState
       DraggableScrollableController();
   bool _isNavigating = false;
   bool _isClosing = false;
+  bool _followBusy = false;
+  bool _messageBusy = false;
+  bool _isFollowing = false;
+  bool _followStateResolved = false;
 
   @override
   void initState() {
     super.initState();
     _resolvedAccount = widget.initialAccount;
     _future = _loadOverview();
+    unawaited(
+      _future.then((overview) {
+        if (!mounted) return;
+        _syncRelationshipState(overview: overview);
+      }),
+    );
 
     // 监听拖拽进度，实现无缝跳转
     _sheetController.addListener(_onSheetScrolled);
@@ -226,8 +241,163 @@ class _RiverSideUserProfileSheetState
 
   void _retry() {
     setState(() {
+      _followStateResolved = false;
       _future = _loadOverview();
     });
+    unawaited(
+      _future.then((overview) {
+        if (!mounted) return;
+        _syncRelationshipState(overview: overview);
+      }),
+    );
+  }
+
+  String? _activeUsername() {
+    return widget.dependencies.accountStore.activeRiverSideUsername;
+  }
+
+  bool get _isSelfProfile {
+    final active = _activeUsername()?.trim().toLowerCase();
+    final target = widget.username.trim().toLowerCase();
+    if (active == null || active.isEmpty || target.isEmpty) {
+      return false;
+    }
+    return active == target;
+  }
+
+  void _showErrorSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _syncRelationshipState({
+    RiverSideProfileOverview? overview,
+  }) async {
+    if (_isSelfProfile) {
+      if (!mounted) return;
+      setState(() {
+        _followStateResolved = true;
+        _isFollowing = false;
+      });
+      return;
+    }
+
+    final initial = overview?.isFollowing;
+    if (initial != null && mounted) {
+      setState(() {
+        _isFollowing = initial;
+        _followStateResolved = true;
+      });
+    }
+
+    final cookie = widget.cookieHeader?.trim() ?? '';
+    final active = _activeUsername()?.trim() ?? '';
+    if (cookie.isEmpty || active.isEmpty) {
+      return;
+    }
+
+    try {
+      final isFollowing = await widget
+          .dependencies
+          .accountStore
+          .riverSideApiClient
+          .isFollowingUser(
+            currentUsername: active,
+            targetUsername: widget.username,
+            cookieHeader: cookie,
+          );
+      if (!mounted) return;
+      setState(() {
+        _isFollowing = isFollowing;
+        _followStateResolved = true;
+      });
+    } catch (_) {
+      // Keep UI resilient; fallback to overview-based value.
+    }
+  }
+
+  Future<void> _toggleFollow() async {
+    if (_followBusy || _isSelfProfile) {
+      return;
+    }
+    final cookie = widget.cookieHeader?.trim() ?? '';
+    final active = _activeUsername()?.trim() ?? '';
+    if (cookie.isEmpty || active.isEmpty) {
+      _showErrorSnack('请先登录 RiverSide 账号');
+      return;
+    }
+
+    final nextFollowState = !_isFollowing;
+    setState(() {
+      _followBusy = true;
+    });
+    try {
+      await widget.dependencies.accountStore.riverSideApiClient.setFollowState(
+        targetUsername: widget.username,
+        follow: nextFollowState,
+        cookieHeader: cookie,
+      );
+      if (!mounted) return;
+      setState(() {
+        _isFollowing = nextFollowState;
+        _followStateResolved = true;
+      });
+      _showErrorSnack(nextFollowState ? '关注成功' : '已取消关注');
+      unawaited(_syncRelationshipState());
+    } on RiverSideApiException catch (error) {
+      _showErrorSnack(error.message);
+    } catch (_) {
+      _showErrorSnack(nextFollowState ? '关注失败，请稍后重试' : '取消关注失败，请稍后重试');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _followBusy = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _startPrivateMessage() async {
+    if (_messageBusy || _isSelfProfile) {
+      return;
+    }
+    final cookie = widget.cookieHeader?.trim() ?? '';
+    if (cookie.isEmpty) {
+      _showErrorSnack('请先登录 RiverSide 账号');
+      return;
+    }
+
+    setState(() {
+      _messageBusy = true;
+    });
+    try {
+      final channel = await widget.dependencies.accountStore.riverSideApiClient
+          .createOrOpenDirectMessageChannel(
+            targetUsername: widget.username,
+            cookieHeader: cookie,
+          );
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        riverPageRoute<void>(
+          builder: (_) => ChatDetailPage(
+            dependencies: widget.dependencies,
+            channel: channel,
+          ),
+        ),
+      );
+    } on RiverSideApiException catch (error) {
+      _showErrorSnack(error.message);
+    } catch (_) {
+      _showErrorSnack('发起私信失败，请稍后重试');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _messageBusy = false;
+        });
+      }
+    }
   }
 
   void _onExpandButtonPressed() {
@@ -330,11 +500,22 @@ class _RiverSideUserProfileSheetState
         ? account.username
         : account.displayName;
     final overview = snapshot.data;
+    final showFollowButton = !_isSelfProfile && (overview?.canFollow ?? true);
+    final showMessageButton =
+        !_isSelfProfile && (overview?.canSendPrivateMessage ?? true);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildHeader(account: account, name: name),
+        _buildHeader(
+          account: account,
+          name: name,
+          showFollowButton: showFollowButton,
+          showMessageButton: showMessageButton,
+          isFollowing: _followStateResolved
+              ? _isFollowing
+              : (overview?.isFollowing ?? false),
+        ),
         const SizedBox(height: 16),
         if (snapshot.connectionState == ConnectionState.waiting &&
             overview == null)
@@ -370,7 +551,13 @@ class _RiverSideUserProfileSheetState
     );
   }
 
-  Widget _buildHeader({required UserAccount account, required String name}) {
+  Widget _buildHeader({
+    required UserAccount account,
+    required String name,
+    required bool showFollowButton,
+    required bool showMessageButton,
+    required bool isFollowing,
+  }) {
     final theme = Theme.of(context);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -434,6 +621,23 @@ class _RiverSideUserProfileSheetState
             ],
           ),
         ),
+        if (showFollowButton || showMessageButton) ...[
+          const SizedBox(width: 10),
+          Padding(
+            padding: const EdgeInsets.only(top: 1),
+            child: RiverSideProfileActionBar(
+              showFollowButton: showFollowButton,
+              showMessageButton: showMessageButton,
+              isFollowing: isFollowing,
+              followLoading: _followBusy,
+              messageLoading: _messageBusy,
+              onToggleFollow: _toggleFollow,
+              onStartMessage: _startPrivateMessage,
+              compact: true,
+              messageIconOnly: true,
+            ),
+          ),
+        ],
       ],
     );
   }

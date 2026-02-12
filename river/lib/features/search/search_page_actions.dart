@@ -1,6 +1,143 @@
-﻿part of 'search_page.dart';
+part of 'search_page.dart';
 
 extension _SearchPageActions on _SearchPageState {
+  void _onKeywordFocusChanged() {
+    _mutateState(() {
+      _keywordFocused = _keywordFocusNode.hasFocus;
+    });
+    if (_keywordFocused) {
+      _scheduleSuggestionQuery(immediate: true);
+    } else {
+      _suggestionDebounce?.cancel();
+    }
+  }
+
+  void _onKeywordInputChanged(String _) {
+    _mutateState(() {});
+    _scheduleSuggestionQuery();
+  }
+
+  void _scheduleSuggestionQuery({bool immediate = false}) {
+    _suggestionDebounce?.cancel();
+    final query = _keywordController.text.trim();
+    if (query.isEmpty) {
+      _clearSuggestionState();
+      return;
+    }
+    if (!_keywordFocused && !immediate) {
+      return;
+    }
+    if (immediate) {
+      unawaited(_fetchSuggestions(query));
+      return;
+    }
+    _suggestionDebounce = Timer(const Duration(milliseconds: 280), () {
+      unawaited(_fetchSuggestions(query));
+    });
+  }
+
+  void _clearSuggestionState() {
+    _suggestionSerial++;
+    _mutateState(() {
+      _loadingSuggestions = false;
+      _keywordSuggestions = const <String>[];
+      _postSuggestions = const <RiverSidePostSearchItem>[];
+      _userSuggestions = const <RiverSideUserSearchItem>[];
+    });
+  }
+
+  List<String> _buildKeywordSuggestions(String query) {
+    final normalized = query.trim().toLowerCase();
+    if (normalized.isEmpty) {
+      return const <String>[];
+    }
+    final startsWith = <String>[];
+    final contains = <String>[];
+    for (final keyword in _recentSearches) {
+      final item = keyword.trim();
+      if (item.isEmpty) {
+        continue;
+      }
+      final lower = item.toLowerCase();
+      if (lower == normalized) {
+        startsWith.insert(0, item);
+        continue;
+      }
+      if (lower.startsWith(normalized)) {
+        startsWith.add(item);
+      } else if (lower.contains(normalized)) {
+        contains.add(item);
+      }
+    }
+    return <String>[...startsWith, ...contains].take(6).toList(growable: false);
+  }
+
+  bool _isSuggestionStale({required int serial, required String query}) {
+    if (!mounted || serial != _suggestionSerial) {
+      return true;
+    }
+    return _keywordController.text.trim() != query;
+  }
+
+  Future<void> _fetchSuggestions(String query) async {
+    final normalized = query.trim();
+    if (normalized.isEmpty) {
+      _clearSuggestionState();
+      return;
+    }
+    final serial = ++_suggestionSerial;
+    final keywordSuggestions = _buildKeywordSuggestions(normalized);
+    _mutateState(() {
+      _loadingSuggestions = true;
+      _keywordSuggestions = keywordSuggestions;
+    });
+    try {
+      final cookieHeader = _activeCookieHeader();
+      final apiClient = widget.dependencies.accountStore.riverSideApiClient;
+      List<RiverSidePostSearchItem> postSuggestions =
+          const <RiverSidePostSearchItem>[];
+      List<RiverSideUserSearchItem> userSuggestions =
+          const <RiverSideUserSearchItem>[];
+      switch (_searchMode) {
+        case _SearchMode.posts:
+          final page = await apiClient.searchPosts(
+            query: normalized,
+            page: 1,
+            cookieHeader: cookieHeader,
+          );
+          postSuggestions = page.items.take(6).toList(growable: false);
+          break;
+        case _SearchMode.users:
+          final users = await apiClient.searchUsers(
+            term: normalized,
+            limit: 8,
+            cookieHeader: cookieHeader,
+          );
+          userSuggestions = users.take(8).toList(growable: false);
+          break;
+      }
+      if (_isSuggestionStale(serial: serial, query: normalized)) {
+        return;
+      }
+      _mutateState(() {
+        _loadingSuggestions = false;
+        _keywordSuggestions = keywordSuggestions;
+        _postSuggestions = postSuggestions;
+        _userSuggestions = userSuggestions;
+      });
+    } catch (_) {
+      if (_isSuggestionStale(serial: serial, query: normalized)) {
+        return;
+      }
+      _mutateState(() {
+        _loadingSuggestions = false;
+        _keywordSuggestions = keywordSuggestions;
+        _postSuggestions = const <RiverSidePostSearchItem>[];
+        _userSuggestions = const <RiverSideUserSearchItem>[];
+      });
+    }
+  }
+
   void _onAccountStoreChanged() {
     final current = widget.dependencies.accountStore.activeRiverSideUsername;
     final previous = _lastActiveUsername;
@@ -18,6 +155,13 @@ extension _SearchPageActions on _SearchPageState {
     if (!_scrollController.hasClients) {
       return;
     }
+
+    final shouldShowBackToTop =
+        _scrollController.offset >= _SearchPageState._showBackToTopOffset;
+    if (_showBackToTop.value != shouldShowBackToTop) {
+      _showBackToTop.value = shouldShowBackToTop;
+    }
+
     if (_searchMode != _SearchMode.posts) {
       return;
     }
@@ -27,6 +171,17 @@ extension _SearchPageActions on _SearchPageState {
         position.maxScrollExtent - _SearchPageState._loadMoreTriggerOffset) {
       _loadMorePosts();
     }
+  }
+
+  Future<void> _scrollToTop() async {
+    if (!_scrollController.hasClients) {
+      return;
+    }
+    await _scrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   String? _activeCookieHeader() {
@@ -64,6 +219,9 @@ extension _SearchPageActions on _SearchPageState {
       _mutateState(() {
         _recentSearches = recent;
       });
+      if (_keywordFocused && _keywordController.text.trim().isNotEmpty) {
+        _scheduleSuggestionQuery(immediate: true);
+      }
     } catch (_) {
       if (!mounted) {
         return;
@@ -121,6 +279,7 @@ extension _SearchPageActions on _SearchPageState {
   Future<void> _runSearch({required bool reset}) async {
     final query = _keywordController.text.trim();
     if (query.isEmpty) {
+      _suggestionDebounce?.cancel();
       _mutateState(() {
         _activeQuery = '';
         _error = null;
@@ -130,7 +289,9 @@ extension _SearchPageActions on _SearchPageState {
         _currentPostPage = 0;
         _postItems = const <RiverSidePostSearchItem>[];
         _userItems = const <RiverSideUserSearchItem>[];
+        _showBackToTop.value = false;
       });
+      _clearSuggestionState();
       await _loadRecentSearches();
       return;
     }
@@ -145,6 +306,9 @@ extension _SearchPageActions on _SearchPageState {
     }
 
     final nextPage = reset ? 1 : (_currentPostPage + 1);
+    _keywordFocusNode.unfocus();
+    _suggestionDebounce?.cancel();
+    _clearSuggestionState();
     final serial = ++_requestSerial;
     _mutateState(() {
       _error = null;
@@ -155,6 +319,12 @@ extension _SearchPageActions on _SearchPageState {
         _loadingMorePosts = true;
       }
     });
+    if (reset) {
+      _showBackToTop.value = false;
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(0);
+      }
+    }
 
     try {
       final apiClient = widget.dependencies.accountStore.riverSideApiClient;
@@ -185,6 +355,9 @@ extension _SearchPageActions on _SearchPageState {
             _userItems = const <RiverSideUserSearchItem>[];
             _currentPostPage = page.page;
             _hasMorePostPages = page.hasMore;
+            if (reset) {
+              _resultAnimationEpoch++;
+            }
           });
           break;
         case _SearchMode.users:
@@ -201,6 +374,9 @@ extension _SearchPageActions on _SearchPageState {
             _postItems = const <RiverSidePostSearchItem>[];
             _currentPostPage = 0;
             _hasMorePostPages = false;
+            if (reset) {
+              _resultAnimationEpoch++;
+            }
           });
           break;
       }
@@ -249,9 +425,18 @@ extension _SearchPageActions on _SearchPageState {
       _userItems = const <RiverSideUserSearchItem>[];
       _currentPostPage = 0;
       _hasMorePostPages = false;
+      _showBackToTop.value = false;
+      _loadingSuggestions = false;
+      _keywordSuggestions = const <String>[];
+      _postSuggestions = const <RiverSidePostSearchItem>[];
+      _userSuggestions = const <RiverSideUserSearchItem>[];
     });
     if (_keywordController.text.trim().isNotEmpty) {
-      _runSearch(reset: true);
+      if (_keywordFocused) {
+        _scheduleSuggestionQuery(immediate: true);
+      } else {
+        _runSearch(reset: true);
+      }
     }
   }
 
@@ -295,6 +480,16 @@ extension _SearchPageActions on _SearchPageState {
     _runSearch(reset: true);
   }
 
+  void _applySuggestionKeyword(String keyword) {
+    final text = keyword.trim();
+    if (text.isEmpty) {
+      return;
+    }
+    _keywordController.text = text;
+    _keywordController.selection = TextSelection.collapsed(offset: text.length);
+    _runSearch(reset: true);
+  }
+
   Future<void> _onRefresh() async {
     if (_activeQuery.isEmpty) {
       await _loadRecentSearches();
@@ -309,4 +504,3 @@ extension _SearchPageActions on _SearchPageState {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 }
-

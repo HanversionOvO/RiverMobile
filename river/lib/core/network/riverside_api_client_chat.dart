@@ -1,6 +1,125 @@
 part of 'riverside_api_client.dart';
 
 extension RiverSideApiClientChatMethods on RiverSideApiClient {
+  Future<RiverSideChatChannelItem> createOrOpenDirectMessageChannel({
+    required String targetUsername,
+    required String cookieHeader,
+  }) async {
+    final cookie = cookieHeader.trim();
+    final target = targetUsername.trim();
+    if (cookie.isEmpty) {
+      throw const RiverSideApiException('Cookie header is empty.');
+    }
+    if (target.isEmpty) {
+      throw const RiverSideApiException('Target username is empty.');
+    }
+
+    final csrf = await fetchSessionCsrfToken(cookieHeader: cookie);
+    final endpoints = <Uri>[
+      Uri.parse('$riverSideBaseUrl/chat/api/direct-message-channels.json'),
+      Uri.parse('$riverSideBaseUrl/chat/api/direct-message-channels'),
+    ];
+
+    final requests = <Future<http.Response>>[];
+    for (final uri in endpoints) {
+      requests.add(
+        http.post(
+          uri,
+          headers: <String, String>{
+            'Accept': 'application/json',
+            'Content-Type': 'application/json; charset=UTF-8',
+            'Cookie': cookie,
+            'X-CSRF-Token': csrf,
+            'X-Requested-With': 'XMLHttpRequest',
+            'Origin': riverSideBaseUrl,
+            'Referer': riverSideBaseUrl,
+          },
+          body: jsonEncode(<String, dynamic>{
+            'target_usernames': <String>[target],
+          }),
+        ),
+      );
+      requests.add(
+        http.post(
+          uri,
+          headers: <String, String>{
+            'Accept': 'application/json',
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'Cookie': cookie,
+            'X-CSRF-Token': csrf,
+            'X-Requested-With': 'XMLHttpRequest',
+            'Origin': riverSideBaseUrl,
+            'Referer': riverSideBaseUrl,
+          },
+          body: <String, String>{'target_usernames': target},
+        ),
+      );
+    }
+
+    RiverSideApiException? lastError;
+    for (final request in requests) {
+      final response = await request;
+      if (response.statusCode == 403) {
+        throw const RiverSideApiException(
+          'Login session expired. Please sign in again.',
+        );
+      }
+      if (response.statusCode == 404 || response.statusCode == 405) {
+        lastError = RiverSideApiException(
+          'Failed to start direct message, HTTP ${response.statusCode}',
+        );
+        continue;
+      }
+      if (response.statusCode == 422 || response.statusCode == 400) {
+        final message = _extractErrorMessageFromResponse(response);
+        throw RiverSideApiException(
+          message.isEmpty ? 'Unable to start private message.' : message,
+        );
+      }
+      if (response.statusCode != 200 && response.statusCode != 201) {
+        throw RiverSideApiException(
+          'Failed to start direct message, HTTP ${response.statusCode}',
+        );
+      }
+
+      final decodedAny = jsonDecode(utf8.decode(response.bodyBytes));
+      final decoded = _toStringMap(decodedAny);
+      final channelRaw = _toStringMap(decoded['channel']).isNotEmpty
+          ? _toStringMap(decoded['channel'])
+          : _toStringMap(decoded['chat_channel']).isNotEmpty
+          ? _toStringMap(decoded['chat_channel'])
+          : _toStringMap(decoded['direct_message_channel']).isNotEmpty
+          ? _toStringMap(decoded['direct_message_channel'])
+          : decoded;
+
+      final parsed = RiverSideApiClientChatParsingMethods(
+        this,
+      )._parseChatChannel(channelRaw, directHint: true);
+      if (parsed != null) {
+        return parsed;
+      }
+
+      final channels = await fetchMyChatChannels(cookieHeader: cookie);
+      final directChannels = channels.where((item) => item.isDirectMessage);
+      for (final item in directChannels) {
+        final name = item.name.toLowerCase();
+        if (name == target.toLowerCase() ||
+            name.contains(target.toLowerCase())) {
+          return item;
+        }
+      }
+      if (directChannels.isNotEmpty) {
+        return directChannels.first;
+      }
+      throw const RiverSideApiException(
+        'Direct message channel created but cannot be resolved.',
+      );
+    }
+
+    throw lastError ??
+        const RiverSideApiException('Unable to start private message.');
+  }
+
   Future<List<RiverSideChatChannelItem>> fetchMyChatChannels({
     String? cookieHeader,
   }) async {

@@ -205,6 +205,14 @@ extension RiverSideApiClientProfileMethods on RiverSideApiClient {
     final displayName = name.isEmpty ? usernameFromApi : name;
     final avatarTemplate = (user['avatar_template'] ?? '').toString();
     final title = (user['title'] ?? '').toString().trim();
+    bool readOptionalBool(List<String> keys, {required bool fallback}) {
+      for (final key in keys) {
+        if (user.containsKey(key)) {
+          return _asBool(user[key]);
+        }
+      }
+      return fallback;
+    }
 
     final account = UserAccount(
       provider: AccountProvider.riverSide,
@@ -235,7 +243,180 @@ extension RiverSideApiClientProfileMethods on RiverSideApiClient {
       likesReceived: _asInt(user['likes_received']) ?? 0,
       followersCount: _asInt(user['total_followers']) ?? 0,
       followingCount: _asInt(user['total_following']) ?? 0,
+      isFollowing: readOptionalBool(const <String>[
+        'is_following',
+        'following',
+        'followed',
+        'is_followed',
+      ], fallback: false),
+      canFollow: readOptionalBool(const <String>[
+        'can_follow_user',
+        'can_follow',
+        'can_following',
+      ], fallback: true),
+      canSendPrivateMessage: readOptionalBool(const <String>[
+        'can_send_private_message_to_user',
+        'can_send_private_messages',
+      ], fallback: true),
     );
+  }
+
+  Future<bool> isFollowingUser({
+    required String currentUsername,
+    required String targetUsername,
+    required String cookieHeader,
+  }) async {
+    final actor = currentUsername.trim();
+    final target = targetUsername.trim();
+    if (actor.isEmpty || target.isEmpty) {
+      return false;
+    }
+    if (actor.toLowerCase() == target.toLowerCase()) {
+      return false;
+    }
+
+    final following = await fetchProfileFollowUsers(
+      actor,
+      followers: false,
+      cookieHeader: cookieHeader,
+    );
+    return following.any(
+      (item) => item.username.toLowerCase() == target.toLowerCase(),
+    );
+  }
+
+  Future<void> setFollowState({
+    required String targetUsername,
+    required bool follow,
+    required String cookieHeader,
+  }) async {
+    final target = targetUsername.trim();
+    final cookie = cookieHeader.trim();
+    if (target.isEmpty) {
+      throw const RiverSideApiException('Target username is empty.');
+    }
+    if (cookie.isEmpty) {
+      throw const RiverSideApiException('Cookie header is empty.');
+    }
+
+    final csrf = await fetchSessionCsrfToken(cookieHeader: cookie);
+    final encoded = Uri.encodeComponent(target);
+    final endpointCandidates = <Uri>[
+      Uri.parse('$riverSideBaseUrl/follow/$encoded.json'),
+      Uri.parse('$riverSideBaseUrl/follow/$encoded'),
+      Uri.parse('$riverSideBaseUrl/u/$encoded/follow'),
+      Uri.parse('$riverSideBaseUrl/u/$encoded/follow.json'),
+    ];
+
+    final requestCandidates = <Future<http.Response>>[];
+    if (follow) {
+      for (final uri in endpointCandidates) {
+        requestCandidates.add(
+          http.put(
+            uri,
+            headers: <String, String>{
+              'Accept': 'application/json',
+              'Content-Type':
+                  'application/x-www-form-urlencoded; charset=UTF-8',
+              'Cookie': cookie,
+              'X-CSRF-Token': csrf,
+              'X-Requested-With': 'XMLHttpRequest',
+              'Origin': riverSideBaseUrl,
+              'Referer': '$riverSideBaseUrl/u/$encoded',
+            },
+            body: const <String, String>{},
+          ),
+        );
+        requestCandidates.add(
+          http.post(
+            uri,
+            headers: <String, String>{
+              'Accept': 'application/json',
+              'Content-Type':
+                  'application/x-www-form-urlencoded; charset=UTF-8',
+              'Cookie': cookie,
+              'X-CSRF-Token': csrf,
+              'X-Requested-With': 'XMLHttpRequest',
+              'Origin': riverSideBaseUrl,
+              'Referer': '$riverSideBaseUrl/u/$encoded',
+            },
+            body: const <String, String>{'follow': 'true'},
+          ),
+        );
+      }
+    } else {
+      for (final uri in endpointCandidates) {
+        requestCandidates.add(
+          http.delete(
+            uri,
+            headers: <String, String>{
+              'Accept': 'application/json',
+              'Cookie': cookie,
+              'X-CSRF-Token': csrf,
+              'X-Requested-With': 'XMLHttpRequest',
+              'Origin': riverSideBaseUrl,
+              'Referer': '$riverSideBaseUrl/u/$encoded',
+            },
+          ),
+        );
+        requestCandidates.add(
+          http.post(
+            uri,
+            headers: <String, String>{
+              'Accept': 'application/json',
+              'Content-Type':
+                  'application/x-www-form-urlencoded; charset=UTF-8',
+              'Cookie': cookie,
+              'X-CSRF-Token': csrf,
+              'X-Requested-With': 'XMLHttpRequest',
+              'Origin': riverSideBaseUrl,
+              'Referer': '$riverSideBaseUrl/u/$encoded',
+            },
+            body: const <String, String>{'unfollow': 'true'},
+          ),
+        );
+      }
+    }
+
+    RiverSideApiException? lastError;
+    for (final request in requestCandidates) {
+      final response = await request;
+      if (response.statusCode == 403) {
+        final message = _extractErrorMessageFromResponse(response).trim();
+        if (message.toLowerCase().contains('login')) {
+          throw const RiverSideApiException(
+            'Login session expired. Please sign in again.',
+          );
+        }
+        throw RiverSideApiException(
+          message.isEmpty ? 'No permission.' : message,
+        );
+      }
+      if (response.statusCode == 404 || response.statusCode == 405) {
+        lastError = RiverSideApiException(
+          'Follow action endpoint not available, HTTP ${response.statusCode}',
+        );
+        continue;
+      }
+      if (response.statusCode == 422) {
+        final message = _extractErrorMessageFromResponse(response).trim();
+        throw RiverSideApiException(
+          message.isEmpty ? (follow ? '关注失败。' : '取消关注失败。') : message,
+        );
+      }
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        return;
+      }
+      final message = _extractErrorMessageFromResponse(response).trim();
+      lastError = RiverSideApiException(
+        message.isEmpty
+            ? 'Follow action failed, HTTP ${response.statusCode}'
+            : message,
+      );
+    }
+
+    throw lastError ??
+        RiverSideApiException(follow ? '关注失败，请稍后重试。' : '取消关注失败，请稍后重试。');
   }
 
   Future<List<RiverSideProfileActivityItem>> fetchProfileActivities(

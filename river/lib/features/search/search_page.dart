@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:river/app/app_dependencies.dart';
 import 'package:river/core/account/account_models.dart';
@@ -37,6 +39,7 @@ class SearchPage extends StatefulWidget {
 class _SearchPageState extends State<SearchPage> {
   static const int _userSearchLimit = 20;
   static const double _loadMoreTriggerOffset = 260;
+  static const double _showBackToTopOffset = 360;
 
   static const String _labelSearch = '搜索';
   static const String _labelSearchHint = '输入关键词';
@@ -51,26 +54,40 @@ class _SearchPageState extends State<SearchPage> {
   static const String _labelSearchFailed = '搜索失败，请稍后重试';
   static const String _labelClearRecentSuccess = '已清空最近搜索';
   static const String _labelNeedLogin = '请先登录 RiverSide 账号';
+  static const String _labelSuggestion = '搜索建议';
+  static const String _labelSuggestionPosts = '帖子建议';
+  static const String _labelSuggestionUsers = '用户建议';
 
   final TextEditingController _keywordController = TextEditingController();
   final FocusNode _keywordFocusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
+  final ValueNotifier<bool> _showBackToTop = ValueNotifier<bool>(false);
 
   _SearchMode _searchMode = _SearchMode.posts;
   List<RiverSidePostSearchItem> _postItems = const <RiverSidePostSearchItem>[];
   List<RiverSideUserSearchItem> _userItems = const <RiverSideUserSearchItem>[];
   List<String> _recentSearches = const <String>[];
+  List<String> _keywordSuggestions = const <String>[];
+  List<RiverSidePostSearchItem> _postSuggestions =
+      const <RiverSidePostSearchItem>[];
+  List<RiverSideUserSearchItem> _userSuggestions =
+      const <RiverSideUserSearchItem>[];
 
   bool _loading = false;
   bool _loadingMorePosts = false;
   bool _hasMorePostPages = false;
   bool _loadingRecentSearches = false;
   bool _clearingRecentSearches = false;
+  bool _loadingSuggestions = false;
   int _currentPostPage = 0;
   int _requestSerial = 0;
+  int _suggestionSerial = 0;
+  int _resultAnimationEpoch = 0;
   String _activeQuery = '';
   String? _error;
   String? _lastActiveUsername;
+  bool _keywordFocused = false;
+  Timer? _suggestionDebounce;
 
   @override
   void initState() {
@@ -79,6 +96,7 @@ class _SearchPageState extends State<SearchPage> {
         widget.dependencies.accountStore.activeRiverSideUsername;
     widget.dependencies.accountStore.addListener(_onAccountStoreChanged);
     _scrollController.addListener(_onScroll);
+    _keywordFocusNode.addListener(_onKeywordFocusChanged);
     _loadRecentSearches();
   }
 
@@ -87,8 +105,11 @@ class _SearchPageState extends State<SearchPage> {
     widget.dependencies.accountStore.removeListener(_onAccountStoreChanged);
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
+    _keywordFocusNode.removeListener(_onKeywordFocusChanged);
+    _suggestionDebounce?.cancel();
     _keywordController.dispose();
     _keywordFocusNode.dispose();
+    _showBackToTop.dispose();
     super.dispose();
   }
 

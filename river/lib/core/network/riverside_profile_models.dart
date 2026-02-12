@@ -39,6 +39,9 @@ class RiverSideProfileOverview {
     required this.likesReceived,
     required this.followersCount,
     required this.followingCount,
+    this.isFollowing = false,
+    this.canFollow = true,
+    this.canSendPrivateMessage = true,
   });
 
   final UserAccount account;
@@ -59,6 +62,9 @@ class RiverSideProfileOverview {
   final int likesReceived;
   final int followersCount;
   final int followingCount;
+  final bool isFollowing;
+  final bool canFollow;
+  final bool canSendPrivateMessage;
 }
 
 @immutable
