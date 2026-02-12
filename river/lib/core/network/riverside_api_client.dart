@@ -50,6 +50,32 @@ class RiverSideCreateTopicResult {
   final int? postNumber;
 }
 
+class RiverSideComposerDraft {
+  const RiverSideComposerDraft({
+    required this.draftKey,
+    required this.sequence,
+    required this.rawData,
+    required this.data,
+    required this.markdown,
+    this.title = '',
+    this.action = '',
+    this.topicId,
+    this.categoryId,
+    this.createdAt,
+  });
+
+  final String draftKey;
+  final int sequence;
+  final String rawData;
+  final Map<String, dynamic> data;
+  final String markdown;
+  final String title;
+  final String action;
+  final int? topicId;
+  final int? categoryId;
+  final DateTime? createdAt;
+}
+
 class RiverSideApiException implements Exception {
   const RiverSideApiException(this.message);
 

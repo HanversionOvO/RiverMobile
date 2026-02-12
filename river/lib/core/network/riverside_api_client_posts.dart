@@ -357,6 +357,272 @@ extension RiverSideApiClientPostMethods on RiverSideApiClient {
     return post;
   }
 
+  Map<String, dynamic> _decodeDraftData(dynamic rawData) {
+    if (rawData is Map<String, dynamic>) {
+      return rawData;
+    }
+    if (rawData is! String) {
+      return const <String, dynamic>{};
+    }
+    final text = rawData.trim();
+    if (text.isEmpty) {
+      return const <String, dynamic>{};
+    }
+    try {
+      final decoded = jsonDecode(text);
+      if (decoded is Map<String, dynamic>) {
+        return decoded;
+      }
+      return const <String, dynamic>{};
+    } catch (_) {
+      return const <String, dynamic>{};
+    }
+  }
+
+  RiverSideComposerDraft _parseComposerDraftFromPayload(
+    Map<String, dynamic> payload,
+  ) {
+    final rawData = (payload['data'] ?? payload['draft'] ?? '').toString();
+    final data = _decodeDraftData(rawData);
+    final markdown = (data['reply'] ?? '').toString();
+    final title = ((payload['title'] ?? data['title']) ?? '').toString().trim();
+    final action = (data['action'] ?? '').toString().trim();
+
+    return RiverSideComposerDraft(
+      draftKey: (payload['draft_key'] ?? '').toString().trim(),
+      sequence:
+          _asInt(payload['sequence']) ?? _asInt(payload['draft_sequence']) ?? 0,
+      rawData: rawData,
+      data: data,
+      markdown: markdown,
+      title: title,
+      action: action,
+      topicId: _asInt(payload['topic_id']) ?? _asInt(data['topicId']),
+      categoryId: _asInt(payload['category_id']) ?? _asInt(data['categoryId']),
+      createdAt: DateTime.tryParse((payload['created_at'] ?? '').toString()),
+    );
+  }
+
+  Future<RiverSideComposerDraft?> fetchComposerDraft({
+    required String draftKey,
+    required String cookieHeader,
+    int? sequence,
+  }) async {
+    final cookie = cookieHeader.trim();
+    if (cookie.isEmpty) {
+      throw const RiverSideApiException('Cookie header is empty.');
+    }
+    final key = draftKey.trim();
+    if (key.isEmpty) {
+      throw const RiverSideApiException('Draft key is empty.');
+    }
+
+    final uri =
+        Uri.parse(
+          '$riverSideBaseUrl/drafts/${Uri.encodeComponent(key)}.json',
+        ).replace(
+          queryParameters: sequence == null
+              ? null
+              : <String, String>{'sequence': '$sequence'},
+        );
+    final response = await http.get(
+      uri,
+      headers: _buildJsonHeaders(cookieHeader: cookie),
+    );
+
+    if (response.statusCode == 404) {
+      return null;
+    }
+    if (response.statusCode == 403) {
+      throw const RiverSideApiException(
+        'Login session expired. Please sign in again.',
+      );
+    }
+    if (response.statusCode != 200) {
+      throw RiverSideApiException(
+        'Failed to load draft, HTTP ${response.statusCode}',
+      );
+    }
+
+    final decoded = _decodeJsonObject(
+      response,
+      fallbackMessage: 'Invalid draft response format',
+    );
+    final rawDraft = (decoded['draft'] ?? '').toString();
+    final draftSequence = _asInt(decoded['draft_sequence']) ?? 0;
+    final payload = <String, dynamic>{
+      'draft_key': key,
+      'sequence': draftSequence,
+      'data': rawDraft,
+      'topic_id': _asInt(decoded['topic_id']),
+      'category_id': _asInt(decoded['category_id']),
+      'title': decoded['title'],
+    };
+    return _parseComposerDraftFromPayload(payload);
+  }
+
+  Future<int> saveComposerDraft({
+    required String draftKey,
+    required int sequence,
+    required Map<String, dynamic> data,
+    required String cookieHeader,
+    String owner = 'river_flutter',
+    bool forceSave = false,
+  }) async {
+    final cookie = cookieHeader.trim();
+    if (cookie.isEmpty) {
+      throw const RiverSideApiException('Cookie header is empty.');
+    }
+    final key = draftKey.trim();
+    if (key.isEmpty) {
+      throw const RiverSideApiException('Draft key is empty.');
+    }
+    final dataRaw = jsonEncode(data);
+    final csrf = await fetchSessionCsrfToken(cookieHeader: cookie);
+
+    final response = await http.post(
+      Uri.parse('$riverSideBaseUrl/drafts.json'),
+      headers: <String, String>{
+        'Accept': 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'Cookie': cookie,
+        'X-CSRF-Token': csrf,
+        'X-Requested-With': 'XMLHttpRequest',
+        'Origin': riverSideBaseUrl,
+        'Referer': '$riverSideBaseUrl/',
+      },
+      body: <String, String>{
+        'draft_key': key,
+        'sequence': '$sequence',
+        'data': dataRaw,
+        'owner': owner,
+        'force_save': forceSave ? 'true' : 'false',
+      },
+      encoding: utf8,
+    );
+
+    if (response.statusCode == 403) {
+      throw const RiverSideApiException(
+        'Login session expired. Please sign in again.',
+      );
+    }
+    if (response.statusCode == 409) {
+      throw const RiverSideApiException('草稿冲突，请重新打开草稿后再试。');
+    }
+    if (response.statusCode != 200) {
+      final message = _extractErrorMessageFromResponse(response);
+      throw RiverSideApiException(
+        message.isEmpty
+            ? 'Failed to save draft, HTTP ${response.statusCode}'
+            : message,
+      );
+    }
+
+    final decoded = _decodeJsonObject(
+      response,
+      fallbackMessage: 'Invalid save draft response format',
+    );
+    return _asInt(decoded['draft_sequence']) ?? sequence;
+  }
+
+  Future<List<RiverSideComposerDraft>> fetchComposerDrafts({
+    required String cookieHeader,
+    int offset = 0,
+    int limit = 50,
+  }) async {
+    final cookie = cookieHeader.trim();
+    if (cookie.isEmpty) {
+      throw const RiverSideApiException('Cookie header is empty.');
+    }
+    final uri = Uri.parse('$riverSideBaseUrl/drafts.json').replace(
+      queryParameters: <String, String>{
+        'offset': '${offset < 0 ? 0 : offset}',
+        'limit': '${limit <= 0 ? 50 : limit}',
+      },
+    );
+
+    final response = await http.get(
+      uri,
+      headers: _buildJsonHeaders(cookieHeader: cookie),
+    );
+    if (response.statusCode == 403) {
+      throw const RiverSideApiException(
+        'Login session expired. Please sign in again.',
+      );
+    }
+    if (response.statusCode != 200) {
+      throw RiverSideApiException(
+        'Failed to load drafts, HTTP ${response.statusCode}',
+      );
+    }
+
+    final decoded = _decodeJsonObject(
+      response,
+      fallbackMessage: 'Invalid drafts response format',
+    );
+    final draftsRaw = decoded['drafts'];
+    if (draftsRaw is! List) {
+      return const <RiverSideComposerDraft>[];
+    }
+
+    final drafts = <RiverSideComposerDraft>[];
+    for (final raw in draftsRaw) {
+      final payload = _toStringMap(raw);
+      if (payload.isEmpty) {
+        continue;
+      }
+      final draft = _parseComposerDraftFromPayload(payload);
+      if (draft.draftKey.isEmpty) {
+        continue;
+      }
+      drafts.add(draft);
+    }
+    return drafts;
+  }
+
+  Future<void> deleteComposerDraft({
+    required String draftKey,
+    required int sequence,
+    required String cookieHeader,
+  }) async {
+    final cookie = cookieHeader.trim();
+    if (cookie.isEmpty) {
+      throw const RiverSideApiException('Cookie header is empty.');
+    }
+    final key = draftKey.trim();
+    if (key.isEmpty) {
+      throw const RiverSideApiException('Draft key is empty.');
+    }
+    final csrf = await fetchSessionCsrfToken(cookieHeader: cookie);
+    final response = await http.delete(
+      Uri.parse('$riverSideBaseUrl/drafts/${Uri.encodeComponent(key)}.json'),
+      headers: <String, String>{
+        'Accept': 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'Cookie': cookie,
+        'X-CSRF-Token': csrf,
+        'X-Requested-With': 'XMLHttpRequest',
+        'Origin': riverSideBaseUrl,
+        'Referer': '$riverSideBaseUrl/',
+      },
+      body: <String, String>{'draft_key': key, 'sequence': '$sequence'},
+      encoding: utf8,
+    );
+    if (response.statusCode == 403) {
+      throw const RiverSideApiException(
+        'Login session expired. Please sign in again.',
+      );
+    }
+    if (response.statusCode != 200) {
+      final message = _extractErrorMessageFromResponse(response);
+      throw RiverSideApiException(
+        message.isEmpty
+            ? 'Failed to delete draft, HTTP ${response.statusCode}'
+            : message,
+      );
+    }
+  }
+
   Future<String> uploadComposerImage({
     required String cookieHeader,
     required String fileName,

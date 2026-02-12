@@ -46,6 +46,60 @@ extension _TopicDetailPageCommentActions on _TopicDetailPageState {
         '$body';
   }
 
+  RiverMarkdownDraftEntry _mapDraftToEditorEntry(RiverSideComposerDraft draft) {
+    final subtitle = draft.markdown.trim().isNotEmpty
+        ? draft.markdown.trim()
+        : '无内容';
+    return RiverMarkdownDraftEntry(
+      draftKey: draft.draftKey,
+      sequence: draft.sequence,
+      markdown: draft.markdown,
+      title: draft.title,
+      subtitle: subtitle,
+      updatedAt: draft.createdAt,
+    );
+  }
+
+  String _replyDraftKey({required int topicId, int? replyToPostNumber}) {
+    return 'river_reply_${topicId}_${replyToPostNumber ?? 0}';
+  }
+
+  String _editDraftKey(int postId) => 'river_edit_$postId';
+
+  Future<List<RiverMarkdownDraftEntry>> _loadTopicDraftsForEditor({
+    required bool Function(RiverSideComposerDraft draft) filter,
+  }) async {
+    final cookie = _activeCookieHeader();
+    if (cookie == null || cookie.trim().isEmpty) {
+      return const <RiverMarkdownDraftEntry>[];
+    }
+    final drafts = await widget.dependencies.accountStore.riverSideApiClient
+        .fetchComposerDrafts(cookieHeader: cookie, offset: 0, limit: 50);
+    return drafts
+        .where(filter)
+        .map(_mapDraftToEditorEntry)
+        .toList(growable: false);
+  }
+
+  Future<bool> _deleteTopicDraftForEditor(RiverMarkdownDraftEntry draft) async {
+    final cookie = _activeCookieHeader();
+    if (cookie == null || cookie.trim().isEmpty) {
+      return false;
+    }
+    await widget.dependencies.accountStore.riverSideApiClient
+        .deleteComposerDraft(
+          draftKey: draft.draftKey,
+          sequence: draft.sequence,
+          cookieHeader: cookie,
+        );
+    if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('草稿已删除')));
+    }
+    return true;
+  }
+
   Future<String?> _uploadReplyImage(String fileName, List<int> bytes) async {
     final cookieHeader = _activeCookieHeader();
     if (cookieHeader == null || cookieHeader.trim().isEmpty) {
@@ -186,9 +240,64 @@ extension _TopicDetailPageCommentActions on _TopicDetailPageState {
     int? quoteTopicId,
     String? quoteContent,
   }) async {
+    final draftKey = _replyDraftKey(
+      topicId: topicId,
+      replyToPostNumber: replyToPostNumber,
+    );
+
+    Future<RiverMarkdownDraftEntry?> loadCurrentDraft() async {
+      final cookie = _activeCookieHeader();
+      if (cookie == null || cookie.trim().isEmpty) {
+        return null;
+      }
+      final draft = await widget.dependencies.accountStore.riverSideApiClient
+          .fetchComposerDraft(draftKey: draftKey, cookieHeader: cookie);
+      if (draft == null) {
+        return null;
+      }
+      return _mapDraftToEditorEntry(draft);
+    }
+
+    Future<RiverMarkdownDraftEntry?> saveDraft(
+      String markdown,
+      int? sequence,
+    ) async {
+      final cookie = _activeCookieHeader();
+      if (cookie == null || cookie.trim().isEmpty) {
+        return null;
+      }
+      final nextSequence = await widget
+          .dependencies
+          .accountStore
+          .riverSideApiClient
+          .saveComposerDraft(
+            draftKey: draftKey,
+            sequence: sequence ?? 0,
+            data: <String, dynamic>{
+              'reply': markdown,
+              'action': 'reply',
+              'topicId': topicId,
+              'postId': replyToPostNumber,
+              'metaData': null,
+              'archetypeId': 'regular',
+            },
+            cookieHeader: cookie,
+          );
+      return RiverMarkdownDraftEntry(
+        draftKey: draftKey,
+        sequence: nextSequence,
+        markdown: markdown,
+        title: '回复草稿',
+        subtitle: markdown.trim(),
+        updatedAt: DateTime.now(),
+      );
+    }
+
     await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
       builder: (sheetContext) {
         return RiverMarkdownEditor(
           title: _TopicDetailPageState._labelReplyEditorTitle,
@@ -196,8 +305,19 @@ extension _TopicDetailPageCommentActions on _TopicDetailPageState {
           initialText: '',
           emojiUrls: _emojiUrls,
           emojiGroups: _emojiGroups,
-          maxHeight: MediaQuery.sizeOf(context).height * 0.86,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.74,
           onUploadImage: _uploadReplyImage,
+          onLoadCurrentDraft: loadCurrentDraft,
+          onSaveDraft: saveDraft,
+          onLoadDrafts: () => _loadTopicDraftsForEditor(
+            filter: (draft) {
+              if (draft.action == 'reply' && draft.topicId == topicId) {
+                return true;
+              }
+              return draft.draftKey == draftKey;
+            },
+          ),
+          onDeleteDraft: _deleteTopicDraftForEditor,
           onSubmit: (markdown) {
             return _submitReply(
               topicId: topicId,
@@ -346,9 +466,53 @@ extension _TopicDetailPageCommentActions on _TopicDetailPageState {
     }
 
     final originalRaw = original.contentMarkdown;
+    final draftKey = _editDraftKey(post.id);
+
+    Future<RiverMarkdownDraftEntry?> loadCurrentDraft() async {
+      final draft = await widget.dependencies.accountStore.riverSideApiClient
+          .fetchComposerDraft(draftKey: draftKey, cookieHeader: cookieHeader);
+      if (draft == null) {
+        return null;
+      }
+      return _mapDraftToEditorEntry(draft);
+    }
+
+    Future<RiverMarkdownDraftEntry?> saveDraft(
+      String markdown,
+      int? sequence,
+    ) async {
+      final nextSequence = await widget
+          .dependencies
+          .accountStore
+          .riverSideApiClient
+          .saveComposerDraft(
+            draftKey: draftKey,
+            sequence: sequence ?? 0,
+            data: <String, dynamic>{
+              'reply': markdown,
+              'action': 'edit',
+              'topicId': post.topicId,
+              'postId': post.id,
+              'original_text': originalRaw,
+              'metaData': null,
+            },
+            cookieHeader: cookieHeader,
+          );
+      return RiverMarkdownDraftEntry(
+        draftKey: draftKey,
+        sequence: nextSequence,
+        markdown: markdown,
+        title: '编辑评论草稿',
+        subtitle: markdown.trim(),
+        updatedAt: DateTime.now(),
+      );
+    }
+
     await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
       builder: (sheetContext) {
         return RiverMarkdownEditor(
           title: _TopicDetailPageState._labelEditCommentTitle,
@@ -356,8 +520,15 @@ extension _TopicDetailPageCommentActions on _TopicDetailPageState {
           initialText: originalRaw,
           emojiUrls: _emojiUrls,
           emojiGroups: _emojiGroups,
-          maxHeight: MediaQuery.sizeOf(context).height * 0.86,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.74,
           onUploadImage: _uploadReplyImage,
+          onLoadCurrentDraft: loadCurrentDraft,
+          onSaveDraft: saveDraft,
+          onLoadDrafts: () => _loadTopicDraftsForEditor(
+            filter: (draft) =>
+                draft.action == 'edit' || draft.draftKey == draftKey,
+          ),
+          onDeleteDraft: _deleteTopicDraftForEditor,
           onSubmit: (markdown) {
             return _submitEditComment(
               sourcePost: original,

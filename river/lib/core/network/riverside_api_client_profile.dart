@@ -249,7 +249,25 @@ extension RiverSideApiClientProfileMethods on RiverSideApiClient {
     }
 
     final encoded = Uri.encodeComponent(resolvedUsername);
+    final cacheKey = _categoryCacheKey(cookieHeader: cookieHeader);
+    var fallbackCategoryNames =
+        _categoryNameCacheByCookieKey[cacheKey] ?? const <int, String>{};
+    if (fallbackCategoryNames.isEmpty) {
+      try {
+        await fetchCategories(cookieHeader: cookieHeader);
+        fallbackCategoryNames =
+            _categoryNameCacheByCookieKey[cacheKey] ?? const <int, String>{};
+      } catch (_) {
+        // Ignore category warm-up failures and keep parsing resilient.
+      }
+    }
+
+    final userActionsUri = _buildUserActionsUri(
+      username: resolvedUsername,
+      kind: kind,
+    );
     final uriCandidates = <Uri>[
+      if (kind == RiverSideProfileActivityKind.all) userActionsUri,
       ...switch (kind) {
         RiverSideProfileActivityKind.all => <Uri>[
           Uri.parse('$riverSideBaseUrl/u/$encoded/activity.json'),
@@ -266,7 +284,7 @@ extension RiverSideApiClientProfileMethods on RiverSideApiClient {
           Uri.parse('$riverSideBaseUrl/u/$encoded/activity/likes-given'),
         ],
       },
-      _buildUserActionsUri(username: resolvedUsername, kind: kind),
+      if (kind != RiverSideProfileActivityKind.all) userActionsUri,
     ];
 
     RiverSideApiException? lastError;
@@ -295,7 +313,10 @@ extension RiverSideApiClientProfileMethods on RiverSideApiClient {
 
       hasSuccessfulResponse = true;
       final decoded = _parseJsonDynamic(response.bodyBytes);
-      final parsed = _parseProfileActivities(decoded);
+      final parsed = _parseProfileActivities(
+        decoded,
+        fallbackCategoryNames: fallbackCategoryNames,
+      );
       if (parsed.isNotEmpty) {
         return parsed;
       }
@@ -312,7 +333,10 @@ extension RiverSideApiClientProfileMethods on RiverSideApiClient {
     throw lastError;
   }
 
-  List<RiverSideProfileActivityItem> _parseProfileActivities(dynamic decoded) {
+  List<RiverSideProfileActivityItem> _parseProfileActivities(
+    dynamic decoded, {
+    Map<int, String> fallbackCategoryNames = const <int, String>{},
+  }) {
     final payload = _normalizeProfileActivityPayload(decoded);
     if (payload.isEmpty) {
       return const <RiverSideProfileActivityItem>[];
@@ -321,7 +345,10 @@ extension RiverSideApiClientProfileMethods on RiverSideApiClient {
     final usersById = _extractUsersById(
       payload['users'] ?? _toStringMap(payload['topic_list'])['users'],
     );
-    final categoriesById = _extractProfileCategoryNames(payload);
+    final categoriesById = <int, String>{
+      ...fallbackCategoryNames,
+      ..._extractProfileCategoryNames(payload),
+    };
 
     final fromTopics = _parseProfileActivitiesFromTopicList(
       payload,
@@ -373,14 +400,12 @@ extension RiverSideApiClientProfileMethods on RiverSideApiClient {
   }) {
     final query = <String, String>{'username': username, 'offset': '0'};
     final filter = switch (kind) {
-      RiverSideProfileActivityKind.all => null,
+      RiverSideProfileActivityKind.all => '4,5',
       RiverSideProfileActivityKind.topics => '4',
       RiverSideProfileActivityKind.replies => '5',
       RiverSideProfileActivityKind.likesGiven => '1',
     };
-    if (filter != null) {
-      query['filter'] = filter;
-    }
+    query['filter'] = filter;
     return Uri.parse(
       '$riverSideBaseUrl/user_actions.json',
     ).replace(queryParameters: query);
@@ -426,10 +451,18 @@ extension RiverSideApiClientProfileMethods on RiverSideApiClient {
         continue;
       }
 
-      final title = _sanitizeExcerpt((topic['title'] ?? '').toString());
+      final title = _sanitizeExcerpt(
+        _firstNonEmptyProfile(<dynamic>[
+          topic['title'],
+          topic['fancy_title'],
+          topic['topic_title'],
+        ]),
+      );
       final excerpt = _sanitizeExcerpt((topic['excerpt'] ?? '').toString());
       final categoryId = _asInt(topic['category_id']);
-      final categoryName = categoriesById[categoryId] ?? 'Uncategorized';
+      final categoryName = categoryId == null
+          ? '未分类'
+          : (categoriesById[categoryId] ?? '分类 #$categoryId');
       final userId = _findPrimaryPosterUserId(
         topic['posters'] ?? topic['poster_users'],
       );
@@ -457,7 +490,7 @@ extension RiverSideApiClientProfileMethods on RiverSideApiClient {
         RiverSideProfileActivityItem(
           topicId: topicId,
           postNumber: null,
-          title: title.isEmpty ? 'Topic #$topicId' : title,
+          title: title.isEmpty ? '帖子 #$topicId' : title,
           excerpt: excerpt,
           categoryName: categoryName,
           authorUsername: username,
@@ -531,24 +564,30 @@ extension RiverSideApiClientProfileMethods on RiverSideApiClient {
               .toString()
               .trim();
       final title = _sanitizeExcerpt(
-        (action['title'] ?? action['topic_title'] ?? action['slug'] ?? '')
-            .toString(),
+        _firstNonEmptyProfile(<dynamic>[
+          action['title'],
+          action['topic_title'],
+          action['target_topic_title'],
+        ]),
       );
       final excerpt = _sanitizeExcerpt(
         (action['excerpt'] ?? action['raw'] ?? action['cooked'] ?? '')
             .toString(),
       );
       final categoryName = (action['category_name'] ?? '').toString().trim();
+      final resolvedCategory = categoryName.isEmpty
+          ? (categoryId == null
+                ? '未分类'
+                : (categoriesById[categoryId] ?? '分类 #$categoryId'))
+          : categoryName;
 
       items.add(
         RiverSideProfileActivityItem(
           topicId: topicId,
           postNumber: _asInt(action['post_number']),
-          title: title.isEmpty ? 'Topic #$topicId' : title,
+          title: title.isEmpty ? '帖子 #$topicId' : title,
           excerpt: excerpt,
-          categoryName: categoryName.isEmpty
-              ? (categoriesById[categoryId] ?? 'Uncategorized')
-              : categoryName,
+          categoryName: resolvedCategory,
           authorUsername: username,
           authorDisplayName: displayName.isEmpty
               ? (username.isEmpty ? 'Unknown user' : username)
@@ -607,6 +646,16 @@ extension RiverSideApiClientProfileMethods on RiverSideApiClient {
       names[id] = parentName.isEmpty ? name : '$parentName / $name';
     }
     return names;
+  }
+
+  String _firstNonEmptyProfile(List<dynamic> candidates) {
+    for (final candidate in candidates) {
+      final text = '$candidate'.trim();
+      if (text.isNotEmpty && text.toLowerCase() != 'null') {
+        return text;
+      }
+    }
+    return '';
   }
 
   Future<List<RiverSideProfileBadge>> fetchProfileBadges(

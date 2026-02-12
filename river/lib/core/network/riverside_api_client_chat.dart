@@ -32,6 +32,18 @@ extension RiverSideApiClientChatMethods on RiverSideApiClient {
     final decodedAny = jsonDecode(utf8.decode(response.bodyBytes));
     final channelMaps = <Map<String, dynamic>>[];
     final directHints = <bool?>[];
+    int? currentUserId;
+    String currentUsername = '';
+
+    String firstNonEmptyLocal(List<dynamic> candidates) {
+      for (final candidate in candidates) {
+        final text = '$candidate'.trim();
+        if (text.isNotEmpty && text.toLowerCase() != 'null') {
+          return text;
+        }
+      }
+      return '';
+    }
 
     void addChannels(dynamic raw, {bool? directHint}) {
       if (raw is List) {
@@ -50,6 +62,18 @@ extension RiverSideApiClientChatMethods on RiverSideApiClient {
       addChannels(decodedAny);
     } else if (decodedAny is Map) {
       final decoded = _toStringMap(decodedAny);
+      final currentUser = _toStringMap(decoded['current_user']);
+      final me = _toStringMap(decoded['me']);
+      currentUserId =
+          _asInt(currentUser['id']) ??
+          _asInt(me['id']) ??
+          _asInt(decoded['current_user_id']) ??
+          _asInt(decoded['user_id']);
+      currentUsername = firstNonEmptyLocal(<dynamic>[
+        currentUser['username'],
+        me['username'],
+        decoded['current_username'],
+      ]).trim();
       addChannels(decoded['channels']);
       addChannels(decoded['chat_channels']);
       addChannels(decoded['my_channels']);
@@ -63,9 +87,13 @@ extension RiverSideApiClientChatMethods on RiverSideApiClient {
 
     final byId = <int, RiverSideChatChannelItem>{};
     for (var i = 0; i < channelMaps.length; i++) {
-      final parsed = RiverSideApiClientChatParsingMethods(
-        this,
-      )._parseChatChannel(channelMaps[i], directHint: directHints[i]);
+      final parsed = RiverSideApiClientChatParsingMethods(this)
+          ._parseChatChannel(
+            channelMaps[i],
+            directHint: directHints[i],
+            currentUserId: currentUserId,
+            currentUsername: currentUsername,
+          );
       if (parsed == null) {
         continue;
       }

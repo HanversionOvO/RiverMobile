@@ -1,4 +1,4 @@
-﻿import 'dart:ui';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -230,6 +230,135 @@ class _MinePageState extends State<MinePage> {
         return Scaffold(
           body: CustomScrollView(
             slivers: [
+              SliverAppBar(
+                pinned: true,
+                floating: false,
+                automaticallyImplyLeading: false,
+                expandedHeight: 96,
+                toolbarHeight: 58,
+                backgroundColor: Colors.transparent,
+                surfaceTintColor: Colors.transparent,
+                elevation: 0,
+                scrolledUnderElevation: 0,
+                flexibleSpace: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final theme = Theme.of(context);
+                    final topInset = MediaQuery.paddingOf(context).top;
+                    final minHeight = kToolbarHeight + topInset;
+                    final maxHeight = 96 + topInset;
+                    final current = constraints.biggest.height;
+                    final tRaw =
+                        ((current - minHeight) / (maxHeight - minHeight)).clamp(
+                          0.0,
+                          1.0,
+                        );
+                    final t = Curves.easeOutCubic.transform(tRaw);
+                    final collapse = 1 - t;
+                    final subtitle = account == null
+                        ? '未登录'
+                        : '@${account.username}';
+                    final titleTopPadding =
+                        topInset + lerpDouble(9, 7, collapse)!;
+                    final subtitleVisibility = (1.0 - collapse).clamp(0.0, 1.0);
+                    return Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                theme.colorScheme.primaryContainer.withValues(
+                                  alpha: lerpDouble(0.30, 0.42, t)!,
+                                ),
+                                theme.colorScheme.surfaceContainerLowest
+                                    .withValues(
+                                      alpha: lerpDouble(0.92, 0.98, t)!,
+                                    ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        ClipRect(
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(
+                              sigmaX: lerpDouble(5, 9, t)!,
+                              sigmaY: lerpDouble(5, 9, t)!,
+                            ),
+                            child: const SizedBox.expand(),
+                          ),
+                        ),
+                        Padding(
+                          padding: EdgeInsets.fromLTRB(
+                            16,
+                            titleTopPadding,
+                            16,
+                            0,
+                          ),
+                          child: AnimatedOpacity(
+                            duration: const Duration(milliseconds: 180),
+                            opacity: lerpDouble(0.86, 1.0, t)!,
+                            child: Align(
+                              alignment: Alignment.topLeft,
+                              child: Padding(
+                                padding: const EdgeInsets.only(right: 64),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '我的',
+                                      textAlign: TextAlign.left,
+                                      style: theme.textTheme.titleLarge
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 21,
+                                            letterSpacing: -0.2,
+                                          ),
+                                    ),
+                                    SizedBox(
+                                      height: lerpDouble(2, 0, collapse)!,
+                                    ),
+                                    ClipRect(
+                                      child: Align(
+                                        alignment: Alignment.centerLeft,
+                                        heightFactor: subtitleVisibility,
+                                        child: Opacity(
+                                          opacity: subtitleVisibility,
+                                          child: Text(
+                                            subtitle,
+                                            style: theme.textTheme.labelMedium
+                                                ?.copyWith(
+                                                  color: theme
+                                                      .colorScheme
+                                                      .onSurfaceVariant,
+                                                ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+                actions: [
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: IconButton.filledTonal(
+                      onPressed: _showAccountManagerSheet,
+                      tooltip: '账号管理',
+                      icon: const Icon(Icons.manage_accounts_rounded),
+                    ),
+                  ),
+                ],
+              ),
               SliverToBoxAdapter(child: _buildHeader(context, account)),
 
               SliverPadding(
@@ -284,17 +413,17 @@ class _MinePageState extends State<MinePage> {
 
   Widget _buildHeader(BuildContext context, UserAccount? account) {
     final theme = Theme.of(context);
-    final topPadding = MediaQuery.of(context).padding.top;
+    const topPadding = 2.0;
 
     return Container(
-      padding: EdgeInsets.fromLTRB(20, topPadding + 20, 20, 30),
+      padding: EdgeInsets.fromLTRB(20, topPadding + 18, 20, 30),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            theme.colorScheme.primaryContainer.withOpacity(0.6),
-            theme.colorScheme.surface,
+            theme.colorScheme.primaryContainer.withValues(alpha: 0.46),
+            theme.colorScheme.surfaceContainerLowest.withValues(alpha: 0.98),
           ],
         ),
         borderRadius: const BorderRadius.vertical(bottom: Radius.circular(32)),

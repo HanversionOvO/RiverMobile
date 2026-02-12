@@ -1,15 +1,23 @@
-﻿part of 'riverside_api_client.dart';
+part of 'riverside_api_client.dart';
 
 extension RiverSideApiClientChatParsingMethods on RiverSideApiClient {
   RiverSideChatChannelItem? _parseChatChannel(
     Map<String, dynamic> channel, {
     bool? directHint,
+    int? currentUserId,
+    String? currentUsername,
   }) {
     final nestedChannel = _toStringMap(channel['channel']);
     final source = nestedChannel.isEmpty ? channel : nestedChannel;
     final chatable = _toStringMap(source['chatable']);
     final lastMessage = _toStringMap(source['last_message']);
     final membership = _toStringMap(source['membership']);
+    final usersRaw =
+        source['users'] ??
+        source['members'] ??
+        source['participants'] ??
+        source['chatable_users'] ??
+        source['direct_message_users'];
 
     final id =
         _asInt(source['id']) ??
@@ -31,14 +39,110 @@ extension RiverSideApiClientChatParsingMethods on RiverSideApiClient {
               chatable['type'],
             ]).toLowerCase().contains('direct');
 
-    final name = _firstNonEmpty(<dynamic>[
+    final resolvedCurrentUserId =
+        currentUserId ??
+        _asInt(source['current_user_id']) ??
+        _asInt(source['acting_user_id']) ??
+        _asInt(membership['user_id']) ??
+        _asInt(_toStringMap(membership['user'])['id']);
+    final resolvedCurrentUsername = (currentUsername ?? '')
+        .trim()
+        .toLowerCase();
+
+    final users = <Map<String, dynamic>>[];
+    if (usersRaw is List) {
+      for (final rawUser in usersRaw) {
+        final map = _toStringMap(rawUser);
+        if (map.isNotEmpty) {
+          users.add(map);
+        }
+      }
+    }
+
+    bool isCurrentUser(Map<String, dynamic> user) {
+      final directUser = user;
+      final nestedUser = _toStringMap(directUser['user']);
+      final id =
+          _asInt(directUser['id']) ??
+          _asInt(directUser['user_id']) ??
+          _asInt(nestedUser['id']);
+      if (resolvedCurrentUserId != null &&
+          id != null &&
+          resolvedCurrentUserId == id) {
+        return true;
+      }
+
+      final username = _firstNonEmpty(<dynamic>[
+        directUser['username'],
+        nestedUser['username'],
+      ]).trim().toLowerCase();
+      return resolvedCurrentUsername.isNotEmpty &&
+          username.isNotEmpty &&
+          resolvedCurrentUsername == username;
+    }
+
+    final peerUsers = isDirectMessage
+        ? users.where((user) => !isCurrentUser(user)).toList(growable: false)
+        : users;
+    final displayUsers = peerUsers.isNotEmpty ? peerUsers : users;
+
+    String buildUserDisplayName(Map<String, dynamic> user) {
+      return _sanitizeExcerpt(
+        _firstNonEmpty(<dynamic>[
+          user['name'],
+          user['display_name'],
+          user['username'],
+        ]),
+      );
+    }
+
+    String buildNamesFromUsers(List<Map<String, dynamic>> users) {
+      final names = <String>[];
+      for (final user in users) {
+        final name = buildUserDisplayName(user);
+        if (name.isNotEmpty && !names.contains(name)) {
+          names.add(name);
+        }
+      }
+      if (names.isEmpty) {
+        return '';
+      }
+      if (names.length <= 2) {
+        return names.join('、');
+      }
+      return '${names.take(2).join('、')} 等${names.length}人';
+    }
+
+    bool isFallbackChannelName(String value) {
+      final lower = value.trim().toLowerCase();
+      if (lower.isEmpty) {
+        return true;
+      }
+      if (lower == 'channel' || lower == 'direct message') {
+        return true;
+      }
+      return RegExp(r'^(channel|频道|私信)\s*#?\d+$').hasMatch(lower);
+    }
+
+    var name = _firstNonEmpty(<dynamic>[
       source['title'],
       source['name'],
       source['display_name'],
+      source['chat_channel_title'],
+      source['chatable_title'],
+      source['usernames'],
       chatable['title'],
       chatable['name'],
-      'Channel #$id',
     ]);
+    if (isDirectMessage) {
+      final usersName = buildNamesFromUsers(displayUsers);
+      if (usersName.isNotEmpty && isFallbackChannelName(name)) {
+        name = usersName;
+      }
+    }
+    if (name.trim().isEmpty || isFallbackChannelName(name)) {
+      name = isDirectMessage ? '私信 #$id' : '频道 #$id';
+    }
 
     final description = _firstNonEmpty(<dynamic>[
       source['description'],
@@ -48,9 +152,19 @@ extension RiverSideApiClientChatParsingMethods on RiverSideApiClient {
     final lastMessageText = _firstNonEmpty(<dynamic>[
       lastMessage['excerpt'],
       lastMessage['message'],
+      lastMessage['cooked'],
       source['last_message_excerpt'],
       source['last_message'],
+      source['last_message_text'],
+      source['last_message_summary'],
     ]);
+
+    final avatarFromUsers = displayUsers.isEmpty
+        ? ''
+        : _firstNonEmpty(<dynamic>[
+            displayUsers.first['avatar_template'],
+            _toStringMap(displayUsers.first['user'])['avatar_template'],
+          ]);
 
     final unreadCount =
         _asInt(source['unread_count']) ??
@@ -76,6 +190,7 @@ extension RiverSideApiClientChatParsingMethods on RiverSideApiClient {
         _firstNonEmpty(<dynamic>[
           source['avatar_template'],
           chatable['avatar_template'],
+          avatarFromUsers,
         ]),
       ),
     );

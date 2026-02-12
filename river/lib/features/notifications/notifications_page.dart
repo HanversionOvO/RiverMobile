@@ -47,6 +47,7 @@ class _NotificationsPageState extends State<NotificationsPage>
   int? _totalNotifications;
   bool _loading = true;
   bool _loadingMoreNotifications = false;
+  double _headerScrollFactor = 0;
   int _requestSerial = 0;
   String? _error;
   String? _lastActiveUsername;
@@ -175,10 +176,16 @@ class _NotificationsPageState extends State<NotificationsPage>
 
   void _syncBackToTopVisibility() {
     final controller = _activeScrollController();
-    final shouldShow =
-        controller != null &&
-        controller.hasClients &&
-        controller.position.pixels >= 360;
+    final currentOffset = controller != null && controller.hasClients
+        ? controller.position.pixels
+        : 0.0;
+    final shouldShow = currentOffset >= 360;
+    final nextHeaderFactor = (currentOffset / 96).clamp(0.0, 1.0);
+    if ((_headerScrollFactor - nextHeaderFactor).abs() >= 0.01 && mounted) {
+      setState(() {
+        _headerScrollFactor = nextHeaderFactor;
+      });
+    }
     if (_showBackToTopNotifier.value != shouldShow) {
       _showBackToTopNotifier.value = shouldShow;
     }
@@ -477,52 +484,33 @@ class _NotificationsPageState extends State<NotificationsPage>
           ),
 
           // 2. 涓诲唴瀹瑰尯鍩?
-          NestedScrollView(
-            headerSliverBuilder: (context, innerBoxIsScrolled) {
-              return [
-                SliverAppBar(
-                  pinned: true,
-                  floating: true,
-                  snap: true,
-                  automaticallyImplyLeading: false, // 绉婚櫎杩斿洖鎸夐挳浣嶇疆
-                  toolbarHeight: 8, // 鍘嬬缉 Toolbar 楂樺害锛屽彧鐣欑粰 TabBar 绌洪棿
-                  backgroundColor: backgroundColor.withOpacity(0.9),
-                  elevation: 0,
-                  scrolledUnderElevation: 0,
-                  flexibleSpace: ClipRect(
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                      child: Container(color: Colors.transparent),
+          Column(
+            children: [
+              _buildTopHeader(
+                theme,
+                Curves.easeOutCubic.transform(_headerScrollFactor),
+              ),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildNotificationsList(theme),
+                    _buildChatList(
+                      theme,
+                      _channelMessages,
+                      '暂无频道消息',
+                      controller: _channelScrollController,
                     ),
-                  ),
-                  bottom: PreferredSize(
-                    preferredSize: const Size.fromHeight(48),
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: _buildSegmentedTabBar(theme),
+                    _buildChatList(
+                      theme,
+                      _directMessages,
+                      '暂无私信消息',
+                      controller: _directScrollController,
                     ),
-                  ),
+                  ],
                 ),
-              ];
-            },
-            body: TabBarView(
-              controller: _tabController,
-              children: [
-                _buildNotificationsList(theme),
-                _buildChatList(
-                  theme,
-                  _channelMessages,
-                  '暂无频道消息',
-                  controller: _channelScrollController,
-                ),
-                _buildChatList(
-                  theme,
-                  _directMessages,
-                  '暂无私信消息',
-                  controller: _directScrollController,
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
 
           // 3. 瀹炴椂娑堟伅鎻愮ず鏉?
@@ -554,6 +542,121 @@ class _NotificationsPageState extends State<NotificationsPage>
           ),
           _buildRealtimeBanner(theme),
         ],
+      ),
+    );
+  }
+
+  Widget _buildTopHeader(ThemeData theme, double t) {
+    final topInset = MediaQuery.paddingOf(context).top;
+    final collapse = t.clamp(0.0, 1.0);
+    final subtitle = _totalUnreadCount > 0 ? '未读 $_totalUnreadCount 条' : '全部已读';
+    const titleSize = 21.0;
+    final subtitleVisibility = (1.0 - collapse).clamp(0.0, 1.0);
+    final borderAlpha = lerpDouble(0.18, 0.26, collapse)!;
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            theme.colorScheme.surface.withValues(
+              alpha: lerpDouble(0.90, 0.96, t)!,
+            ),
+            theme.colorScheme.surfaceContainerLowest.withValues(
+              alpha: lerpDouble(0.82, 0.92, t)!,
+            ),
+          ],
+        ),
+        border: Border(
+          bottom: BorderSide(
+            color: theme.colorScheme.outlineVariant.withValues(
+              alpha: borderAlpha,
+            ),
+          ),
+        ),
+      ),
+      child: ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(
+            sigmaX: lerpDouble(7, 11, t)!,
+            sigmaY: lerpDouble(7, 11, t)!,
+          ),
+          child: Padding(
+            padding: EdgeInsets.only(
+              top: topInset + lerpDouble(9, 8, collapse)!,
+              bottom: 8,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 8, 8),
+                  child: SizedBox(
+                    height: 44,
+                    child: Stack(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(right: 64),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '通知',
+                                  textAlign: TextAlign.left,
+                                  style: theme.textTheme.titleLarge?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: -0.2,
+                                    fontSize: titleSize,
+                                  ),
+                                ),
+                                ClipRect(
+                                  child: Align(
+                                    alignment: Alignment.centerLeft,
+                                    heightFactor: subtitleVisibility,
+                                    child: Opacity(
+                                      opacity: subtitleVisibility,
+                                      child: Text(
+                                        subtitle,
+                                        style: theme.textTheme.labelMedium
+                                            ?.copyWith(
+                                              color: theme
+                                                  .colorScheme
+                                                  .onSurfaceVariant,
+                                            ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: IconButton.filledTonal(
+                            onPressed: () => _loadAll(showLoading: false),
+                            tooltip: '刷新',
+                            icon: const Icon(Icons.refresh_rounded),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  height: 48,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: _buildSegmentedTabBar(theme),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -898,6 +1001,15 @@ class _NotificationsPageState extends State<NotificationsPage>
         separatorBuilder: (_, __) => const SizedBox(height: 12),
         itemBuilder: (context, index) {
           final item = items[index];
+          final title = item.name.trim().isNotEmpty
+              ? item.name.trim()
+              : (item.isDirectMessage ? '私信 #${item.id}' : '频道 #${item.id}');
+          final subtitle = item.lastMessage.trim().isNotEmpty
+              ? item.lastMessage.trim().replaceAll('\n', ' ')
+              : (item.description.trim().isNotEmpty
+                    ? item.description.trim().replaceAll('\n', ' ')
+                    : '暂无最新消息');
+          final directAvatar = item.avatarUrl.trim();
           return Container(
             decoration: BoxDecoration(
               color: theme.colorScheme.surface,
@@ -919,24 +1031,49 @@ class _NotificationsPageState extends State<NotificationsPage>
               leading: Container(
                 width: 48,
                 height: 48,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primaryContainer.withOpacity(0.5),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  Icons.tag_rounded,
-                  color: theme.colorScheme.primary,
-                  size: 24,
-                ),
+                alignment: Alignment.center,
+                child: item.isDirectMessage
+                    ? CircleAvatar(
+                        radius: 22,
+                        backgroundColor: theme.colorScheme.surfaceContainer,
+                        backgroundImage: directAvatar.isNotEmpty
+                            ? NetworkImage(directAvatar)
+                            : null,
+                        child: directAvatar.isEmpty
+                            ? Icon(
+                                Icons.person_rounded,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              )
+                            : null,
+                      )
+                    : Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primaryContainer.withOpacity(
+                            0.5,
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          Icons.tag_rounded,
+                          color: theme.colorScheme.primary,
+                          size: 24,
+                        ),
+                      ),
               ),
               title: Text(
-                '频道 #${item.id}',
+                title,
                 style: const TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 15,
                 ),
               ),
-              subtitle: const Text('点击查看详情'),
+              subtitle: Text(
+                subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
               trailing: item.unreadCount > 0
                   ? Container(
                       padding: const EdgeInsets.symmetric(

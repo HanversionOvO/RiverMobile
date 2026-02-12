@@ -1,12 +1,17 @@
 import 'dart:async';
 
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:river/app/app_dependencies.dart';
 import 'package:river/core/categories/riverside_category_utils.dart';
+import 'package:river/core/categories/riverside_category_store.dart';
 import 'package:river/core/network/riverside_api_client.dart';
 import 'package:river/core/network/riverside_topic_models.dart';
 import 'package:river/core/realtime/riverside_message_bus_poller.dart';
 import 'package:river/features/mine/riverside_profile_sheet.dart';
+import 'package:river/features/search/search_page.dart';
+import 'package:river/core/widgets/riverside_category_picker_sheet.dart';
 import 'package:river/features/posts/topic_detail_page.dart';
 import 'package:river/core/navigation/river_page_route.dart';
 
@@ -62,6 +67,7 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
   String? _lastActiveUsername;
   RiverSideMessageBusPoller? _messageBusPoller;
   bool _hasRealtimeTopicUpdate = false;
+  double _headerScrollFactor = 0;
 
   @override
   void initState() {
@@ -71,8 +77,13 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
         widget.dependencies.accountStore.activeRiverSideUsername;
     widget.dependencies.accountStore.addListener(_onAccountStoreChanged);
     _tabController = TabController(length: _feeds.length, vsync: this);
+    _tabController.addListener(_onTabChanged);
     _loadCategories();
     _restartRealtimePolling();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _syncHeaderWithCurrentTab();
+    });
   }
 
   @override
@@ -80,6 +91,7 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
     _messageBusPoller?.stop();
     widget.dependencies.accountStore.removeListener(_onAccountStoreChanged);
     widget.controller?._detach(this);
+    _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     super.dispose();
   }
@@ -164,27 +176,73 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
     });
   }
 
-  Future<void> _loadCategories() async {
-    if (_loadingCategories) return;
+  Future<List<RiverSideCategoryOption>> _loadCategories({
+    bool forceRefresh = false,
+  }) async {
+    if (_loadingCategories) return _categories;
+    _loadingCategories = true;
     try {
-      final categories = await widget
-          .dependencies
-          .accountStore
-          .riverSideApiClient
-          .fetchCategories();
+      final cookie = _activeCookieHeader();
+      final activeUsername =
+          widget.dependencies.accountStore.activeRiverSideUsername;
+      final categories = await RiverSideCategoryStore.instance.load(
+        apiClient: widget.dependencies.accountStore.riverSideApiClient,
+        username: activeUsername,
+        cookieHeader: cookie,
+        forceRefresh: forceRefresh,
+      );
       if (mounted) {
         setState(() {
           _categories = categories;
+          if (_selectedBoardId != null) {
+            final selected = findRiverSideCategoryById(
+              id: _selectedBoardId,
+              categories: _categories,
+            );
+            _selectedBoardName = selected == null
+                ? null
+                : displayRiverSideCategoryName(
+                    category: selected,
+                    allCategories: _categories,
+                  );
+          }
         });
       }
+      return categories;
     } catch (e) {
       debugPrint('Failed to load boards: $e');
+      return _categories;
+    } finally {
+      _loadingCategories = false;
     }
   }
 
   Future<void> _scrollToTopAndRefresh() async {
     final key = _tabKeys[_tabController.index];
     key?.currentState?.scrollToTopAndRefresh();
+  }
+
+  void _onTabChanged() {
+    if (_tabController.indexIsChanging) {
+      return;
+    }
+    _syncHeaderWithCurrentTab();
+  }
+
+  void _syncHeaderWithCurrentTab() {
+    final key = _tabKeys[_tabController.index];
+    final offset = key?.currentState?.currentScrollOffset ?? 0;
+    _onActiveTabScrollOffsetChanged(offset);
+  }
+
+  void _onActiveTabScrollOffsetChanged(double offset) {
+    final next = (offset / 96).clamp(0.0, 1.0);
+    if ((_headerScrollFactor - next).abs() < 0.01 || !mounted) {
+      return;
+    }
+    setState(() {
+      _headerScrollFactor = next;
+    });
   }
 
   void _onBoardFilterPressed() {
@@ -194,15 +252,24 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
       showDragHandle: true,
       useSafeArea: true,
       backgroundColor: Theme.of(context).colorScheme.surface,
-      builder: (context) => _RiverSideBoardPicker(
-        categories: _categories,
-        selectedId: _selectedBoardId,
+      builder: (context) => RiverSideCategoryPickerSheet(
+        initialCategories: _categories,
+        selectedCategoryId: _selectedBoardId,
+        allowSelectAll: true,
+        onRefreshCategories: ({bool forceRefresh = false}) {
+          return _loadCategories(forceRefresh: forceRefresh);
+        },
         onSelected: (category) {
           Navigator.pop(context);
           if (_selectedBoardId == category?.id) return;
           setState(() {
             _selectedBoardId = category?.id;
-            _selectedBoardName = category?.name;
+            _selectedBoardName = category == null
+                ? null
+                : displayRiverSideCategoryName(
+                    category: category,
+                    allCategories: _categories,
+                  );
             _filterVersion++;
           });
         },
@@ -210,106 +277,61 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
     );
   }
 
+  Future<void> _openSearchPage() async {
+    await Navigator.of(context).push(
+      riverPageRoute<void>(
+        builder: (_) => SearchPage(dependencies: widget.dependencies),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final easedHeaderFactor = Curves.easeOutCubic.transform(
+      _headerScrollFactor,
+    );
+    final topHintOffset =
+        MediaQuery.paddingOf(context).top +
+        lerpDouble(72, 66, easedHeaderFactor)!;
 
     return Scaffold(
       body: Stack(
         children: [
-          NestedScrollView(
-            headerSliverBuilder: (context, innerBoxIsScrolled) {
-              return [
-                SliverAppBar(
-                  title: null,
-                  toolbarHeight: 0,
-                  pinned: true,
-                  floating: true,
-                  forceElevated: innerBoxIsScrolled,
-                  backgroundColor: theme.colorScheme.surface.withOpacity(0.95),
+          Column(
+            children: [
+              _buildTopHeader(theme, easedHeaderFactor),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: _feeds.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final feed = entry.value;
 
-                  bottom: PreferredSize(
-                    preferredSize: const Size.fromHeight(52),
-                    child: Container(
-                      height: 52,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        border: Border(
-                          bottom: BorderSide(
-                            color: theme.colorScheme.outlineVariant.withOpacity(
-                              0.2,
-                            ),
-                            width: 1,
-                          ),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          // TabBar
-                          Expanded(
-                            child: TabBar(
-                              controller: _tabController,
-                              isScrollable: true,
-                              tabAlignment: TabAlignment.start,
-                              indicatorColor: theme.colorScheme.primary,
-                              labelColor: theme.colorScheme.primary,
-                              unselectedLabelColor:
-                                  theme.colorScheme.onSurfaceVariant,
-                              indicatorSize: TabBarIndicatorSize.label,
-                              dividerColor: Colors.transparent,
-                              labelStyle: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 15,
-                              ),
-                              labelPadding: const EdgeInsets.only(right: 24),
-                              tabs: _feeds
-                                  .map((feed) => Tab(text: feed.label))
-                                  .toList(),
-                            ),
-                          ),
+                    _tabKeys[index] ??= GlobalKey<_TopicListTabState>();
 
-                          Container(
-                            width: 1,
-                            height: 20,
-                            color: theme.colorScheme.outlineVariant.withOpacity(
-                              0.5,
-                            ),
-                            margin: const EdgeInsets.symmetric(horizontal: 8),
-                          ),
-
-                          _buildBoardFilterButton(theme),
-                        ],
-                      ),
-                    ),
-                  ),
+                    return _TopicListTab(
+                      key: _tabKeys[index],
+                      dependencies: widget.dependencies,
+                      feed: feed,
+                      boardId: _selectedBoardId,
+                      filterVersion: _filterVersion,
+                      onScrollOffsetChanged: (offset) {
+                        if (_tabController.index != index) {
+                          return;
+                        }
+                        _onActiveTabScrollOffsetChanged(offset);
+                      },
+                    );
+                  }).toList(),
                 ),
-              ];
-            },
-            body: TabBarView(
-              controller: _tabController,
-              children: _feeds.asMap().entries.map((entry) {
-                final index = entry.key;
-                final feed = entry.value;
-
-                _tabKeys[index] ??= GlobalKey<_TopicListTabState>();
-
-                return _TopicListTab(
-                  key: _tabKeys[index],
-                  dependencies: widget.dependencies,
-                  feed: feed,
-                  boardId: _selectedBoardId,
-                  filterVersion: _filterVersion,
-                );
-              }).toList(),
-            ),
+              ),
+            ],
           ),
           Positioned(
             left: 20,
             right: 20,
-            top: 60,
+            top: topHintOffset,
             child: SafeArea(
               bottom: false,
               child: IgnorePointer(
@@ -413,6 +435,156 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
     );
   }
 
+  Widget _buildTopHeader(ThemeData theme, double t) {
+    final topInset = MediaQuery.paddingOf(context).top;
+    final collapse = t.clamp(0.0, 1.0);
+    const titleSize = 21.0;
+    final subtitleVisibility = (1.0 - collapse).clamp(0.0, 1.0);
+    final borderAlpha = lerpDouble(0.18, 0.26, collapse)!;
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            theme.colorScheme.surface.withValues(
+              alpha: lerpDouble(0.90, 0.96, t)!,
+            ),
+            theme.colorScheme.surfaceContainerLowest.withValues(
+              alpha: lerpDouble(0.82, 0.92, t)!,
+            ),
+          ],
+        ),
+        border: Border(
+          bottom: BorderSide(
+            color: theme.colorScheme.outlineVariant.withValues(
+              alpha: borderAlpha,
+            ),
+          ),
+        ),
+      ),
+      child: ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(
+            sigmaX: lerpDouble(7, 11, t)!,
+            sigmaY: lerpDouble(7, 11, t)!,
+          ),
+          child: Padding(
+            padding: EdgeInsets.only(
+              top: topInset + lerpDouble(9, 8, collapse)!,
+              bottom: 6,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 8, 8),
+                  child: SizedBox(
+                    height: 44,
+                    child: Stack(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(right: 64),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '帖子',
+                                  textAlign: TextAlign.left,
+                                  style: theme.textTheme.titleLarge?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: -0.2,
+                                    fontSize: titleSize,
+                                  ),
+                                ),
+                                ClipRect(
+                                  child: Align(
+                                    alignment: Alignment.centerLeft,
+                                    heightFactor: subtitleVisibility,
+                                    child: Opacity(
+                                      opacity: subtitleVisibility,
+                                      child: Text(
+                                        _feeds[_tabController.index].label,
+                                        style: theme.textTheme.labelMedium
+                                            ?.copyWith(
+                                              color: theme
+                                                  .colorScheme
+                                                  .onSurfaceVariant,
+                                            ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: IconButton.filledTonal(
+                            onPressed: _openSearchPage,
+                            tooltip: '搜索',
+                            icon: Hero(
+                              tag: postsSearchHeroTag,
+                              child: const Icon(Icons.search_rounded),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  height: 52,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TabBar(
+                            controller: _tabController,
+                            isScrollable: true,
+                            tabAlignment: TabAlignment.start,
+                            indicatorColor: theme.colorScheme.primary,
+                            labelColor: theme.colorScheme.primary,
+                            unselectedLabelColor:
+                                theme.colorScheme.onSurfaceVariant,
+                            indicatorSize: TabBarIndicatorSize.label,
+                            dividerColor: Colors.transparent,
+                            labelStyle: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                            ),
+                            labelPadding: const EdgeInsets.only(right: 24),
+                            tabs: _feeds
+                                .map((feed) => Tab(text: feed.label))
+                                .toList(),
+                          ),
+                        ),
+                        Container(
+                          width: 1,
+                          height: 20,
+                          color: theme.colorScheme.outlineVariant.withValues(
+                            alpha: 0.5,
+                          ),
+                          margin: const EdgeInsets.symmetric(horizontal: 8),
+                        ),
+                        _buildBoardFilterButton(theme),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildBoardFilterButton(ThemeData theme) {
     final hasSelection = _selectedBoardId != null;
     final label = _selectedBoardName ?? '\u5168\u90e8\u677f\u5757';
@@ -496,12 +668,14 @@ class _TopicListTab extends StatefulWidget {
     required this.feed,
     this.boardId,
     required this.filterVersion,
+    this.onScrollOffsetChanged,
   });
 
   final AppDependencies dependencies;
   final RiverSideTopicFeed feed;
   final int? boardId;
   final int filterVersion;
+  final ValueChanged<double>? onScrollOffsetChanged;
 
   @override
   State<_TopicListTab> createState() => _TopicListTabState();
@@ -522,11 +696,18 @@ class _TopicListTabState extends State<_TopicListTab>
   @override
   bool get wantKeepAlive => true;
 
+  double get currentScrollOffset =>
+      _scrollController.hasClients ? _scrollController.offset : 0;
+
   @override
   void initState() {
     super.initState();
     _loadFirstPage();
     _scrollController.addListener(_onScroll);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      widget.onScrollOffsetChanged?.call(currentScrollOffset);
+    });
   }
 
   @override
@@ -549,6 +730,7 @@ class _TopicListTabState extends State<_TopicListTab>
     if (!_scrollController.hasClients) return;
     final maxScroll = _scrollController.position.maxScrollExtent;
     final currentScroll = _scrollController.offset;
+    widget.onScrollOffsetChanged?.call(currentScroll);
     final shouldShowBackToTop = currentScroll >= 420;
     if (_showBackToTopNotifier.value != shouldShowBackToTop) {
       _showBackToTopNotifier.value = shouldShowBackToTop;
@@ -562,6 +744,7 @@ class _TopicListTabState extends State<_TopicListTab>
     if (_scrollController.hasClients) {
       _scrollController.jumpTo(0);
     }
+    widget.onScrollOffsetChanged?.call(0);
     _showBackToTopNotifier.value = false;
     await _loadFirstPage();
   }
@@ -813,241 +996,6 @@ class _TopicListTabState extends State<_TopicListTab>
 // -----------------------------------------------------------------------------
 
 // -----------------------------------------------------------------------------
-class _RiverSideBoardPicker extends StatelessWidget {
-  const _RiverSideBoardPicker({
-    required this.categories,
-    required this.selectedId,
-    required this.onSelected,
-  });
-
-  final List<RiverSideCategoryOption> categories;
-  final int? selectedId;
-  final ValueChanged<RiverSideCategoryOption?> onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final groups = buildRiverSideCategoryGroups(categories);
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Hero(
-          tag: 'board_picker_hero',
-          child: Material(
-            color: Colors.transparent,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.dashboard_rounded,
-                    color: theme.colorScheme.primary,
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    '\u9009\u62e9\u677f\u5757',
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-
-        Flexible(
-          child: ListView(
-            shrinkWrap: true,
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-            children: [
-              InkWell(
-                onTap: () => onSelected(null),
-                borderRadius: BorderRadius.circular(16),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
-                  ),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        theme.colorScheme.primaryContainer,
-                        theme.colorScheme.surface,
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: theme.colorScheme.primary.withOpacity(0.1),
-                    ),
-                    boxShadow: [
-                      if (selectedId == null)
-                        BoxShadow(
-                          color: theme.colorScheme.primary.withOpacity(0.15),
-                          blurRadius: 8,
-                          offset: const Offset(0, 4),
-                        ),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.primary,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          Icons.apps_rounded,
-                          size: 20,
-                          color: theme.colorScheme.onPrimary,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Text(
-                        '\u5168\u90e8\u677f\u5757',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: theme.colorScheme.onSurface,
-                        ),
-                      ),
-                      const Spacer(),
-                      if (selectedId == null)
-                        Icon(
-                          Icons.check_circle_rounded,
-                          color: theme.colorScheme.primary,
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 20),
-
-              ...groups.map(
-                (group) => Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: _BoardGroupCard(
-                    group: group,
-                    selectedId: selectedId,
-                    onSelected: onSelected,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _BoardGroupCard extends StatelessWidget {
-  const _BoardGroupCard({
-    required this.group,
-    required this.selectedId,
-    required this.onSelected,
-  });
-
-  final RiverSideCategoryGroup group;
-  final int? selectedId;
-  final ValueChanged<RiverSideCategoryOption> onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final parent = group.parent;
-    final isParentSelected = selectedId == parent.id;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        InkWell(
-          onTap: () => onSelected(parent),
-          borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-            child: Row(
-              children: [
-                Container(
-                  width: 4,
-                  height: 16,
-                  decoration: BoxDecoration(
-                    color: isParentSelected
-                        ? theme.colorScheme.primary
-                        : theme.colorScheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    parent.name,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: isParentSelected
-                          ? theme.colorScheme.primary
-                          : theme.colorScheme.onSurface,
-                    ),
-                  ),
-                ),
-                if (isParentSelected)
-                  Icon(
-                    Icons.check_circle_rounded,
-                    size: 20,
-                    color: theme.colorScheme.primary,
-                  ),
-              ],
-            ),
-          ),
-        ),
-
-        if (group.children.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(left: 14, top: 4),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: group.children.map((child) {
-                final isSelected = selectedId == child.id;
-                return FilterChip(
-                  selected: isSelected,
-                  label: Text(child.name),
-                  onSelected: (_) => onSelected(child),
-                  side: BorderSide.none,
-                  showCheckmark: false,
-                  backgroundColor: theme.colorScheme.surfaceContainerHighest
-                      .withOpacity(0.3),
-                  selectedColor: theme.colorScheme.primaryContainer,
-                  labelStyle: TextStyle(
-                    color: isSelected
-                        ? theme.colorScheme.primary
-                        : theme.colorScheme.onSurface,
-                    fontWeight: isSelected
-                        ? FontWeight.w600
-                        : FontWeight.normal,
-                    fontSize: 13,
-                  ),
-                  visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 4,
-                    vertical: 0,
-                  ),
-                  shape: const StadiumBorder(),
-                );
-              }).toList(),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
 // -----------------------------------------------------------------------------
 
 // -----------------------------------------------------------------------------

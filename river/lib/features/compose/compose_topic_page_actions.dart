@@ -3,13 +3,15 @@ part of 'compose_topic_page.dart';
 extension _ComposeTopicPageActions on _ComposeTopicPageState {
   Future<void> _loadMetaData() async {
     final cookie = _activeCookieHeader();
-    _mutateState(() {
-      _loadingMeta = true;
-    });
+    _mutateState(() => _loadingMeta = true);
 
     try {
       final api = widget.dependencies.accountStore.riverSideApiClient;
-      final categoriesFuture = api.fetchCategories(cookieHeader: cookie);
+      final categoriesFuture = RiverSideCategoryStore.instance.load(
+        apiClient: api,
+        username: widget.dependencies.accountStore.activeRiverSideUsername,
+        cookieHeader: cookie,
+      );
       final emojiFuture = api
           .fetchEmojiUrlMap(cookieHeader: cookie)
           .catchError((_) => const <String, String>{});
@@ -21,29 +23,25 @@ extension _ComposeTopicPageActions on _ComposeTopicPageState {
       final emojis = await emojiFuture;
       final emojiGroups = await emojiGroupsFuture;
 
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       _mutateState(() {
         _categories = categories;
         _emojiUrls = emojis;
         _emojiGroups = emojiGroups;
         _loadingMeta = false;
+        // 如果已选的分类不在新列表中，重置
         if (_selectedCategoryId != null &&
             !_categories.any((item) => item.id == _selectedCategoryId)) {
           _selectedCategoryId = null;
         }
       });
     } catch (_) {
-      if (!mounted) {
-        return;
-      }
-      _mutateState(() {
-        _loadingMeta = false;
-      });
+      if (!mounted) return;
+      _mutateState(() => _loadingMeta = false);
     }
   }
 
+  // ... _uploadImage 方法保持不变 ...
   Future<String?> _uploadImage(String fileName, List<int> bytes) async {
     final cookie = _activeCookieHeader();
     if (cookie == null || cookie.trim().isEmpty) {
@@ -62,18 +60,21 @@ extension _ComposeTopicPageActions on _ComposeTopicPageState {
   }
 
   Future<void> _openEditor() async {
+    HapticFeedback.lightImpact();
+    // 打开全屏编辑器
     final saved = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (_) {
         return RiverMarkdownEditor(
-          title: '编辑帖子内容',
-          hintText: '请输入帖子正文内容',
-          submitLabel: '保存内容',
+          title: '正文',
+          hintText: '在这里输入内容...',
+          submitLabel: '确认',
           initialText: _contentMarkdown,
           emojiUrls: _emojiUrls,
           emojiGroups: _emojiGroups,
-          maxHeight: MediaQuery.sizeOf(context).height * 0.86,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.92, // 更高的占比
           onUploadImage: _uploadImage,
           onSubmit: (markdown) async {
             _mutateState(() {
@@ -85,41 +86,63 @@ extension _ComposeTopicPageActions on _ComposeTopicPageState {
       },
     );
     if (saved == true && mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('帖子内容已保存')));
+      // 可选：显示一个小提示，或者静默保存
     }
   }
 
   Future<void> _openCategoryPicker() async {
+    HapticFeedback.selectionClick();
     if (_categories.isEmpty && !_loadingMeta) {
       await _loadMetaData();
     }
-    if (!mounted) {
-      return;
-    }
+    if (!mounted) return;
     if (_categories.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('暂无可选板块')));
+      _showToast('暂无可选板块', isError: true);
       return;
     }
 
-    final selected = await showModalBottomSheet<RiverSideCategoryOption>(
+    final selected = await showModalBottomSheet<RiverSideCategoryOption?>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       builder: (sheetContext) {
         return RiverSideCategoryPickerSheet(
-          groups: buildRiverSideCategoryGroups(_categories),
+          initialCategories: _categories,
           selectedCategoryId: _selectedCategoryId,
-          onSelected: (category) => Navigator.of(sheetContext).pop(category),
+          allowSelectAll: false,
+          onRefreshCategories: ({bool forceRefresh = false}) async {
+            final cookieHeader = _activeCookieHeader();
+            final categories = await RiverSideCategoryStore.instance.load(
+              apiClient: widget.dependencies.accountStore.riverSideApiClient,
+              username:
+                  widget.dependencies.accountStore.activeRiverSideUsername,
+              cookieHeader: cookieHeader,
+              forceRefresh: forceRefresh,
+            );
+            if (mounted) {
+              _mutateState(() {
+                _categories = categories;
+                if (_selectedCategoryId != null &&
+                    !_categories.any(
+                      (item) => item.id == _selectedCategoryId,
+                    )) {
+                  _selectedCategoryId = null;
+                }
+              });
+            }
+            return categories;
+          },
+          onSelected: (category) {
+            if (category == null) {
+              return;
+            }
+            Navigator.of(sheetContext).pop(category);
+          },
         );
       },
     );
-    if (!mounted || selected == null) {
-      return;
-    }
+    if (!mounted || selected == null) return;
     _mutateState(() {
       _selectedCategoryId = selected.id;
     });
@@ -130,53 +153,6 @@ extension _ComposeTopicPageActions on _ComposeTopicPageState {
       id: _selectedCategoryId,
       categories: _categories,
     );
-  }
-
-  bool get _hasDraftContent {
-    return _titleController.text.trim().isNotEmpty ||
-        _selectedCategoryId != null ||
-        _contentMarkdown.trim().isNotEmpty;
-  }
-
-  Future<void> _clearDraftWithConfirm() async {
-    if (!_hasDraftContent) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('当前没有可清除的内容')));
-      return;
-    }
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('清空草稿'),
-          content: const Text('确定清空已编辑的标题、板块和正文内容吗？'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('确认清空'),
-            ),
-          ],
-        );
-      },
-    );
-    if (confirmed != true || !mounted) {
-      return;
-    }
-
-    _mutateState(() {
-      _titleController.clear();
-      _selectedCategoryId = null;
-      _contentMarkdown = '';
-    });
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('已清空发帖草稿')));
   }
 
   String _displayCategoryName(RiverSideCategoryOption category) {
@@ -191,39 +167,32 @@ extension _ComposeTopicPageActions on _ComposeTopicPageState {
     required bool requireLogin,
   }) {
     if (requireLogin && _activeCookieHeader() == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text(_ComposeTopicPageState._labelNeedLogin)),
-      );
+      _showToast(_ComposeTopicPageState._labelNeedLogin, isError: true);
       return false;
     }
     if (_titleController.text.trim().isEmpty) {
-      if (focusTitle) {
-        _titleFocusNode.requestFocus();
-      }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('请输入帖子标题')));
+      if (focusTitle) _titleFocusNode.requestFocus();
+      _showToast('标题还是要有的', isError: true);
       return false;
     }
     if (_selectedCategoryId == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('请选择发帖板块')));
+      // 尝试自动弹出选择器
+      _openCategoryPicker();
+      _showToast('请选择一个发布板块', isError: true);
       return false;
     }
     if (_contentMarkdown.trim().isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('请先编辑帖子内容')));
+      _openEditor(); // 自动打开编辑器
+      _showToast('内容不能为空', isError: true);
       return false;
     }
     return true;
   }
 
   Future<void> _previewTopic() async {
-    if (!_validateBeforeSubmit(focusTitle: true, requireLogin: false)) {
-      return;
-    }
+    HapticFeedback.lightImpact();
+    if (!_validateBeforeSubmit(focusTitle: false, requireLogin: false)) return;
+
     final category = _selectedCategory();
     await Navigator.of(context).push(
       riverPageRoute<void>(
@@ -238,21 +207,18 @@ extension _ComposeTopicPageActions on _ComposeTopicPageState {
   }
 
   Future<void> _publishTopic() async {
-    if (_publishing) {
-      return;
-    }
-    if (!_validateBeforeSubmit(focusTitle: true, requireLogin: true)) {
-      return;
-    }
+    if (_publishing) return;
+    HapticFeedback.heavyImpact(); // 强震动反馈
+
+    if (!_validateBeforeSubmit(focusTitle: true, requireLogin: true)) return;
 
     final cookie = _activeCookieHeader()!;
     final title = _titleController.text.trim();
     final categoryId = _selectedCategoryId!;
     final raw = _contentMarkdown.trim();
 
-    _mutateState(() {
-      _publishing = true;
-    });
+    _mutateState(() => _publishing = true);
+
     try {
       final result = await widget.dependencies.accountStore.riverSideApiClient
           .createTopic(
@@ -261,14 +227,14 @@ extension _ComposeTopicPageActions on _ComposeTopicPageState {
             categoryId: categoryId,
             cookieHeader: cookie,
           );
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('发帖成功')));
-      await Navigator.of(context).push(
+      _showToast('发布成功！');
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      if (!mounted) return;
+      // 使用 replacement 跳转，防止返回到编辑页
+      await Navigator.of(context).pushReplacement(
         riverPageRoute<void>(
           builder: (_) => TopicDetailPage(
             dependencies: widget.dependencies,
@@ -277,25 +243,34 @@ extension _ComposeTopicPageActions on _ComposeTopicPageState {
         ),
       );
     } on RiverSideApiException catch (error) {
-      if (!mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(error.message)));
+      if (!mounted) return;
+      _showToast(error.message, isError: true);
     } catch (_) {
-      if (!mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('发帖失败，请稍后重试')));
+      if (!mounted) return;
+      _showToast('发布失败，请检查网络', isError: true);
     } finally {
       if (mounted) {
-        _mutateState(() {
-          _publishing = false;
-        });
+        _mutateState(() => _publishing = false);
       }
     }
+  }
+
+  void _showToast(String message, {bool isError = false}) {
+    ScaffoldMessenger.of(context).removeCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: isError
+            ? Theme.of(context).colorScheme.error
+            : const Color(0xFF333333), // 深色背景
+        elevation: 0,
+        margin: const EdgeInsets.only(bottom: 80, left: 20, right: 20),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+      ),
+    );
   }
 }
