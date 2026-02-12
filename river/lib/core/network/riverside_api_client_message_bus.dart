@@ -1,6 +1,72 @@
 part of 'riverside_api_client.dart';
 
 extension RiverSideApiClientMessageBusMethods on RiverSideApiClient {
+  Future<RiverSidePresenceChannelState?> fetchPresenceChannelState({
+    required String channelName,
+    String? cookieHeader,
+  }) async {
+    final normalizedChannel = _normalizePresenceChannelName(channelName);
+    if (normalizedChannel.isEmpty) {
+      return null;
+    }
+
+    final uri = Uri.parse('$riverSideBaseUrl/presence/get').replace(
+      queryParameters: <String, String>{'channels[]': normalizedChannel},
+    );
+    final response = await http.get(
+      uri,
+      headers: <String, String>{
+        ..._buildJsonHeaders(cookieHeader: cookieHeader),
+        'X-Requested-With': 'XMLHttpRequest',
+        'Referer': riverSideBaseUrl,
+      },
+    );
+
+    if (response.statusCode == 403) {
+      throw const RiverSideApiException(
+        'Login session expired. Please sign in again.',
+      );
+    }
+    if (response.statusCode != 200) {
+      throw RiverSideApiException(
+        'Failed to load presence state, HTTP ${response.statusCode}',
+      );
+    }
+
+    final decoded = _decodeJsonObject(
+      response,
+      fallbackMessage: 'Invalid presence state response format',
+    );
+    final state = _toStringMap(decoded[normalizedChannel]);
+    if (state.isEmpty) {
+      return null;
+    }
+
+    final usersRaw = state['users'];
+    final users = <RiverSidePresenceUser>[];
+    if (usersRaw is List) {
+      for (final rawUser in usersRaw) {
+        final user = _toStringMap(rawUser);
+        final id = _asInt(user['id']);
+        final username = (user['username'] ?? '').toString().trim();
+        if (id == null || username.isEmpty) {
+          continue;
+        }
+        users.add(RiverSidePresenceUser(id: id, username: username));
+      }
+    }
+
+    final count = _asInt(state['count']) ?? users.length;
+    final lastMessageId = _asInt(state['last_message_id']) ?? -1;
+    return RiverSidePresenceChannelState(
+      channelName: normalizedChannel,
+      lastMessageId: lastMessageId,
+      count: count,
+      users: List<RiverSidePresenceUser>.unmodifiable(users),
+      countOnly: usersRaw is! List,
+    );
+  }
+
   Future<List<RiverSideMessageBusEvent>> fetchMessageBusEvents({
     required String clientId,
     required Map<String, int> channelsLastId,
@@ -88,5 +154,17 @@ extension RiverSideApiClientMessageBusMethods on RiverSideApiClient {
     }
 
     return events;
+  }
+
+  String _normalizePresenceChannelName(String source) {
+    final channel = source.trim();
+    if (channel.isEmpty) {
+      return '';
+    }
+    if (channel.startsWith('/presence/')) {
+      final stripped = channel.substring('/presence'.length);
+      return stripped.isEmpty ? '' : stripped;
+    }
+    return channel.startsWith('/') ? channel : '/$channel';
   }
 }

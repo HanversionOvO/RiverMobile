@@ -72,11 +72,24 @@ extension _ComposeTopicPageActions on _ComposeTopicPageState {
 
     try {
       final api = widget.dependencies.accountStore.riverSideApiClient;
-      final categoriesFuture = RiverSideCategoryStore.instance.load(
-        apiClient: api,
-        username: widget.dependencies.accountStore.activeRiverSideUsername,
-        cookieHeader: cookie,
-      );
+      final activeUsername =
+          widget.dependencies.accountStore.activeRiverSideUsername;
+      final categoriesFuture = (() async {
+        var categories = await RiverSideCategoryStore.instance.load(
+          apiClient: api,
+          username: activeUsername,
+          cookieHeader: cookie,
+        );
+        if (cookie != null && cookie.trim().isNotEmpty && categories.isEmpty) {
+          categories = await RiverSideCategoryStore.instance.load(
+            apiClient: api,
+            username: activeUsername,
+            cookieHeader: cookie,
+            forceRefresh: true,
+          );
+        }
+        return categories;
+      })();
       final emojiFuture = api
           .fetchEmojiUrlMap(cookieHeader: cookie)
           .catchError((_) => const <String, String>{});

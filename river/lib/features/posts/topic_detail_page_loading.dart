@@ -3,6 +3,10 @@
 part of 'topic_detail_page.dart';
 
 extension _TopicDetailPageLoading on _TopicDetailPageState {
+  static const String _presenceMessageBusChannel =
+      '/presence/whos-online/online';
+  static const String _presenceStateChannelName = '/whos-online/online';
+
   void _restartRealtimePolling() {
     _messageBusPoller?.stop();
     _messageBusPoller = null;
@@ -12,28 +16,322 @@ extension _TopicDetailPageLoading on _TopicDetailPageState {
       return;
     }
 
-    final channel = '/topic/${widget.topicId}';
+    final bootstrapSerial = ++_pollingBootstrapSerial;
+    unawaited(
+      _bootstrapRealtimePolling(
+        bootstrapSerial: bootstrapSerial,
+        cookieHeader: cookieHeader,
+      ),
+    );
+  }
+
+  Future<void> _bootstrapRealtimePolling({
+    required int bootstrapSerial,
+    required String cookieHeader,
+  }) async {
+    final topicChannel = '/topic/${widget.topicId}';
+    final apiClient = widget.dependencies.accountStore.riverSideApiClient;
+    var presenceLastMessageId = -1;
+
+    try {
+      final presenceState = await apiClient.fetchPresenceChannelState(
+        channelName: _presenceStateChannelName,
+        cookieHeader: cookieHeader,
+      );
+      if (!mounted || bootstrapSerial != _pollingBootstrapSerial) {
+        return;
+      }
+      if (presenceState != null) {
+        presenceLastMessageId = presenceState.lastMessageId;
+        if (!presenceState.countOnly) {
+          _applyPresenceSnapshot(presenceState.users);
+        }
+      }
+    } catch (_) {
+      // Keep poller resilient even if presence bootstrap fails.
+    }
+    if (!mounted || bootstrapSerial != _pollingBootstrapSerial) {
+      return;
+    }
+
+    final channelLastIds = <String, int>{
+      topicChannel: -1,
+      _presenceMessageBusChannel: presenceLastMessageId,
+    };
     final poller = RiverSideMessageBusPoller(
-      apiClient: widget.dependencies.accountStore.riverSideApiClient,
+      apiClient: apiClient,
       cookieHeader: cookieHeader,
-      channelLastIds: RiverSideMessageBusPoller.buildInitialChannels(<String>[
-        channel,
-      ]),
+      channelLastIds: channelLastIds,
       onEvents: (events) {
         if (!mounted || events.isEmpty) {
           return;
         }
-        final hasTopicEvent = events.any((event) => event.channel == channel);
-        if (!hasTopicEvent || _hasRealtimeCommentUpdate) {
-          return;
+        var hasTopicEvent = false;
+        var hasPresenceEvent = false;
+        for (final event in events) {
+          if (event.channel == topicChannel) {
+            hasTopicEvent = true;
+            continue;
+          }
+          if (event.channel == _presenceMessageBusChannel) {
+            hasPresenceEvent =
+                _consumePresenceEventData(event.data) || hasPresenceEvent;
+          }
         }
-        _mutateState(() {
-          _hasRealtimeCommentUpdate = true;
-        });
+        if (!hasTopicEvent || _hasRealtimeCommentUpdate) {
+          if (hasPresenceEvent) {
+            _applyRealtimePresenceToLoadedPosts();
+          }
+        } else {
+          _mutateState(() {
+            _hasRealtimeCommentUpdate = true;
+          });
+          if (hasPresenceEvent) {
+            _applyRealtimePresenceToLoadedPosts();
+          }
+        }
       },
     );
+    if (bootstrapSerial != _pollingBootstrapSerial) {
+      poller.stop();
+      return;
+    }
     _messageBusPoller = poller;
     poller.start();
+  }
+
+  void _applyPresenceSnapshot(Iterable<RiverSidePresenceUser> users) {
+    final nextOnlineIds = <int>{};
+    final nextOnlineUsernames = <String>{};
+    for (final user in users) {
+      if (user.id > 0) {
+        nextOnlineIds.add(user.id);
+      }
+      final normalizedUsername = _normalizePresenceUsername(user.username);
+      if (normalizedUsername.isNotEmpty) {
+        nextOnlineUsernames.add(normalizedUsername);
+      }
+      if (user.id > 0 && normalizedUsername.isNotEmpty) {
+        _knownOnlineUsernameById[user.id] = normalizedUsername;
+      }
+    }
+
+    _onlineUserIds
+      ..clear()
+      ..addAll(nextOnlineIds);
+    _onlineUsernames
+      ..clear()
+      ..addAll(nextOnlineUsernames);
+    _presenceReady = true;
+    _applyRealtimePresenceToLoadedPosts();
+  }
+
+  bool _consumePresenceEventData(dynamic rawData) {
+    final payload = _decodePresencePayload(rawData);
+    if (payload is List) {
+      final users = _parsePresenceUsers(payload);
+      _applyPresenceSnapshot(users);
+      return true;
+    }
+
+    if (payload is! Map) {
+      return false;
+    }
+    final data = _toStringDynamicMap(payload);
+    if (data.isEmpty) {
+      return false;
+    }
+
+    final enteringUsersRaw = _readListField(data, const <String>[
+      'entering_users',
+      'users',
+      'online_users',
+    ]);
+    final leavingUserIdsRaw = _readListField(data, const <String>[
+      'leaving_user_ids',
+    ]);
+
+    var changed = false;
+    if (enteringUsersRaw != null && data.containsKey('users')) {
+      _applyPresenceSnapshot(_parsePresenceUsers(enteringUsersRaw));
+      return true;
+    }
+
+    if (enteringUsersRaw != null) {
+      final enteringUsers = _parsePresenceUsers(enteringUsersRaw);
+      for (final user in enteringUsers) {
+        if (user.id > 0) {
+          changed = _onlineUserIds.add(user.id) || changed;
+        }
+        final normalized = _normalizePresenceUsername(user.username);
+        if (normalized.isNotEmpty) {
+          changed = _onlineUsernames.add(normalized) || changed;
+        }
+        if (user.id > 0 && normalized.isNotEmpty) {
+          _knownOnlineUsernameById[user.id] = normalized;
+        }
+      }
+      if (enteringUsers.isNotEmpty) {
+        _presenceReady = true;
+      }
+    }
+
+    if (leavingUserIdsRaw != null) {
+      for (final userId in _parsePresenceUserIds(leavingUserIdsRaw)) {
+        if (!_onlineUserIds.remove(userId)) {
+          continue;
+        }
+        changed = true;
+        final username = _knownOnlineUsernameById[userId];
+        if (username != null) {
+          _onlineUsernames.remove(username);
+        }
+      }
+      _presenceReady = true;
+    }
+
+    return changed;
+  }
+
+  dynamic _decodePresencePayload(dynamic rawData) {
+    if (rawData is String) {
+      final source = rawData.trim();
+      if (source.isEmpty) {
+        return null;
+      }
+      if ((source.startsWith('{') && source.endsWith('}')) ||
+          (source.startsWith('[') && source.endsWith(']'))) {
+        try {
+          return jsonDecode(source);
+        } catch (_) {
+          return null;
+        }
+      }
+      return null;
+    }
+    return rawData;
+  }
+
+  Map<String, dynamic> _toStringDynamicMap(dynamic raw) {
+    if (raw is! Map) {
+      return const <String, dynamic>{};
+    }
+    final result = <String, dynamic>{};
+    for (final entry in raw.entries) {
+      result['${entry.key}'] = entry.value;
+    }
+    return result;
+  }
+
+  List<dynamic>? _readListField(
+    Map<String, dynamic> source,
+    List<String> keys,
+  ) {
+    for (final key in keys) {
+      final value = source[key];
+      if (value is List) {
+        return value;
+      }
+    }
+    return null;
+  }
+
+  List<RiverSidePresenceUser> _parsePresenceUsers(List<dynamic> rawUsers) {
+    final users = <RiverSidePresenceUser>[];
+    for (final rawUser in rawUsers) {
+      final map = _toStringDynamicMap(rawUser);
+      if (map.isNotEmpty) {
+        final id = _parseInt(map['id']) ?? 0;
+        final username = (map['username'] ?? '').toString().trim();
+        if (id > 0 || username.isNotEmpty) {
+          users.add(RiverSidePresenceUser(id: id, username: username));
+        }
+        continue;
+      }
+
+      final id = _parseInt(rawUser);
+      if (id != null && id > 0) {
+        users.add(RiverSidePresenceUser(id: id, username: ''));
+        continue;
+      }
+
+      final username = '$rawUser'.trim();
+      if (username.isNotEmpty) {
+        users.add(RiverSidePresenceUser(id: 0, username: username));
+      }
+    }
+    return users;
+  }
+
+  List<int> _parsePresenceUserIds(List<dynamic> rawIds) {
+    final ids = <int>[];
+    for (final raw in rawIds) {
+      final id = _parseInt(raw);
+      if (id != null && id > 0) {
+        ids.add(id);
+      }
+    }
+    return ids;
+  }
+
+  int? _parseInt(dynamic raw) {
+    if (raw is int) {
+      return raw;
+    }
+    if (raw is String) {
+      return int.tryParse(raw.trim());
+    }
+    return null;
+  }
+
+  String _normalizePresenceUsername(String source) {
+    return source.trim().toLowerCase();
+  }
+
+  RiverSideTopicPostDetail _applyRealtimePresenceToPost(
+    RiverSideTopicPostDetail post,
+  ) {
+    if (!_presenceReady) {
+      return post;
+    }
+    final normalizedUsername = _normalizePresenceUsername(post.authorUsername);
+    final authorUserId = post.authorUserId;
+    final isOnline = authorUserId != null && authorUserId > 0
+        ? _onlineUserIds.contains(authorUserId)
+        : _onlineUsernames.contains(normalizedUsername);
+    if (post.isOnline == isOnline) {
+      return post;
+    }
+    return post.copyWith(isOnline: isOnline);
+  }
+
+  void _applyRealtimePresenceToLoadedPosts() {
+    if (!_presenceReady || !mounted) {
+      return;
+    }
+    final detail = _detail;
+    if (detail == null) {
+      return;
+    }
+
+    final nextMain = _applyRealtimePresenceToPost(detail.mainPost);
+    var changed = !identical(nextMain, detail.mainPost);
+    final nextComments = <RiverSideTopicPostDetail>[];
+    for (final comment in _comments) {
+      final next = _applyRealtimePresenceToPost(comment);
+      if (!identical(next, comment)) {
+        changed = true;
+      }
+      nextComments.add(next);
+    }
+    if (!changed) {
+      return;
+    }
+
+    _mutateState(() {
+      _detail = detail.copyWith(mainPost: nextMain, comments: nextComments);
+      _comments = nextComments;
+    });
   }
 
   Future<void> _consumeRealtimeCommentUpdate() async {
@@ -86,12 +384,17 @@ extension _TopicDetailPageLoading on _TopicDetailPageState {
         if (item.postNumber <= 1 || !commentIds.add(item.id)) {
           continue;
         }
-        comments.add(item);
+        comments.add(_applyRealtimePresenceToPost(item));
       }
       comments.sort((a, b) => a.postNumber.compareTo(b.postNumber));
+      final mainPost = _applyRealtimePresenceToPost(detail.mainPost);
+      final mergedDetail = detail.copyWith(
+        mainPost: mainPost,
+        comments: comments,
+      );
 
       _mutateState(() {
-        _detail = detail;
+        _detail = mergedDetail;
         _comments = comments;
         _loadedPostIds
           ..clear()
@@ -165,7 +468,7 @@ extension _TopicDetailPageLoading on _TopicDetailPageState {
           continue;
         }
         existingIds.add(post.id);
-        merged.add(post);
+        merged.add(_applyRealtimePresenceToPost(post));
       }
       merged.sort((a, b) => a.postNumber.compareTo(b.postNumber));
 

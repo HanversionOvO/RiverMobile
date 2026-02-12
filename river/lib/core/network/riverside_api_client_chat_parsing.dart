@@ -12,6 +12,8 @@ extension RiverSideApiClientChatParsingMethods on RiverSideApiClient {
     final chatable = _toStringMap(source['chatable']);
     final meta = _toStringMap(source['meta']);
     final lastMessage = _toStringMap(source['last_message']);
+    final chatableLastMessage = _toStringMap(chatable['last_message']);
+    final metaLastMessage = _toStringMap(meta['last_message']);
     final membership = _toStringMap(source['membership']);
     final usersRaw =
         source['users'] ??
@@ -155,10 +157,18 @@ extension RiverSideApiClientChatParsingMethods on RiverSideApiClient {
       lastMessage['excerpt'],
       lastMessage['message'],
       lastMessage['cooked'],
+      chatableLastMessage['excerpt'],
+      chatableLastMessage['message'],
+      chatableLastMessage['cooked'],
+      metaLastMessage['excerpt'],
+      metaLastMessage['message'],
+      metaLastMessage['cooked'],
       source['last_message_excerpt'],
       source['last_message'],
       source['last_message_text'],
       source['last_message_summary'],
+      source['latest_message'],
+      source['latest_post_excerpt'],
     ]);
 
     final avatarFromUsers = displayUsers.isEmpty
@@ -185,6 +195,12 @@ extension RiverSideApiClientChatParsingMethods on RiverSideApiClient {
       lastMessageAt: DateTime.tryParse(
         (source['last_message_at'] ??
                 lastMessage['created_at'] ??
+                lastMessage['updated_at'] ??
+                chatableLastMessage['created_at'] ??
+                chatableLastMessage['updated_at'] ??
+                metaLastMessage['created_at'] ??
+                metaLastMessage['updated_at'] ??
+                source['last_message_sent_at'] ??
                 source['updated_at'] ??
                 '')
             .toString(),
@@ -457,9 +473,9 @@ extension RiverSideApiClientChatParsingMethods on RiverSideApiClient {
       return '';
     }
     if (value.startsWith(':') && value.endsWith(':') && value.length > 2) {
-      return value;
+      return value.substring(1, value.length - 1).trim();
     }
-    return ':$value:';
+    return value;
   }
 
   String _firstNonEmpty(List<dynamic> candidates) {

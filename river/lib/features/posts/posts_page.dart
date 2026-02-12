@@ -185,12 +185,23 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
       final cookie = _activeCookieHeader();
       final activeUsername =
           widget.dependencies.accountStore.activeRiverSideUsername;
-      final categories = await RiverSideCategoryStore.instance.load(
+      var categories = await RiverSideCategoryStore.instance.load(
         apiClient: widget.dependencies.accountStore.riverSideApiClient,
         username: activeUsername,
         cookieHeader: cookie,
         forceRefresh: forceRefresh,
       );
+      if (!forceRefresh &&
+          cookie != null &&
+          cookie.trim().isNotEmpty &&
+          categories.isEmpty) {
+        categories = await RiverSideCategoryStore.instance.load(
+          apiClient: widget.dependencies.accountStore.riverSideApiClient,
+          username: activeUsername,
+          cookieHeader: cookie,
+          forceRefresh: true,
+        );
+      }
       if (mounted) {
         setState(() {
           _categories = categories;
@@ -277,6 +288,19 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
     );
   }
 
+  Map<int, String> _buildCategoryNameMap() {
+    if (_categories.isEmpty) {
+      return const <int, String>{};
+    }
+    return <int, String>{
+      for (final category in _categories)
+        category.id: displayRiverSideCategoryName(
+          category: category,
+          allCategories: _categories,
+        ),
+    };
+  }
+
   Future<void> _openSearchPage() async {
     await Navigator.of(context).push(
       riverPageRoute<void>(
@@ -291,6 +315,7 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
     final easedHeaderFactor = Curves.easeOutCubic.transform(
       _headerScrollFactor,
     );
+    final categoryNameMap = _buildCategoryNameMap();
     final topHintOffset =
         MediaQuery.paddingOf(context).top +
         lerpDouble(72, 66, easedHeaderFactor)!;
@@ -315,6 +340,7 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
                       dependencies: widget.dependencies,
                       feed: feed,
                       boardId: _selectedBoardId,
+                      categoryNameMap: categoryNameMap,
                       filterVersion: _filterVersion,
                       onScrollOffsetChanged: (offset) {
                         if (_tabController.index != index) {
@@ -667,6 +693,7 @@ class _TopicListTab extends StatefulWidget {
     required this.dependencies,
     required this.feed,
     this.boardId,
+    required this.categoryNameMap,
     required this.filterVersion,
     this.onScrollOffsetChanged,
   });
@@ -674,6 +701,7 @@ class _TopicListTab extends StatefulWidget {
   final AppDependencies dependencies;
   final RiverSideTopicFeed feed;
   final int? boardId;
+  final Map<int, String> categoryNameMap;
   final int filterVersion;
   final ValueChanged<double>? onScrollOffsetChanged;
 
@@ -738,6 +766,17 @@ class _TopicListTabState extends State<_TopicListTab>
     if (currentScroll >= maxScroll - 200 && !_isLoadingMore && _hasMore) {
       _loadMore();
     }
+  }
+
+  String _displayCategoryName(RiverSideTopicSummary topic) {
+    final categoryId = topic.categoryId;
+    if (categoryId != null) {
+      final mapped = widget.categoryNameMap[categoryId];
+      if (mapped != null && mapped.trim().isNotEmpty) {
+        return mapped;
+      }
+    }
+    return topic.categoryName;
   }
 
   Future<void> _scrollToTopAndRefresh() async {
@@ -954,6 +993,7 @@ class _TopicListTabState extends State<_TopicListTab>
               final topic = _topics[index];
               return _TopicCard(
                 topic: topic,
+                displayCategoryName: _displayCategoryName(topic),
                 isHotFeed: widget.feed == RiverSideTopicFeed.hot,
                 onTap: () => _openDetail(topic),
                 onAuthorTap: () => _openAuthor(topic),
@@ -1011,12 +1051,14 @@ class _TopicCard extends StatelessWidget {
   const _TopicCard({
     super.key, // 鎺ㄨ崘鍔犱笂 super.key
     required this.topic,
+    required this.displayCategoryName,
     required this.isHotFeed,
     required this.onTap,
     required this.onAuthorTap,
   });
 
   final RiverSideTopicSummary topic;
+  final String displayCategoryName;
   final bool isHotFeed;
   final VoidCallback onTap;
   final VoidCallback onAuthorTap;
@@ -1206,7 +1248,7 @@ class _TopicCard extends StatelessWidget {
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
-                        topic.categoryName,
+                        displayCategoryName,
                         style: TextStyle(
                           fontSize: 11,
                           color: theme.colorScheme.onSurfaceVariant,

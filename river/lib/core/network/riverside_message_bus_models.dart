@@ -16,3 +16,28 @@ class RiverSideMessageBusEvent {
 
   bool get isStatus => channel == '/__status';
 }
+
+@immutable
+class RiverSidePresenceUser {
+  const RiverSidePresenceUser({required this.id, required this.username});
+
+  final int id;
+  final String username;
+}
+
+@immutable
+class RiverSidePresenceChannelState {
+  const RiverSidePresenceChannelState({
+    required this.channelName,
+    required this.lastMessageId,
+    required this.count,
+    required this.users,
+    required this.countOnly,
+  });
+
+  final String channelName;
+  final int lastMessageId;
+  final int count;
+  final List<RiverSidePresenceUser> users;
+  final bool countOnly;
+}

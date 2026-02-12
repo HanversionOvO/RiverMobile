@@ -1,6 +1,7 @@
 // ignore_for_file: use_build_context_synchronously
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -10,6 +11,7 @@ import 'package:markdown/markdown.dart' as md;
 import 'package:river/app/app_dependencies.dart';
 import 'package:river/core/constants.dart';
 import 'package:river/core/network/riverside_api_client.dart';
+import 'package:river/core/network/riverside_message_bus_models.dart';
 import 'package:river/core/network/riverside_topic_models.dart';
 import 'package:river/core/realtime/riverside_message_bus_poller.dart';
 import 'package:river/core/widgets/river_image_viewer.dart';
@@ -207,10 +209,15 @@ class _TopicDetailPageState extends State<TopicDetailPage>
   bool _hasRealtimeCommentUpdate = false;
   bool _skipNextEntranceAnimation = false;
   RiverSideMessageBusPoller? _messageBusPoller;
+  int _pollingBootstrapSerial = 0;
   final ValueNotifier<bool> _showBackToTopButtonNotifier = ValueNotifier<bool>(
     false,
   );
   String? _error;
+  bool _presenceReady = false;
+  final Set<int> _onlineUserIds = <int>{};
+  final Set<String> _onlineUsernames = <String>{};
+  final Map<int, String> _knownOnlineUsernameById = <int, String>{};
 
   // 闁稿繈鍎遍悧顒勫礋閺囩姵娈柟璨夊啫鐓戦柛?
   late AnimationController _entranceController;

@@ -394,8 +394,9 @@ class _RiverMarkdownEditorState extends State<RiverMarkdownEditor> {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      showDragHandle: false,
       backgroundColor: Colors.transparent,
-      builder: (_) => _StructuredEmojiPicker(
+      builder: (_) => RiverStructuredEmojiPicker(
         emojiUrls: widget.emojiUrls,
         emojiGroups: widget.emojiGroups,
         onSelected: (key) {
@@ -1007,22 +1008,27 @@ class _EmojiCategoryItem {
   final String coverKey;
 }
 
-class _StructuredEmojiPicker extends StatefulWidget {
-  const _StructuredEmojiPicker({
+class RiverStructuredEmojiPicker extends StatefulWidget {
+  const RiverStructuredEmojiPicker({
+    super.key,
     required this.emojiUrls,
     required this.emojiGroups,
     required this.onSelected,
+    this.title = '选择表情',
   });
 
   final Map<String, String> emojiUrls;
   final Map<String, List<String>> emojiGroups;
   final ValueChanged<String> onSelected;
+  final String title;
 
   @override
-  State<_StructuredEmojiPicker> createState() => _StructuredEmojiPickerState();
+  State<RiverStructuredEmojiPicker> createState() =>
+      _RiverStructuredEmojiPickerState();
 }
 
-class _StructuredEmojiPickerState extends State<_StructuredEmojiPicker> {
+class _RiverStructuredEmojiPickerState
+    extends State<RiverStructuredEmojiPicker> {
   late final List<_EmojiCategoryItem> _categories;
   int _selectedIndex = 0;
 
@@ -1120,7 +1126,7 @@ class _StructuredEmojiPickerState extends State<_StructuredEmojiPicker> {
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                '选择表情',
+                                widget.title,
                                 style: theme.textTheme.titleSmall?.copyWith(
                                   fontWeight: FontWeight.w700,
                                 ),

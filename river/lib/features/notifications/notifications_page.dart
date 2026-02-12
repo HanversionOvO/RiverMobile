@@ -212,6 +212,10 @@ class _NotificationsPageState extends State<NotificationsPage>
     _syncBackToTopVisibility();
   }
 
+  Future<void> _refreshCurrentTab() async {
+    await _loadAll(showLoading: false);
+  }
+
   String? _activeCookieHeader() {
     final username = widget.dependencies.accountStore.activeRiverSideUsername;
     if (username == null || username.isEmpty) return null;
@@ -390,6 +394,10 @@ class _NotificationsPageState extends State<NotificationsPage>
             ChatDetailPage(dependencies: widget.dependencies, channel: channel),
       ),
     );
+    if (!mounted) {
+      return;
+    }
+    await _loadAll(showLoading: false);
   }
 
   Future<bool> _confirmDeleteDirectMessage(
@@ -755,15 +763,15 @@ class _NotificationsPageState extends State<NotificationsPage>
           child: Padding(
             padding: EdgeInsets.only(
               top: topInset + lerpDouble(9, 8, collapse)!,
-              bottom: 8,
+              bottom: 6,
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 8, 8),
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(minHeight: 44),
+                  child: SizedBox(
+                    height: 44,
                     child: Stack(
                       children: [
                         Padding(
@@ -801,29 +809,6 @@ class _NotificationsPageState extends State<NotificationsPage>
                                                       .onSurfaceVariant,
                                                 ),
                                           ),
-                                          if (unreadNotifications > 0) ...[
-                                            const SizedBox(width: 6),
-                                            InkWell(
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
-                                              onTap:
-                                                  _markAllNotificationItemsAsRead,
-                                              child: Padding(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: 4,
-                                                      vertical: 2,
-                                                    ),
-                                                child: Icon(
-                                                  Icons.done_all_rounded,
-                                                  size: 16,
-                                                  color: theme
-                                                      .colorScheme
-                                                      .onSurfaceVariant,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
                                         ],
                                       ),
                                     ),
@@ -836,9 +821,11 @@ class _NotificationsPageState extends State<NotificationsPage>
                         Align(
                           alignment: Alignment.centerRight,
                           child: IconButton.filledTonal(
-                            onPressed: () => _loadAll(showLoading: false),
-                            tooltip: '刷新',
-                            icon: const Icon(Icons.refresh_rounded),
+                            onPressed: unreadNotifications > 0
+                                ? _markAllNotificationItemsAsRead
+                                : null,
+                            tooltip: '全部已读',
+                            icon: const Icon(Icons.done_all_rounded),
                           ),
                         ),
                       ],
@@ -924,23 +911,53 @@ class _NotificationsPageState extends State<NotificationsPage>
     );
   }
 
+  Widget _buildRefreshPlaceholder({
+    required Future<void> Function() onRefresh,
+    required Widget child,
+  }) {
+    return RefreshIndicator(
+      onRefresh: onRefresh,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: SizedBox(
+              height: constraints.maxHeight,
+              child: Center(child: child),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildNotificationsList(ThemeData theme) {
     if (_loading && _notifications.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
+      return _buildRefreshPlaceholder(
+        onRefresh: _refreshCurrentTab,
+        child: const CircularProgressIndicator(),
+      );
     }
 
     if (_error != null && _notifications.isEmpty) {
-      return _buildErrorView();
+      return _buildRefreshPlaceholder(
+        onRefresh: _refreshCurrentTab,
+        child: _buildErrorView(),
+      );
     }
 
     if (_notifications.isEmpty) {
-      return _buildEmptyView('暂无通知', Icons.notifications_none_rounded);
+      return _buildRefreshPlaceholder(
+        onRefresh: _refreshCurrentTab,
+        child: _buildEmptyView('暂无通知', Icons.notifications_none_rounded),
+      );
     }
 
     return RefreshIndicator(
-      onRefresh: () => _loadAll(showLoading: false),
+      onRefresh: _refreshCurrentTab,
       child: ListView.separated(
         controller: _notificationsScrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
         itemCount: _notifications.length + (_loadingMoreNotifications ? 1 : 0),
         separatorBuilder: (context, index) => const SizedBox(height: 12),
@@ -1183,20 +1200,27 @@ class _NotificationsPageState extends State<NotificationsPage>
     required ScrollController controller,
   }) {
     if (_loading && items.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
+      return _buildRefreshPlaceholder(
+        onRefresh: _refreshCurrentTab,
+        child: const CircularProgressIndicator(),
+      );
     }
 
     if (items.isEmpty) {
-      return _buildEmptyView(emptyMsg, Icons.chat_bubble_outline_rounded);
+      return _buildRefreshPlaceholder(
+        onRefresh: _refreshCurrentTab,
+        child: _buildEmptyView(emptyMsg, Icons.chat_bubble_outline_rounded),
+      );
     }
 
     return RefreshIndicator(
-      onRefresh: () => _loadAll(showLoading: false),
+      onRefresh: _refreshCurrentTab,
       child: ListView.separated(
         controller: controller,
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
         itemCount: items.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 12),
+        separatorBuilder: (context, index) => const SizedBox(height: 12),
         itemBuilder: (context, index) {
           final item = items[index];
           final title = item.name.trim().isNotEmpty
@@ -1207,6 +1231,7 @@ class _NotificationsPageState extends State<NotificationsPage>
               : (item.description.trim().isNotEmpty
                     ? item.description.trim().replaceAll('\n', ' ')
                     : '暂无最新消息');
+          final isUnread = item.unreadCount > 0;
           final directAvatar = item.avatarUrl.trim();
           final isDeletingDirect = _deletingDirectMessageIds.contains(item.id);
           final card = Container(
@@ -1261,17 +1286,45 @@ class _NotificationsPageState extends State<NotificationsPage>
                         ),
                       ),
               ),
-              title: Text(
-                title,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15,
-                ),
+              title: Row(
+                children: [
+                  if (isUnread) ...[
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.error,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  Expanded(
+                    child: Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                        color: isUnread
+                            ? theme.colorScheme.onSurface
+                            : theme.colorScheme.onSurface,
+                      ),
+                    ),
+                  ),
+                ],
               ),
               subtitle: Text(
                 subtitle,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: isUnread
+                      ? theme.colorScheme.onSurfaceVariant
+                      : theme.colorScheme.onSurfaceVariant,
+                  fontWeight: isUnread ? FontWeight.w600 : FontWeight.w400,
+                ),
               ),
               trailing: isDeletingDirect
                   ? const SizedBox(

@@ -6,8 +6,14 @@ extension RiverSideApiClientCategoryEmojiMethods on RiverSideApiClient {
     String? userApiKey,
     String? userApiClientId,
   }) async {
+    final categoriesUri = Uri.parse('$riverSideBaseUrl/categories.json')
+        .replace(
+          queryParameters: const <String, String>{
+            'include_subcategories': 'true',
+          },
+        );
     final response = await http.get(
-      Uri.parse('$riverSideBaseUrl/categories.json'),
+      categoriesUri,
       headers: _buildJsonHeaders(
         cookieHeader: cookieHeader,
         userApiKey: userApiKey,
@@ -39,33 +45,20 @@ extension RiverSideApiClientCategoryEmojiMethods on RiverSideApiClient {
       if (id != null) {
         rawById[id] = map;
       }
-    }
-
-    final missingSubCategoryIds = <int>{};
-    for (final raw in rawById.values) {
-      for (final subId in _asIntList(raw['subcategory_ids'])) {
-        if (!rawById.containsKey(subId)) {
-          missingSubCategoryIds.add(subId);
-        }
+      final subcategoryListRaw = map['subcategory_list'];
+      if (subcategoryListRaw is! List) {
+        continue;
       }
-    }
-
-    if (missingSubCategoryIds.isNotEmpty) {
-      final detailFutures = missingSubCategoryIds.map((subId) async {
-        final detail = await _fetchCategoryDetail(
-          categoryId: subId,
-          cookieHeader: cookieHeader,
-          userApiKey: userApiKey,
-          userApiClientId: userApiClientId,
-        );
-        return MapEntry(subId, detail);
-      });
-      final details = await Future.wait(detailFutures);
-      for (final entry in details) {
-        final detail = entry.value;
-        if (detail != null) {
-          rawById[entry.key] = detail;
+      for (final childRaw in subcategoryListRaw) {
+        final childMap = _toStringMap(childRaw);
+        final childId = _asInt(childMap['id']);
+        if (childId == null) {
+          continue;
         }
+        rawById[childId] = <String, dynamic>{
+          ...childMap,
+          'parent_category_id': _asInt(childMap['parent_category_id']) ?? id,
+        };
       }
     }
 
@@ -293,35 +286,6 @@ extension RiverSideApiClientCategoryEmojiMethods on RiverSideApiClient {
           : '${parent.name} / ${option.name}';
     }
     return names;
-  }
-
-  Future<Map<String, dynamic>?> _fetchCategoryDetail({
-    required int categoryId,
-    String? cookieHeader,
-    String? userApiKey,
-    String? userApiClientId,
-  }) async {
-    try {
-      final response = await http.get(
-        Uri.parse('$riverSideBaseUrl/c/$categoryId/show.json'),
-        headers: _buildJsonHeaders(
-          cookieHeader: cookieHeader,
-          userApiKey: userApiKey,
-          userApiClientId: userApiClientId,
-        ),
-      );
-      if (response.statusCode != 200) {
-        return null;
-      }
-      final decoded = _decodeJsonObject(
-        response,
-        fallbackMessage: 'Invalid category detail response format',
-      );
-      final raw = _toStringMap(decoded['category']);
-      return raw.isEmpty ? null : raw;
-    } catch (_) {
-      return null;
-    }
   }
 
   RiverSideCategoryOption? _parseCategoryOption(Map<String, dynamic> raw) {

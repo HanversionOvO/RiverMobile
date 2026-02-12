@@ -1,6 +1,14 @@
 part of 'chat_detail_page.dart';
 
 extension _ChatDetailPageView on _ChatDetailPageState {
+  String _normalizeEmojiKey(String raw) {
+    final value = raw.trim();
+    if (value.startsWith(':') && value.endsWith(':') && value.length > 2) {
+      return value.substring(1, value.length - 1).trim();
+    }
+    return value;
+  }
+
   String _displayName(RiverSideChatMessageItem item) {
     final value = item.displayName.trim();
     if (value.isNotEmpty) {
@@ -11,7 +19,8 @@ extension _ChatDetailPageView on _ChatDetailPageState {
   }
 
   Widget _emojiTokenWidget(String emojiName, {double size = 18}) {
-    final url = _emojiUrls[emojiName] ?? _emojiUrls[emojiName.toLowerCase()];
+    final key = _normalizeEmojiKey(emojiName);
+    final url = _emojiUrls[key] ?? _emojiUrls[key.toLowerCase()];
     if (url != null && url.trim().isNotEmpty) {
       final resolved = _resolveForumUrl(url);
       return CachedNetworkImage(
@@ -23,15 +32,13 @@ extension _ChatDetailPageView on _ChatDetailPageState {
         fadeInDuration: Duration.zero,
         fadeOutDuration: Duration.zero,
         errorWidget: (context, imageUrl, error) => Text(
-          _ChatDetailPageState._fallbackReactionSymbols[emojiName] ??
-              ':$emojiName:',
+          _ChatDetailPageState._fallbackReactionSymbols[key] ?? ':$key:',
           style: TextStyle(fontSize: size - 1),
         ),
       );
     }
     return Text(
-      _ChatDetailPageState._fallbackReactionSymbols[emojiName] ??
-          ':$emojiName:',
+      _ChatDetailPageState._fallbackReactionSymbols[key] ?? ':$key:',
       style: TextStyle(fontSize: size - 1),
     );
   }

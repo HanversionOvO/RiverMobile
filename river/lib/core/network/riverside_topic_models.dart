@@ -95,6 +95,7 @@ class RiverSideTopicPostDetail {
     required this.id,
     required this.topicId,
     required this.postNumber,
+    required this.authorUserId,
     required this.authorUsername,
     required this.authorDisplayName,
     required this.authorAvatarUrl,
@@ -112,6 +113,7 @@ class RiverSideTopicPostDetail {
   final int id;
   final int topicId;
   final int postNumber;
+  final int? authorUserId;
   final String authorUsername;
   final String authorDisplayName;
   final String authorAvatarUrl;
@@ -129,6 +131,8 @@ class RiverSideTopicPostDetail {
     int? id,
     int? topicId,
     int? postNumber,
+    int? authorUserId,
+    bool clearAuthorUserId = false,
     String? authorUsername,
     String? authorDisplayName,
     String? authorAvatarUrl,
@@ -147,6 +151,9 @@ class RiverSideTopicPostDetail {
       id: id ?? this.id,
       topicId: topicId ?? this.topicId,
       postNumber: postNumber ?? this.postNumber,
+      authorUserId: clearAuthorUserId
+          ? null
+          : (authorUserId ?? this.authorUserId),
       authorUsername: authorUsername ?? this.authorUsername,
       authorDisplayName: authorDisplayName ?? this.authorDisplayName,
       authorAvatarUrl: authorAvatarUrl ?? this.authorAvatarUrl,

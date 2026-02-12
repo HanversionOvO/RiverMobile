@@ -30,6 +30,22 @@ class _MinePageState extends State<MinePage> {
   // ---------------------------------------------------------------------------
   bool _isBusy = false;
   bool _isCheckingVersion = false;
+  final ScrollController _scrollController = ScrollController();
+  double _headerScrollFactor = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController
+      ..removeListener(_onScroll)
+      ..dispose();
+    super.dispose();
+  }
 
   UserAccount? get _activeAccount =>
       widget.dependencies.accountStore.activeRiverSideAccount;
@@ -239,6 +255,17 @@ class _MinePageState extends State<MinePage> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
+  void _onScroll() {
+    final offset = _scrollController.hasClients ? _scrollController.offset : 0;
+    final next = (offset / 96).clamp(0.0, 1.0);
+    if ((_headerScrollFactor - next).abs() < 0.01 || !mounted) {
+      return;
+    }
+    setState(() {
+      _headerScrollFactor = next;
+    });
+  }
+
   // ---------------------------------------------------------------------------
   // UI 构建
   // ---------------------------------------------------------------------------
@@ -256,239 +283,225 @@ class _MinePageState extends State<MinePage> {
         final hasUpdate = updateChecker.hasUpdate;
         final subtitle = _buildVersionSubtitle(updateChecker);
         final isChecking = _isCheckingVersion || updateChecker.isChecking;
+        final theme = Theme.of(context);
+        final easedHeaderFactor = Curves.easeOutCubic.transform(
+          _headerScrollFactor,
+        );
 
         return Scaffold(
-          body: CustomScrollView(
-            slivers: [
-              SliverAppBar(
-                pinned: true,
-                floating: false,
-                automaticallyImplyLeading: false,
-                expandedHeight: 96,
-                toolbarHeight: 58,
-                backgroundColor: Colors.transparent,
-                surfaceTintColor: Colors.transparent,
-                elevation: 0,
-                scrolledUnderElevation: 0,
-                flexibleSpace: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final theme = Theme.of(context);
-                    final topInset = MediaQuery.paddingOf(context).top;
-                    final minHeight = kToolbarHeight + topInset;
-                    final maxHeight = 96 + topInset;
-                    final current = constraints.biggest.height;
-                    final tRaw =
-                        ((current - minHeight) / (maxHeight - minHeight)).clamp(
-                          0.0,
-                          1.0,
-                        );
-                    final t = Curves.easeOutCubic.transform(tRaw);
-                    final collapse = 1 - t;
-                    final subtitle = account == null
-                        ? '未登录'
-                        : '@${account.username}';
-                    final titleTopPadding =
-                        topInset + lerpDouble(9, 7, collapse)!;
-                    final subtitleVisibility = (1.0 - collapse).clamp(0.0, 1.0);
-                    return Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [
-                                theme.colorScheme.primaryContainer.withValues(
-                                  alpha: lerpDouble(0.30, 0.42, t)!,
-                                ),
-                                theme.colorScheme.surfaceContainerLowest
-                                    .withValues(
-                                      alpha: lerpDouble(0.92, 0.98, t)!,
-                                    ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        ClipRect(
-                          child: BackdropFilter(
-                            filter: ImageFilter.blur(
-                              sigmaX: lerpDouble(5, 9, t)!,
-                              sigmaY: lerpDouble(5, 9, t)!,
-                            ),
-                            child: const SizedBox.expand(),
-                          ),
-                        ),
-                        Padding(
-                          padding: EdgeInsets.fromLTRB(
-                            16,
-                            titleTopPadding,
-                            16,
-                            0,
-                          ),
-                          child: AnimatedOpacity(
-                            duration: const Duration(milliseconds: 180),
-                            opacity: lerpDouble(0.86, 1.0, t)!,
-                            child: Align(
-                              alignment: Alignment.topLeft,
-                              child: Padding(
-                                padding: const EdgeInsets.only(right: 64),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      '我的',
-                                      textAlign: TextAlign.left,
-                                      style: theme.textTheme.titleLarge
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w800,
-                                            fontSize: 21,
-                                            letterSpacing: -0.2,
-                                          ),
-                                    ),
-                                    SizedBox(
-                                      height: lerpDouble(2, 0, collapse)!,
-                                    ),
-                                    ClipRect(
-                                      child: Align(
-                                        alignment: Alignment.centerLeft,
-                                        heightFactor: subtitleVisibility,
-                                        child: Opacity(
-                                          opacity: subtitleVisibility,
-                                          child: Text(
-                                            subtitle,
-                                            style: theme.textTheme.labelMedium
-                                                ?.copyWith(
-                                                  color: theme
-                                                      .colorScheme
-                                                      .onSurfaceVariant,
-                                                ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
+          body: Column(
+            children: [
+              _buildTopHeader(theme, easedHeaderFactor, account),
+              Expanded(
+                child: CustomScrollView(
+                  controller: _scrollController,
+                  slivers: [
+                    SliverToBoxAdapter(child: _buildHeader(context, account)),
+                    SliverPadding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      sliver: SliverList(
+                        delegate: SliverChildListDelegate([
+                          const SizedBox(height: 24),
+                          _SectionTitle(title: '通用设置'),
+                          _SettingsCard(
+                            children: [
+                              _SettingsTile(
+                                icon: Icons.palette_outlined,
+                                title: '外观',
+                                subtitle: '主题色、深色模式、字体大小',
+                                onTap: _openAppearanceSettings,
                               ),
-                            ),
+                              const _SettingsDivider(),
+                              _SettingsTile(
+                                icon: Icons.sd_storage_outlined,
+                                title: '存储空间',
+                                subtitle: '缓存清理',
+                                onTap: _openStorageSettings,
+                              ),
+                            ],
                           ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
-                actions: [
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: IconButton.filledTonal(
-                      onPressed: _showAccountManagerSheet,
-                      tooltip: '账号管理',
-                      icon: const Icon(Icons.manage_accounts_rounded),
-                    ),
-                  ),
-                ],
-              ),
-              SliverToBoxAdapter(child: _buildHeader(context, account)),
-
-              SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                sliver: SliverList(
-                  delegate: SliverChildListDelegate([
-                    const SizedBox(height: 24),
-                    _SectionTitle(title: '通用设置'),
-                    _SettingsCard(
-                      children: [
-                        _SettingsTile(
-                          icon: Icons.palette_outlined,
-                          title: '外观',
-                          subtitle: '主题色、深色模式、字体大小',
-                          onTap: _openAppearanceSettings,
-                        ),
-                        // 增加了分隔线
-                        const _SettingsDivider(),
-                        _SettingsTile(
-                          icon: Icons.sd_storage_outlined,
-                          title: '存储空间',
-                          subtitle: '缓存清理',
-                          onTap: _openStorageSettings,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-                    _SectionTitle(title: '其他'), // 改为其他更合适
-                    _SettingsCard(
-                      children: [
-                        _SettingsTile(
-                          icon: Icons.system_update_alt_rounded,
-                          title: '版本',
-                          subtitle: subtitle,
-                          onTap: _openVersionDialog,
-                          trailing: isChecking
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    if (hasUpdate)
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 6,
-                                          vertical: 2,
+                          const SizedBox(height: 24),
+                          _SectionTitle(title: '其他'),
+                          _SettingsCard(
+                            children: [
+                              _SettingsTile(
+                                icon: Icons.system_update_alt_rounded,
+                                title: '版本',
+                                subtitle: subtitle,
+                                onTap: _openVersionDialog,
+                                trailing: isChecking
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
                                         ),
-                                        decoration: BoxDecoration(
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.errorContainer,
-                                          borderRadius: BorderRadius.circular(
-                                            999,
-                                          ),
-                                        ),
-                                        child: Text(
-                                          '可更新',
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .labelSmall
-                                              ?.copyWith(
+                                      )
+                                    : Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (hasUpdate)
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 6,
+                                                    vertical: 2,
+                                                  ),
+                                              decoration: BoxDecoration(
                                                 color: Theme.of(
                                                   context,
-                                                ).colorScheme.onErrorContainer,
-                                                fontWeight: FontWeight.w700,
+                                                ).colorScheme.errorContainer,
+                                                borderRadius:
+                                                    BorderRadius.circular(999),
                                               ),
-                                        ),
+                                              child: Text(
+                                                '可更新',
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .labelSmall
+                                                    ?.copyWith(
+                                                      color: Theme.of(context)
+                                                          .colorScheme
+                                                          .onErrorContainer,
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                    ),
+                                              ),
+                                            ),
+                                          if (hasUpdate)
+                                            const SizedBox(width: 6),
+                                          Icon(
+                                            Icons.chevron_right_rounded,
+                                            color: Colors.grey.withOpacity(0.5),
+                                            size: 20,
+                                          ),
+                                        ],
                                       ),
-                                    if (hasUpdate) const SizedBox(width: 6),
-                                    Icon(
-                                      Icons.chevron_right_rounded,
-                                      color: Colors.grey.withOpacity(0.5),
-                                      size: 20,
-                                    ),
-                                  ],
-                                ),
-                        ),
-                        const _SettingsDivider(),
-                        _SettingsTile(
-                          icon: Icons.info_outline_rounded,
-                          title: '关于 River',
-                          subtitle: '应用信息与项目说明',
-                          onTap: _openAboutPage,
-                        ),
-                      ],
+                              ),
+                              const _SettingsDivider(),
+                              _SettingsTile(
+                                icon: Icons.info_outline_rounded,
+                                title: '关于 River',
+                                subtitle: '应用信息与项目说明',
+                                onTap: _openAboutPage,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 100),
+                        ]),
+                      ),
                     ),
-
-                    const SizedBox(height: 100),
-                  ]),
+                  ],
                 ),
               ),
             ],
           ),
         );
       },
+    );
+  }
+
+  Widget _buildTopHeader(ThemeData theme, double t, UserAccount? account) {
+    final topInset = MediaQuery.paddingOf(context).top;
+    final collapse = t.clamp(0.0, 1.0);
+    const titleSize = 21.0;
+    final subtitleVisibility = (1.0 - collapse).clamp(0.0, 1.0);
+    final borderAlpha = lerpDouble(0.18, 0.26, collapse)!;
+    final subtitle = account == null ? '未登录' : '@${account.username}';
+
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            theme.colorScheme.surface.withValues(
+              alpha: lerpDouble(0.90, 0.96, t)!,
+            ),
+            theme.colorScheme.surfaceContainerLowest.withValues(
+              alpha: lerpDouble(0.82, 0.92, t)!,
+            ),
+          ],
+        ),
+        border: Border(
+          bottom: BorderSide(
+            color: theme.colorScheme.outlineVariant.withValues(
+              alpha: borderAlpha,
+            ),
+          ),
+        ),
+      ),
+      child: ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(
+            sigmaX: lerpDouble(7, 11, t)!,
+            sigmaY: lerpDouble(7, 11, t)!,
+          ),
+          child: Padding(
+            padding: EdgeInsets.only(
+              top: topInset + lerpDouble(9, 8, collapse)!,
+              bottom: 6,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 8, 8),
+              child: SizedBox(
+                height: 44,
+                child: Stack(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(right: 64),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '我的',
+                              textAlign: TextAlign.left,
+                              style: theme.textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.2,
+                                fontSize: titleSize,
+                              ),
+                            ),
+                            ClipRect(
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                heightFactor: subtitleVisibility,
+                                child: Opacity(
+                                  opacity: subtitleVisibility,
+                                  child: Text(
+                                    subtitle,
+                                    style: theme.textTheme.labelMedium
+                                        ?.copyWith(
+                                          color: theme
+                                              .colorScheme
+                                              .onSurfaceVariant,
+                                        ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: IconButton.filledTonal(
+                        onPressed: _showAccountManagerSheet,
+                        tooltip: '账号管理',
+                        icon: const Icon(Icons.manage_accounts_rounded),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 

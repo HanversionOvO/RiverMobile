@@ -1,0 +1,21 @@
+curl 'https://river-side.cc/chat/2/react/28068' \
+  -X 'PUT' \
+  -H 'accept: */*' \
+  -H 'accept-language: zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6' \
+  -H 'content-type: application/x-www-form-urlencoded; charset=UTF-8' \
+  -b 'g_state={"i_l":0,"i_ll":1770737903889,"i_b":"+pJpwyGKSXA49euZjkqCvtm2cTyTZplMG9MDn/NJ0bg","i_e":{"enable_itp_optimization":0}}; _forum_session=hB2mhcKXn6ZRMdSgq73mYTZMYsYHCRhXwRJRxVrh0eopfsq1idzKMtr%2FHpL8EnJlnVbUR5gKKiCaZndSHx0CSJNW4CRoO5xIgeVgHPJd4pUrdUBZVBqQeHDVmL8xoCsVHjRVQik0WfkkG6ieH60C7e0EsTQ4qaz11kKpOPFc73TKE%2Fa%2BCIsh6q1C3CiX6t0Xtsnh1N%2B0I1sYdky7%2FRx4kRzCmfedLwC5i%2FMkByxQ9RZKFUaP%2FA%2BBZ3x82NQxA8aIs1NoqV7oR7MEu7Txs%2FA%3D--k9NlRtuCSLlSEOE2--asc9Dcj5EgvWDpDhTcellg%3D%3D; _t=gk5AYQRiaQbGBWdagkiDqVPkHAmy1bqS%2FBrAW7IbJt4zh7U4y7stUZRWzT72sJV0BB6CHp%2BeFHmQv1wFlzUNmFyP1RySopdW8dHPY2hx%2FQ6UT5NRrYWgXhb43y4YXhZWPwiMHujOij3V%2FcvaoCXvRshAHOBGR%2FI5dRWa3x9fkLcWnuR2IXs4oWoou3%2BIotfJlx0n8OYQRznrkBP0ifoUqIml5FwWPcrjNnbK2nffyAmmT47v6y0es9I8MH9sf7XqDpqvxgZdLpt%2FTt%2B1%2BYS84CrlwKUqkH3xJRSgX4oI81Q%3D--fBjmrKytFNu%2FGfqn--x6HJZNuCoPNoGpLBfGGzCQ%3D%3D; cf_clearance=6yD1Tpvs8AlS8n0KmdQj2MVQ2yjWDOO4KXPrWfqVwvE-1770906139-1.2.1.1-2TEkJEKVC_euXuvcAsjNuW.8d2n8hYlfzUi_Cw5bc5EMaD_CpsItg1cRU6SON_zSsZ5ujPjRTh70Dujwj1X3dFlOZOE_wgmgN.kpUYBvJ1TCusDcZAtzbza9oI6ckqwxVioUSBHtb9gmRgEHje8Zt1yQnULxTp4ed88aE114OsDk7K_BMRX9.2cD68nyvB23hYW7bOx4LxAOAbUhBsF8NwMYq7rkU.mepOARZGLBHmE' \
+  -H 'discourse-logged-in: true' \
+  -H 'discourse-present: true' \
+  -H 'origin: https://river-side.cc' \
+  -H 'priority: u=1, i' \
+  -H 'referer: https://river-side.cc/' \
+  -H 'sec-ch-ua: "Not(A:Brand";v="8", "Chromium";v="144", "Microsoft Edge";v="144"' \
+  -H 'sec-ch-ua-mobile: ?0' \
+  -H 'sec-ch-ua-platform: "Windows"' \
+  -H 'sec-fetch-dest: empty' \
+  -H 'sec-fetch-mode: cors' \
+  -H 'sec-fetch-site: same-origin' \
+  -H 'user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0' \
+  -H 'x-csrf-token: CKUodVZVqcUGqoTo4w9obs08h9IYLsSjcCAzpHv6-4MAxbIWkTk3BFzkpVHxbdNXzpugPD-Rs8RzVO--cVJrHw' \
+  -H 'x-requested-with: XMLHttpRequest' \
+  --data-raw 'react_action=remove&emoji=s11'

@@ -12,6 +12,7 @@ extension RiverSideApiClientParsingMethods on RiverSideApiClient {
 
     final id = _asInt(post['id']);
     final postNumber = _asInt(post['post_number']);
+    final authorUserId = _asInt(post['user_id']);
     if (id == null || postNumber == null) {
       return null;
     }
@@ -53,6 +54,7 @@ extension RiverSideApiClientParsingMethods on RiverSideApiClient {
       id: id,
       topicId: topicId,
       postNumber: postNumber,
+      authorUserId: authorUserId,
       authorUsername: username,
       authorDisplayName: displayName,
       authorAvatarUrl: _normalizeAvatarUrl(avatarTemplate),
