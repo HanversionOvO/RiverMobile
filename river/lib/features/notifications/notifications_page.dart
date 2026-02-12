@@ -1216,40 +1216,43 @@ class _NotificationsPageState extends State<NotificationsPage>
             closeOnScroll: true,
             endActionPane: ActionPane(
               motion: const DrawerMotion(),
-              extentRatio: 0.26,
+              extentRatio: 0.30,
               children: [
-                CustomSlidableAction(
-                  autoClose: true,
-                  borderRadius: BorderRadius.circular(16),
-                  backgroundColor: theme.colorScheme.errorContainer,
-                  foregroundColor: theme.colorScheme.onErrorContainer,
-                  onPressed: (_) async {
-                    if (!canSwipeDelete) {
-                      return;
-                    }
-                    final confirmed = await _confirmDeleteDirectMessage(item);
-                    if (!confirmed) {
-                      return;
-                    }
-                    await _deleteDirectMessageChannel(item);
-                  },
-                  child: isDeletingDirect
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.delete_outline_rounded),
-                            SizedBox(height: 4),
-                            Text(
-                              '删除',
-                              style: TextStyle(fontWeight: FontWeight.w600),
-                            ),
-                          ],
-                        ),
+                Padding(
+                  padding: const EdgeInsets.only(left: 10),
+                  child: CustomSlidableAction(
+                    autoClose: true,
+                    borderRadius: BorderRadius.circular(16),
+                    backgroundColor: theme.colorScheme.errorContainer,
+                    foregroundColor: theme.colorScheme.onErrorContainer,
+                    onPressed: (_) async {
+                      if (!canSwipeDelete) {
+                        return;
+                      }
+                      final confirmed = await _confirmDeleteDirectMessage(item);
+                      if (!confirmed) {
+                        return;
+                      }
+                      await _deleteDirectMessageChannel(item);
+                    },
+                    child: isDeletingDirect
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.delete_outline_rounded),
+                              SizedBox(height: 4),
+                              Text(
+                                '删除',
+                                style: TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                            ],
+                          ),
+                  ),
                 ),
               ],
             ),

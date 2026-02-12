@@ -1139,161 +1139,166 @@ class _StructuredEmojiPickerState extends State<_StructuredEmojiPicker> {
                     ),
                   ),
                   Expanded(
-                    child: Row(
-                      children: [
-                        SizedBox(
-                          width: 72,
-                          child: ListView.builder(
-                            physics: const ClampingScrollPhysics(),
-                            padding: const EdgeInsets.fromLTRB(8, 4, 8, 10),
-                            itemCount: _categories.length,
-                            itemBuilder: (context, index) {
-                              final item = _categories[index];
-                              final selectedCategory = index == _selectedIndex;
-                              final coverUrl =
-                                  widget.emojiUrls[item.coverKey] ?? '';
-                              return Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 5,
-                                ),
-                                child: Tooltip(
-                                  message: item.name,
-                                  child: InkWell(
-                                    borderRadius: BorderRadius.circular(14),
-                                    onTap: () {
-                                      if (_selectedIndex == index) return;
-                                      setState(() => _selectedIndex = index);
-                                      HapticFeedback.selectionClick();
-                                    },
-                                    child: AnimatedContainer(
-                                      duration: const Duration(
-                                        milliseconds: 200,
-                                      ),
-                                      curve: Curves.easeOutCubic,
-                                      height: 52,
-                                      decoration: BoxDecoration(
-                                        color: selectedCategory
-                                            ? colorScheme.primaryContainer
-                                            : colorScheme.surfaceContainerLow,
-                                        borderRadius: BorderRadius.circular(14),
-                                        border: Border.all(
+                    child: ClipRect(
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            width: 72,
+                            child: ListView.builder(
+                              physics: const ClampingScrollPhysics(),
+                              padding: const EdgeInsets.fromLTRB(8, 4, 8, 10),
+                              itemCount: _categories.length,
+                              itemBuilder: (context, index) {
+                                final item = _categories[index];
+                                final selectedCategory =
+                                    index == _selectedIndex;
+                                final coverUrl =
+                                    widget.emojiUrls[item.coverKey] ?? '';
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 5,
+                                  ),
+                                  child: Tooltip(
+                                    message: item.name,
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(14),
+                                      onTap: () {
+                                        if (_selectedIndex == index) return;
+                                        setState(() => _selectedIndex = index);
+                                        HapticFeedback.selectionClick();
+                                      },
+                                      child: AnimatedContainer(
+                                        duration: const Duration(
+                                          milliseconds: 200,
+                                        ),
+                                        curve: Curves.easeOutCubic,
+                                        height: 52,
+                                        decoration: BoxDecoration(
                                           color: selectedCategory
-                                              ? colorScheme.primary.withValues(
-                                                  alpha: 0.28,
-                                                )
-                                              : colorScheme.outlineVariant
-                                                    .withValues(alpha: 0.22),
-                                        ),
-                                      ),
-                                      child: Center(
-                                        child: ClipRRect(
+                                              ? colorScheme.primaryContainer
+                                              : colorScheme.surfaceContainerLow,
                                           borderRadius: BorderRadius.circular(
-                                            10,
+                                            14,
                                           ),
-                                          child: CachedNetworkImage(
-                                            imageUrl: coverUrl,
-                                            width: 28,
-                                            height: 28,
-                                            fit: BoxFit.contain,
-                                            fadeInDuration: const Duration(
-                                              milliseconds: 120,
+                                          border: Border.all(
+                                            color: selectedCategory
+                                                ? colorScheme.primary
+                                                      .withValues(alpha: 0.28)
+                                                : colorScheme.outlineVariant
+                                                      .withValues(alpha: 0.22),
+                                          ),
+                                        ),
+                                        child: Center(
+                                          child: ClipRRect(
+                                            borderRadius: BorderRadius.circular(
+                                              10,
                                             ),
-                                            placeholder: (context, imageUrl) =>
-                                                Container(
-                                                  width: 28,
-                                                  height: 28,
-                                                  decoration: BoxDecoration(
-                                                    color: colorScheme
-                                                        .surfaceContainerHighest,
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          8,
-                                                        ),
-                                                  ),
-                                                ),
-                                            errorWidget:
-                                                (context, imageUrl, error) =>
-                                                    Icon(
-                                                      Icons.tag_faces_rounded,
-                                                      size: 20,
+                                            child: CachedNetworkImage(
+                                              imageUrl: coverUrl,
+                                              width: 28,
+                                              height: 28,
+                                              fit: BoxFit.contain,
+                                              fadeInDuration: const Duration(
+                                                milliseconds: 120,
+                                              ),
+                                              placeholder:
+                                                  (
+                                                    context,
+                                                    imageUrl,
+                                                  ) => Container(
+                                                    width: 28,
+                                                    height: 28,
+                                                    decoration: BoxDecoration(
                                                       color: colorScheme
-                                                          .onSurfaceVariant,
+                                                          .surfaceContainerHighest,
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            8,
+                                                          ),
                                                     ),
+                                                  ),
+                                              errorWidget:
+                                                  (context, imageUrl, error) =>
+                                                      Icon(
+                                                        Icons.tag_faces_rounded,
+                                                        size: 20,
+                                                        color: colorScheme
+                                                            .onSurfaceVariant,
+                                                      ),
+                                            ),
                                           ),
                                         ),
                                       ),
                                     ),
                                   ),
-                                ),
-                              );
-                            },
+                                );
+                              },
+                            ),
                           ),
-                        ),
-                        VerticalDivider(
-                          width: 1,
-                          thickness: 1,
-                          color: colorScheme.outlineVariant.withValues(
-                            alpha: 0.2,
+                          VerticalDivider(
+                            width: 1,
+                            thickness: 1,
+                            color: colorScheme.outlineVariant.withValues(
+                              alpha: 0.2,
+                            ),
                           ),
-                        ),
-                        Expanded(
-                          child: ClipRect(
-                            child: Container(
-                              color: colorScheme.surface,
-                              child: AnimatedSwitcher(
-                                duration: const Duration(milliseconds: 180),
-                                switchInCurve: Curves.easeOutCubic,
-                                switchOutCurve: Curves.easeInCubic,
-                                transitionBuilder: (child, animation) {
-                                  return FadeTransition(
-                                    opacity: animation,
-                                    child: SlideTransition(
-                                      position: Tween<Offset>(
-                                        begin: const Offset(0.03, 0),
-                                        end: Offset.zero,
-                                      ).animate(animation),
-                                      child: child,
-                                    ),
-                                  );
-                                },
-                                child: GridView.builder(
-                                  key: ValueKey<String>(selected.name),
-                                  physics: const ClampingScrollPhysics(),
-                                  clipBehavior: Clip.hardEdge,
-                                  primary: false,
-                                  padding: const EdgeInsets.fromLTRB(
-                                    12,
-                                    8,
-                                    12,
-                                    14,
-                                  ),
-                                  gridDelegate:
-                                      const SliverGridDelegateWithFixedCrossAxisCount(
-                                        crossAxisCount: 7,
-                                        mainAxisSpacing: 10,
-                                        crossAxisSpacing: 10,
-                                        childAspectRatio: 1,
-                                      ),
-                                  itemCount: selectedKeys.length,
-                                  itemBuilder: (context, index) {
-                                    final key = selectedKeys[index];
-                                    final url = widget.emojiUrls[key] ?? '';
-                                    return TweenAnimationBuilder<double>(
-                                      tween: Tween<double>(begin: 0.92, end: 1),
-                                      duration: Duration(
-                                        milliseconds: 120 + (index % 14) * 14,
-                                      ),
-                                      curve: Curves.easeOutCubic,
-                                      builder: (context, value, child) {
-                                        return Opacity(
-                                          opacity: value,
-                                          child: Transform.scale(
-                                            scale: value,
-                                            child: child,
+                          Expanded(
+                            child: ClipRect(
+                              child: Container(
+                                color: colorScheme.surface,
+                                child: AnimatedSwitcher(
+                                  duration: const Duration(milliseconds: 180),
+                                  switchInCurve: Curves.easeOutCubic,
+                                  switchOutCurve: Curves.easeInCubic,
+                                  layoutBuilder:
+                                      (currentChild, previousChildren) {
+                                        return ClipRect(
+                                          child: Stack(
+                                            fit: StackFit.expand,
+                                            clipBehavior: Clip.hardEdge,
+                                            children: <Widget>[
+                                              ...previousChildren,
+                                              currentChild ??
+                                                  const SizedBox.shrink(),
+                                            ],
                                           ),
                                         );
                                       },
-                                      child: InkWell(
+                                  transitionBuilder: (child, animation) {
+                                    return FadeTransition(
+                                      opacity: animation,
+                                      child: SlideTransition(
+                                        position: Tween<Offset>(
+                                          begin: const Offset(0.03, 0),
+                                          end: Offset.zero,
+                                        ).animate(animation),
+                                        child: child,
+                                      ),
+                                    );
+                                  },
+                                  child: GridView.builder(
+                                    key: ValueKey<String>(selected.name),
+                                    physics: const ClampingScrollPhysics(),
+                                    clipBehavior: Clip.hardEdge,
+                                    primary: false,
+                                    padding: const EdgeInsets.fromLTRB(
+                                      12,
+                                      8,
+                                      12,
+                                      14,
+                                    ),
+                                    gridDelegate:
+                                        const SliverGridDelegateWithFixedCrossAxisCount(
+                                          crossAxisCount: 7,
+                                          mainAxisSpacing: 10,
+                                          crossAxisSpacing: 10,
+                                          childAspectRatio: 1,
+                                        ),
+                                    itemCount: selectedKeys.length,
+                                    itemBuilder: (context, index) {
+                                      final key = selectedKeys[index];
+                                      final url = widget.emojiUrls[key] ?? '';
+                                      return InkWell(
                                         borderRadius: BorderRadius.circular(12),
                                         onTap: () => widget.onSelected(key),
                                         child: Ink(
@@ -1347,15 +1352,15 @@ class _StructuredEmojiPickerState extends State<_StructuredEmojiPicker> {
                                             ),
                                           ),
                                         ),
-                                      ),
-                                    );
-                                  },
+                                      );
+                                    },
+                                  ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ],

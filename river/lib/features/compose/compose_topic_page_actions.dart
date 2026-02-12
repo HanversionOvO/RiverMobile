@@ -1,6 +1,71 @@
 part of 'compose_topic_page.dart';
 
 extension _ComposeTopicPageActions on _ComposeTopicPageState {
+  String _topicDraftKey() {
+    final username =
+        widget.dependencies.accountStore.activeRiverSideUsername?.trim() ?? '';
+    if (username.isEmpty) {
+      return 'river_topic_guest';
+    }
+    return 'river_topic_${username.toLowerCase()}';
+  }
+
+  RiverMarkdownDraftEntry _mapDraftToEditorEntry(RiverSideComposerDraft draft) {
+    final subtitle = draft.markdown.trim().isNotEmpty
+        ? draft.markdown.trim()
+        : '无内容';
+    final title = draft.title.trim().isNotEmpty ? draft.title.trim() : '发帖草稿';
+    return RiverMarkdownDraftEntry(
+      draftKey: draft.draftKey,
+      sequence: draft.sequence,
+      markdown: draft.markdown,
+      title: title,
+      subtitle: subtitle,
+      updatedAt: draft.createdAt,
+    );
+  }
+
+  Future<List<RiverMarkdownDraftEntry>> _loadComposeDraftsForEditor({
+    required String draftKey,
+  }) async {
+    final cookie = _activeCookieHeader();
+    if (cookie == null || cookie.trim().isEmpty) {
+      return const <RiverMarkdownDraftEntry>[];
+    }
+    final drafts = await widget.dependencies.accountStore.riverSideApiClient
+        .fetchComposerDrafts(cookieHeader: cookie, offset: 0, limit: 50);
+    return drafts
+        .where((draft) {
+          final action = draft.action.trim().toLowerCase();
+          return draft.draftKey == draftKey ||
+              action == 'createtopic' ||
+              action == 'create_topic';
+        })
+        .map(_mapDraftToEditorEntry)
+        .toList(growable: false);
+  }
+
+  Future<bool> _deleteComposeDraftForEditor(
+    RiverMarkdownDraftEntry draft,
+  ) async {
+    final cookie = _activeCookieHeader();
+    if (cookie == null || cookie.trim().isEmpty) {
+      return false;
+    }
+    await widget.dependencies.accountStore.riverSideApiClient
+        .deleteComposerDraft(
+          draftKey: draft.draftKey,
+          sequence: draft.sequence,
+          cookieHeader: cookie,
+        );
+    if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('草稿已删除')));
+    }
+    return true;
+  }
+
   Future<void> _loadMetaData() async {
     final cookie = _activeCookieHeader();
     _mutateState(() => _loadingMeta = true);
@@ -61,6 +126,69 @@ extension _ComposeTopicPageActions on _ComposeTopicPageState {
 
   Future<void> _openEditor() async {
     HapticFeedback.lightImpact();
+    final draftKey = _topicDraftKey();
+
+    Future<RiverMarkdownDraftEntry?> loadCurrentDraft() async {
+      final cookie = _activeCookieHeader();
+      if (cookie == null || cookie.trim().isEmpty) {
+        return null;
+      }
+      final draft = await widget.dependencies.accountStore.riverSideApiClient
+          .fetchComposerDraft(draftKey: draftKey, cookieHeader: cookie);
+      if (draft == null) {
+        return null;
+      }
+      if (mounted) {
+        _mutateState(() {
+          if (_titleController.text.trim().isEmpty &&
+              draft.title.trim().isNotEmpty) {
+            _titleController.text = draft.title.trim();
+          }
+          if (_selectedCategoryId == null && draft.categoryId != null) {
+            _selectedCategoryId = draft.categoryId;
+          }
+        });
+      }
+      return _mapDraftToEditorEntry(draft);
+    }
+
+    Future<RiverMarkdownDraftEntry?> saveDraft(
+      String markdown,
+      int? sequence,
+    ) async {
+      final cookie = _activeCookieHeader();
+      if (cookie == null || cookie.trim().isEmpty) {
+        return null;
+      }
+      final nextSequence = await widget
+          .dependencies
+          .accountStore
+          .riverSideApiClient
+          .saveComposerDraft(
+            draftKey: draftKey,
+            sequence: sequence ?? 0,
+            data: <String, dynamic>{
+              'reply': markdown,
+              'action': 'createTopic',
+              'title': _titleController.text.trim(),
+              'categoryId': _selectedCategoryId,
+              'archetypeId': 'regular',
+            },
+            cookieHeader: cookie,
+          );
+      final draftTitle = _titleController.text.trim().isEmpty
+          ? '发帖草稿'
+          : _titleController.text.trim();
+      return RiverMarkdownDraftEntry(
+        draftKey: draftKey,
+        sequence: nextSequence,
+        markdown: markdown,
+        title: draftTitle,
+        subtitle: markdown.trim(),
+        updatedAt: DateTime.now(),
+      );
+    }
+
     // 打开全屏编辑器
     final saved = await showModalBottomSheet<bool>(
       context: context,
@@ -76,6 +204,10 @@ extension _ComposeTopicPageActions on _ComposeTopicPageState {
           emojiGroups: _emojiGroups,
           maxHeight: MediaQuery.sizeOf(context).height * 0.92, // 更高的占比
           onUploadImage: _uploadImage,
+          onLoadCurrentDraft: loadCurrentDraft,
+          onSaveDraft: saveDraft,
+          onLoadDrafts: () => _loadComposeDraftsForEditor(draftKey: draftKey),
+          onDeleteDraft: _deleteComposeDraftForEditor,
           onSubmit: (markdown) async {
             _mutateState(() {
               _contentMarkdown = markdown;
