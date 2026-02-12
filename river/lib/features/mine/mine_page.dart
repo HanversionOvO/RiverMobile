@@ -2,10 +2,10 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 import 'package:river/app/app_dependencies.dart';
 import 'package:river/core/account/account_models.dart';
 import 'package:river/core/platform/riverside_webview_support.dart';
+import 'package:river/core/update/app_update_checker.dart';
 import 'package:river/features/login/riverside_external_fallback_page.dart';
 import 'package:river/features/login/riverside_login_flow_mode.dart';
 import 'package:river/features/login/riverside_login_webview_page.dart';
@@ -29,32 +29,13 @@ class _MinePageState extends State<MinePage> {
   // 状态与逻辑
   // ---------------------------------------------------------------------------
   bool _isBusy = false;
-  String _appVersion = '';
+  bool _isCheckingVersion = false;
 
   UserAccount? get _activeAccount =>
       widget.dependencies.accountStore.activeRiverSideAccount;
 
   List<UserAccount> get _allAccounts =>
       widget.dependencies.accountStore.accountsOf(AccountProvider.riverSide);
-
-  @override
-  void initState() {
-    super.initState();
-    _loadAppVersion();
-  }
-
-  Future<void> _loadAppVersion() async {
-    try {
-      final info = await PackageInfo.fromPlatform();
-      if (mounted) {
-        setState(() {
-          _appVersion = info.version;
-        });
-      }
-    } catch (e) {
-      // Ignore
-    }
-  }
 
   Future<void> _openCredentialAddFlow({String? detectedWebViewVersion}) async {
     _setBusy(true);
@@ -207,6 +188,48 @@ class _MinePageState extends State<MinePage> {
     ).push(riverPageRoute<void>(builder: (_) => const AboutPage()));
   }
 
+  Future<void> _openVersionDialog() async {
+    if (_isCheckingVersion) {
+      return;
+    }
+    setState(() {
+      _isCheckingVersion = true;
+    });
+    try {
+      final result = await widget.dependencies.updateChecker.checkForUpdates(
+        force: true,
+      );
+      if (!mounted) {
+        return;
+      }
+      await showRiverUpdateDialog(
+        context: context,
+        result: result,
+        fromManualAction: true,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isCheckingVersion = false;
+        });
+      }
+    }
+  }
+
+  String _buildVersionSubtitle(AppUpdateChecker checker) {
+    final currentVersion = checker.currentVersion.trim();
+    if (checker.isChecking && currentVersion.isEmpty) {
+      return '正在检查更新...';
+    }
+    if (currentVersion.isEmpty) {
+      return '点击检查更新';
+    }
+    if (checker.hasUpdate && checker.latestVersion.isNotEmpty) {
+      return '当前 $currentVersion · 可更新到 ${checker.latestVersion}';
+    }
+    return '当前版本 $currentVersion';
+  }
+
   void _setBusy(bool value) {
     if (mounted) setState(() => _isBusy = value);
   }
@@ -222,10 +245,17 @@ class _MinePageState extends State<MinePage> {
 
   @override
   Widget build(BuildContext context) {
+    final updateChecker = widget.dependencies.updateChecker;
     return AnimatedBuilder(
-      animation: widget.dependencies.accountStore,
+      animation: Listenable.merge(<Listenable>[
+        widget.dependencies.accountStore,
+        updateChecker,
+      ]),
       builder: (context, _) {
         final account = _activeAccount;
+        final hasUpdate = updateChecker.hasUpdate;
+        final subtitle = _buildVersionSubtitle(updateChecker);
+        final isChecking = _isCheckingVersion || updateChecker.isChecking;
 
         return Scaffold(
           body: CustomScrollView(
@@ -390,11 +420,62 @@ class _MinePageState extends State<MinePage> {
                     _SettingsCard(
                       children: [
                         _SettingsTile(
+                          icon: Icons.system_update_alt_rounded,
+                          title: '版本',
+                          subtitle: subtitle,
+                          onTap: _openVersionDialog,
+                          trailing: isChecking
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (hasUpdate)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.errorContainer,
+                                          borderRadius: BorderRadius.circular(
+                                            999,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          '可更新',
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .labelSmall
+                                              ?.copyWith(
+                                                color: Theme.of(
+                                                  context,
+                                                ).colorScheme.onErrorContainer,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                        ),
+                                      ),
+                                    if (hasUpdate) const SizedBox(width: 6),
+                                    Icon(
+                                      Icons.chevron_right_rounded,
+                                      color: Colors.grey.withOpacity(0.5),
+                                      size: 20,
+                                    ),
+                                  ],
+                                ),
+                        ),
+                        const _SettingsDivider(),
+                        _SettingsTile(
                           icon: Icons.info_outline_rounded,
                           title: '关于 River',
-                          subtitle: _appVersion.isNotEmpty
-                              ? '当前版本 $_appVersion'
-                              : null,
+                          subtitle: '应用信息与项目说明',
                           onTap: _openAboutPage,
                         ),
                       ],
@@ -599,6 +680,7 @@ class _SettingsTile extends StatelessWidget {
     this.subtitle,
     required this.onTap,
     this.isDestructive = false,
+    this.trailing,
   });
 
   final IconData icon;
@@ -606,6 +688,7 @@ class _SettingsTile extends StatelessWidget {
   final String? subtitle;
   final VoidCallback onTap;
   final bool isDestructive;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -645,11 +728,13 @@ class _SettingsTile extends StatelessWidget {
               ),
             )
           : null,
-      trailing: Icon(
-        Icons.chevron_right_rounded,
-        color: Colors.grey.withOpacity(0.5),
-        size: 20,
-      ),
+      trailing:
+          trailing ??
+          Icon(
+            Icons.chevron_right_rounded,
+            color: Colors.grey.withOpacity(0.5),
+            size: 20,
+          ),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
     );
   }

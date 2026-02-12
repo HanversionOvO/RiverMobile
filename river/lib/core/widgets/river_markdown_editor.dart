@@ -1244,7 +1244,7 @@ class _StructuredEmojiPickerState extends State<_StructuredEmojiPicker> {
                           ),
                           Expanded(
                             child: ClipRect(
-                              child: Container(
+                              child: Material(
                                 color: colorScheme.surface,
                                 child: AnimatedSwitcher(
                                   duration: const Duration(milliseconds: 180),

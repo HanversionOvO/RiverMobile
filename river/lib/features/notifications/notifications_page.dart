@@ -493,6 +493,71 @@ class _NotificationsPageState extends State<NotificationsPage>
     }
   }
 
+  Future<void> _markAllNotificationItemsAsRead() async {
+    final unreadCount = _notifications.where((item) => !item.read).length;
+    if (unreadCount <= 0) {
+      return;
+    }
+    final cookie = _activeCookieHeader();
+    if (cookie == null || cookie.trim().isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text(_labelNeedLogin)));
+      }
+      return;
+    }
+
+    final previous = List<RiverSideNotificationItem>.from(_notifications);
+    setState(() {
+      _notifications = _notifications
+          .map(
+            (item) => item.read
+                ? item
+                : RiverSideNotificationItem(
+                    id: item.id,
+                    type: item.type,
+                    read: true,
+                    highPriority: item.highPriority,
+                    createdAt: item.createdAt,
+                    topicId: item.topicId,
+                    postNumber: item.postNumber,
+                    slug: item.slug,
+                    title: item.title,
+                    excerpt: item.excerpt,
+                    username: item.username,
+                    actionText: item.actionText,
+                    badgeName: item.badgeName,
+                    count: item.count,
+                    avatarUrl: item.avatarUrl,
+                  ),
+          )
+          .toList(growable: false);
+    });
+    _notifyUnreadCountChanged();
+
+    try {
+      await widget.dependencies.accountStore.riverSideApiClient
+          .markNotificationsAsRead(cookieHeader: cookie);
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('已清除通知未读')));
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _notifications = previous;
+      });
+      _notifyUnreadCountChanged();
+      final message = error is RiverSideApiException
+          ? error.message
+          : '清除未读失败，请稍后重试';
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    }
+  }
+
   Future<void> _restartRealtimePolling() async {
     _messageBusPoller?.stop();
     _messageBusPoller = null;
@@ -593,9 +658,7 @@ class _NotificationsPageState extends State<NotificationsPage>
               Expanded(
                 child: TabBarView(
                   controller: _tabController,
-                  physics: _tabController.index == 2
-                      ? const NeverScrollableScrollPhysics()
-                      : const PageScrollPhysics(),
+                  physics: const PageScrollPhysics(),
                   children: [
                     _buildNotificationsList(theme),
                     _buildChatList(
@@ -652,7 +715,12 @@ class _NotificationsPageState extends State<NotificationsPage>
   Widget _buildTopHeader(ThemeData theme, double t) {
     final topInset = MediaQuery.paddingOf(context).top;
     final collapse = t.clamp(0.0, 1.0);
-    final subtitle = _totalUnreadCount > 0 ? '未读 $_totalUnreadCount 条' : '全部已读';
+    final unreadNotifications = _notifications
+        .where((item) => !item.read)
+        .length;
+    final subtitle = unreadNotifications > 0
+        ? '未读 $unreadNotifications 条'
+        : '全部已读';
     const titleSize = 21.0;
     final subtitleVisibility = (1.0 - collapse).clamp(0.0, 1.0);
     final borderAlpha = lerpDouble(0.18, 0.26, collapse)!;
@@ -694,8 +762,8 @@ class _NotificationsPageState extends State<NotificationsPage>
               children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 8, 8),
-                  child: SizedBox(
-                    height: 44,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(minHeight: 44),
                     child: Stack(
                       children: [
                         Padding(
@@ -721,14 +789,42 @@ class _NotificationsPageState extends State<NotificationsPage>
                                     heightFactor: subtitleVisibility,
                                     child: Opacity(
                                       opacity: subtitleVisibility,
-                                      child: Text(
-                                        subtitle,
-                                        style: theme.textTheme.labelMedium
-                                            ?.copyWith(
-                                              color: theme
-                                                  .colorScheme
-                                                  .onSurfaceVariant,
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            subtitle,
+                                            style: theme.textTheme.labelMedium
+                                                ?.copyWith(
+                                                  color: theme
+                                                      .colorScheme
+                                                      .onSurfaceVariant,
+                                                ),
+                                          ),
+                                          if (unreadNotifications > 0) ...[
+                                            const SizedBox(width: 6),
+                                            InkWell(
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              onTap:
+                                                  _markAllNotificationItemsAsRead,
+                                              child: Padding(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 4,
+                                                      vertical: 2,
+                                                    ),
+                                                child: Icon(
+                                                  Icons.done_all_rounded,
+                                                  size: 16,
+                                                  color: theme
+                                                      .colorScheme
+                                                      .onSurfaceVariant,
+                                                ),
+                                              ),
                                             ),
+                                          ],
+                                        ],
                                       ),
                                     ),
                                   ),
@@ -1205,6 +1301,10 @@ class _NotificationsPageState extends State<NotificationsPage>
                   : const Icon(Icons.chevron_right_rounded, color: Colors.grey),
             ),
           );
+          final slidableCard = Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: card,
+          );
           final canSwipeDelete =
               item.isDirectMessage && item.canDeleteSelf && !isDeletingDirect;
           if (!item.isDirectMessage) {
@@ -1218,45 +1318,42 @@ class _NotificationsPageState extends State<NotificationsPage>
               motion: const DrawerMotion(),
               extentRatio: 0.30,
               children: [
-                Padding(
-                  padding: const EdgeInsets.only(left: 10),
-                  child: CustomSlidableAction(
-                    autoClose: true,
-                    borderRadius: BorderRadius.circular(16),
-                    backgroundColor: theme.colorScheme.errorContainer,
-                    foregroundColor: theme.colorScheme.onErrorContainer,
-                    onPressed: (_) async {
-                      if (!canSwipeDelete) {
-                        return;
-                      }
-                      final confirmed = await _confirmDeleteDirectMessage(item);
-                      if (!confirmed) {
-                        return;
-                      }
-                      await _deleteDirectMessageChannel(item);
-                    },
-                    child: isDeletingDirect
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.delete_outline_rounded),
-                              SizedBox(height: 4),
-                              Text(
-                                '删除',
-                                style: TextStyle(fontWeight: FontWeight.w600),
-                              ),
-                            ],
-                          ),
-                  ),
+                CustomSlidableAction(
+                  autoClose: true,
+                  borderRadius: BorderRadius.circular(16),
+                  backgroundColor: theme.colorScheme.errorContainer,
+                  foregroundColor: theme.colorScheme.onErrorContainer,
+                  onPressed: (_) async {
+                    if (!canSwipeDelete) {
+                      return;
+                    }
+                    final confirmed = await _confirmDeleteDirectMessage(item);
+                    if (!confirmed) {
+                      return;
+                    }
+                    await _deleteDirectMessageChannel(item);
+                  },
+                  child: isDeletingDirect
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.delete_outline_rounded),
+                            SizedBox(height: 4),
+                            Text(
+                              '删除',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ),
                 ),
               ],
             ),
-            child: card,
+            child: slidableCard,
           );
         },
       ),
