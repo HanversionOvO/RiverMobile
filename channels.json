@@ -1,0 +1,413 @@
+{
+    "public_channels": [
+        {
+            "id": 421,
+            "allow_channel_wide_mentions": true,
+            "chatable": {
+                "id": 28,
+                "name": "二手专区",
+                "color": "F7941D",
+                "text_color": "000000",
+                "style_type": "square",
+                "icon": null,
+                "emoji": null,
+                "slug": "",
+                "topic_count": 17,
+                "post_count": 178,
+                "position": 27,
+                "description": "\u003cstrong\u003e定位：\u003c/strong\u003e 闲置转让、求购信息、校园跳蚤市场。",
+                "description_text": "定位： 闲置转让、求购信息、校园跳蚤市场。",
+                "description_excerpt": "定位： 闲置转让、求购信息、校园跳蚤市场。",
+                "topic_url": "/t/topic/35",
+                "read_restricted": true,
+                "permission": null,
+                "parent_category_id": 8,
+                "notification_level": null,
+                "topic_template": null,
+                "has_children": null,
+                "subcategory_count": null,
+                "sort_order": null,
+                "sort_ascending": null,
+                "show_subcategory_list": false,
+                "num_featured_topics": 3,
+                "default_view": null,
+                "subcategory_list_style": "rows_with_featured_topics",
+                "default_top_period": "all",
+                "default_list_filter": "all",
+                "minimum_required_tags": 0,
+                "navigate_to_first_post_after_read": false,
+                "custom_fields": {
+                    "has_chat_enabled": null,
+                    "enable_unassigned_filter": null,
+                    "sort_topics_by_event_start_date": null,
+                    "disable_topic_resorting": null,
+                    "create_as_post_voting_default": null,
+                    "only_post_voting_in_this_category": null,
+                    "enable_accepted_answers": null,
+                    "enable_topic_voting": null
+                },
+                "sort_topics_by_event_start_date": null,
+                "disable_topic_resorting": null,
+                "uploaded_logo": null,
+                "uploaded_logo_dark": null,
+                "uploaded_background": null,
+                "uploaded_background_dark": null
+            },
+            "chatable_id": 28,
+            "chatable_type": "Category",
+            "chatable_url": "/c/8-category/28-category/28",
+            "title": "二手交流",
+            "unicode_title": "二手交流",
+            "slug": "trading",
+            "status": "open",
+            "memberships_count": 2834,
+            "current_user_membership": {
+                "following": true,
+                "muted": false,
+                "notification_level": "mention",
+                "chat_channel_id": 421,
+                "last_read_message_id": 25476,
+                "last_viewed_at": "2026-02-11T10:06:22.331Z",
+                "starred": false
+            },
+            "meta": {
+                "message_bus_last_ids": {
+                    "channel_message_bus_last_id": 673,
+                    "new_messages": 334,
+                    "new_mentions": 0,
+                    "kick": 0
+                },
+                "can_join_chat_channel": true,
+                "can_flag": true,
+                "user_silenced": false,
+                "can_moderate": false,
+                "can_delete_self": true,
+                "can_delete_others": false,
+                "can_remove_members": false
+            },
+            "threading_enabled": false,
+            "last_message": {
+                "id": 26963,
+                "message": "春-节搶紅包攻略：復-制開啟元寶App！ UA6204 zf:/L3TF4D7I5U",
+                "cooked": "\u003cp\u003e春-节搶紅包攻略：復-制開啟元寶App！ UA6204 zf:/L3TF4D7I5U\u003c/p\u003e",
+                "created_at": "2026-02-12T06:57:22Z",
+                "excerpt": "春-节搶紅包攻略：復-制開啟元寶App！ UA6204 zf:/L3TF4D7I5U",
+                "deleted_at": null,
+                "deleted_by_id": null,
+                "thread_id": null,
+                "chat_channel_id": 421,
+                "streaming": false
+            }
+        },
+        {
+            "id": 2,
+            "allow_channel_wide_mentions": false,
+            "chatable": {
+                "id": 4,
+                "name": "常规",
+                "color": "B3B5B4",
+                "text_color": "000000",
+                "style_type": "square",
+                "icon": null,
+                "emoji": "blue_book",
+                "slug": "",
+                "topic_count": 0,
+                "post_count": 0,
+                "position": 3,
+                "description": "在此处创建不属于任何其他现有类别的话题。",
+                "description_text": "在此处创建不属于任何其他现有类别的话题。",
+                "description_excerpt": "在此处创建不属于任何其他现有类别的话题。",
+                "topic_url": "/t/topic/3",
+                "read_restricted": true,
+                "permission": null,
+                "notification_level": null,
+                "topic_template": "请不要在 \"常规\" 类别下发帖，该类别目前的唯一作用是作为 \"校友广场\" 频道的挂靠类别。",
+                "has_children": null,
+                "subcategory_count": null,
+                "sort_order": null,
+                "sort_ascending": null,
+                "show_subcategory_list": false,
+                "num_featured_topics": 3,
+                "default_view": null,
+                "subcategory_list_style": "rows_with_featured_topics",
+                "default_top_period": "all",
+                "default_list_filter": "all",
+                "minimum_required_tags": 0,
+                "navigate_to_first_post_after_read": false,
+                "custom_fields": {
+                    "enable_unassigned_filter": null,
+                    "sort_topics_by_event_start_date": null,
+                    "disable_topic_resorting": null,
+                    "create_as_post_voting_default": null,
+                    "only_post_voting_in_this_category": null,
+                    "enable_accepted_answers": null,
+                    "enable_topic_voting": null,
+                    "has_chat_enabled": true
+                },
+                "sort_topics_by_event_start_date": null,
+                "disable_topic_resorting": null,
+                "uploaded_logo": null,
+                "uploaded_logo_dark": null,
+                "uploaded_background": null,
+                "uploaded_background_dark": null
+            },
+            "chatable_id": 4,
+            "chatable_type": "Category",
+            "chatable_url": "/c/4-category/4",
+            "title": "校友广场",
+            "unicode_title": "校友广场",
+            "slug": "general",
+            "status": "open",
+            "memberships_count": 2839,
+            "current_user_membership": {
+                "following": true,
+                "muted": false,
+                "notification_level": "mention",
+                "chat_channel_id": 2,
+                "last_read_message_id": 27029,
+                "last_viewed_at": "2026-02-12T08:01:42.878Z",
+                "starred": false
+            },
+            "meta": {
+                "message_bus_last_ids": {
+                    "channel_message_bus_last_id": 28204,
+                    "new_messages": 13339,
+                    "new_mentions": 108,
+                    "kick": 0
+                },
+                "can_join_chat_channel": true,
+                "can_flag": true,
+                "user_silenced": false,
+                "can_moderate": false,
+                "can_delete_self": true,
+                "can_delete_others": false,
+                "can_remove_members": false
+            },
+            "threading_enabled": false,
+            "last_message": {
+                "id": 27032,
+                "message": "比如我妈就从来不听我的投资建议，只买A股，血本无归",
+                "cooked": "\u003cp\u003e比如我妈就从来不听我的投资建议，只买A股，血本无归\u003c/p\u003e",
+                "created_at": "2026-02-12T08:04:29Z",
+                "excerpt": "比如我妈就从来不听我的投资建议，只买A股，血本无归",
+                "deleted_at": null,
+                "deleted_by_id": null,
+                "thread_id": null,
+                "chat_channel_id": 2,
+                "streaming": false
+            }
+        }
+    ],
+    "direct_message_channels": [
+        {
+            "id": 487,
+            "allow_channel_wide_mentions": true,
+            "chatable": {
+                "group": false,
+                "users": [
+                    {
+                        "id": 737,
+                        "username": "霜瞒雪桂",
+                        "name": null,
+                        "avatar_template": "/user_avatar/river-side.cc/霜瞒雪桂/{size}/376_2.png",
+                        "custom_fields": {},
+                        "can_chat": true,
+                        "has_chat_enabled": true
+                    }
+                ]
+            },
+            "chatable_id": 482,
+            "chatable_type": "DirectMessage",
+            "chatable_url": null,
+            "title": "霜瞒雪桂",
+            "unicode_title": "霜瞒雪桂",
+            "slug": null,
+            "status": "open",
+            "memberships_count": 2,
+            "current_user_membership": {
+                "following": true,
+                "muted": false,
+                "notification_level": "always",
+                "chat_channel_id": 487,
+                "last_read_message_id": 22126,
+                "last_viewed_at": "2026-02-12T06:03:13.239Z",
+                "starred": false
+            },
+            "meta": {
+                "message_bus_last_ids": {
+                    "channel_message_bus_last_id": 4,
+                    "new_messages": 2,
+                    "new_mentions": 0
+                },
+                "can_join_chat_channel": true,
+                "can_flag": true,
+                "user_silenced": false,
+                "can_moderate": false,
+                "can_delete_self": true,
+                "can_delete_others": false,
+                "can_remove_members": false
+            },
+            "threading_enabled": false,
+            "last_message": {
+                "id": 22126,
+                "message": ":s1170:",
+                "cooked": "\u003cp\u003e\u003cimg src=\"/uploads/default/original/3X/b/2/b25879e138dc13820866ca1ebd8e89d84003fa86.gif?v=15\" title=\":s1170:\" class=\"emoji emoji-custom only-emoji\" alt=\":s1170:\" loading=\"lazy\" width=\"20\" height=\"20\"\u003e\u003c/p\u003e",
+                "created_at": "2026-02-06T09:16:09Z",
+                "excerpt": ":s1170:",
+                "deleted_at": null,
+                "deleted_by_id": null,
+                "thread_id": null,
+                "chat_channel_id": 487,
+                "streaming": false
+            }
+        },
+        {
+            "id": 525,
+            "allow_channel_wide_mentions": true,
+            "chatable": {
+                "group": false,
+                "users": [
+                    {
+                        "id": 697,
+                        "username": "蟲蟲L",
+                        "name": "河畔守护忍",
+                        "avatar_template": "/user_avatar/river-side.cc/蟲蟲l/{size}/219_2.png",
+                        "custom_fields": {},
+                        "can_chat": true,
+                        "has_chat_enabled": true
+                    }
+                ]
+            },
+            "chatable_id": 517,
+            "chatable_type": "DirectMessage",
+            "chatable_url": null,
+            "title": "蟲蟲L",
+            "unicode_title": "蟲蟲L",
+            "slug": null,
+            "status": "open",
+            "memberships_count": 1,
+            "current_user_membership": {
+                "following": true,
+                "muted": false,
+                "notification_level": "always",
+                "chat_channel_id": 525,
+                "last_read_message_id": null,
+                "last_viewed_at": "2026-02-12T08:00:18.931Z",
+                "starred": false
+            },
+            "meta": {
+                "message_bus_last_ids": {
+                    "channel_message_bus_last_id": 0,
+                    "new_messages": 0,
+                    "new_mentions": 0
+                },
+                "can_join_chat_channel": true,
+                "can_flag": true,
+                "user_silenced": false,
+                "can_moderate": false,
+                "can_delete_self": true,
+                "can_delete_others": false,
+                "can_remove_members": false
+            },
+            "threading_enabled": false,
+            "last_message": {
+                "id": null,
+                "message": null,
+                "cooked": null,
+                "created_at": "2026-02-12T08:04:28+00:00",
+                "excerpt": null,
+                "deleted_at": null,
+                "deleted_by_id": null,
+                "thread_id": null,
+                "chat_channel_id": null,
+                "streaming": false
+            }
+        }
+    ],
+    "tracking": {
+        "channel_tracking": {
+            "2": {
+                "mention_count": 0,
+                "unread_count": 2,
+                "watched_threads_unread_count": 0
+            },
+            "421": {
+                "mention_count": 0,
+                "unread_count": 24,
+                "watched_threads_unread_count": 0
+            },
+            "487": {
+                "mention_count": 0,
+                "unread_count": 0,
+                "watched_threads_unread_count": 0
+            },
+            "525": {
+                "mention_count": 0,
+                "unread_count": 0,
+                "watched_threads_unread_count": 0
+            }
+        },
+        "thread_tracking": {}
+    },
+    "meta": {
+        "message_bus_last_ids": {
+            "channel_metadata": 3494,
+            "channel_edits": 7,
+            "channel_status": 5,
+            "new_channel": 6199,
+            "archive_status": 2,
+            "user_tracking_state": 368,
+            "user_has_threads": 0
+        }
+    },
+    "unread_thread_overview": {},
+    "has_threads": false,
+    "global_presence_channel_state": {
+        "count": 7,
+        "last_message_id": 118397,
+        "users": [
+            {
+                "id": 24,
+                "username": "Co-admin",
+                "name": "",
+                "avatar_template": "/user_avatar/river-side.cc/co-admin/{size}/26494_2.png"
+            },
+            {
+                "id": 742,
+                "username": "神灯等灯等登",
+                "name": "",
+                "avatar_template": "/user_avatar/river-side.cc/神灯等灯等登/{size}/324_2.png"
+            },
+            {
+                "id": 837,
+                "username": "清音巡绫",
+                "name": "QyInvoLing",
+                "avatar_template": "/user_avatar/river-side.cc/清音巡绫/{size}/26675_2.png"
+            },
+            {
+                "id": 32314,
+                "username": "kk园区流浪",
+                "name": null,
+                "avatar_template": "/letter_avatar_proxy/v4/letter/k/5f9b8f/{size}.png"
+            },
+            {
+                "id": 33270,
+                "username": "松鼠鳜鱼",
+                "name": null,
+                "avatar_template": "/user_avatar/river-side.cc/松鼠鳜鱼/{size}/26440_2.png"
+            },
+            {
+                "id": 34896,
+                "username": "crazy_boy",
+                "name": "宫里夏辉的美丽邂逅",
+                "avatar_template": "/user_avatar/river-side.cc/crazy_boy/{size}/28260_2.png"
+            },
+            {
+                "id": 35893,
+                "username": "最爱喝兽奶",
+                "name": null,
+                "avatar_template": "/letter_avatar_proxy/v4/letter/%E6%9C%80/e79b87/{size}.png"
+            }
+        ]
+    }
+}

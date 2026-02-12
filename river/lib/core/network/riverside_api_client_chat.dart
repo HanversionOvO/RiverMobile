@@ -499,6 +499,133 @@ extension RiverSideApiClientChatMethods on RiverSideApiClient {
     throw lastError ?? const RiverSideApiException('Failed to delete message.');
   }
 
+  Future<void> deleteDirectMessageChannel({
+    required int channelId,
+    required String cookieHeader,
+  }) async {
+    final cookie = cookieHeader.trim();
+    if (cookie.isEmpty) {
+      throw const RiverSideApiException('Cookie header is empty.');
+    }
+    if (channelId <= 0) {
+      throw const RiverSideApiException('Invalid chat channel id.');
+    }
+
+    final csrf = await fetchSessionCsrfToken(cookieHeader: cookie);
+
+    Future<http.Response> sendDelete(Uri uri) {
+      return http.delete(
+        uri,
+        headers: <String, String>{
+          'Accept': 'application/json',
+          'Cookie': cookie,
+          'X-CSRF-Token': csrf,
+          'X-Requested-With': 'XMLHttpRequest',
+          'Origin': riverSideBaseUrl,
+          'Referer': '$riverSideBaseUrl/chat/channel/$channelId',
+        },
+      );
+    }
+
+    Future<http.Response> sendPost(Uri uri) {
+      return http.post(
+        uri,
+        headers: <String, String>{
+          'Accept': 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+          'Cookie': cookie,
+          'X-CSRF-Token': csrf,
+          'X-Requested-With': 'XMLHttpRequest',
+          'Origin': riverSideBaseUrl,
+          'Referer': '$riverSideBaseUrl/chat/channel/$channelId',
+        },
+      );
+    }
+
+    RiverSideApiException? lastError;
+
+    final postCandidates = <Uri>[
+      Uri.parse('$riverSideBaseUrl/chat/api/channels/$channelId/leave'),
+      Uri.parse('$riverSideBaseUrl/chat/api/channels/$channelId/leave.json'),
+    ];
+    for (final uri in postCandidates) {
+      final response = await sendPost(uri);
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        return;
+      }
+      if (response.statusCode == 403) {
+        final message = _extractErrorMessageFromResponse(response);
+        if (message.toLowerCase().contains('login')) {
+          throw const RiverSideApiException(
+            'Login session expired. Please sign in again.',
+          );
+        }
+        throw RiverSideApiException(
+          message.isEmpty
+              ? 'No permission to delete this direct message.'
+              : message,
+        );
+      }
+      if (response.statusCode == 404 || response.statusCode == 405) {
+        lastError = RiverSideApiException(
+          'Failed to delete direct message, HTTP ${response.statusCode}',
+        );
+        continue;
+      }
+      final message = _extractErrorMessageFromResponse(response);
+      throw RiverSideApiException(
+        message.isEmpty
+            ? 'Failed to delete direct message, HTTP ${response.statusCode}'
+            : message,
+      );
+    }
+
+    final deleteCandidates = <Uri>[
+      Uri.parse(
+        '$riverSideBaseUrl/chat/api/channels/$channelId/memberships/me',
+      ),
+      Uri.parse(
+        '$riverSideBaseUrl/chat/api/channels/$channelId/memberships/me.json',
+      ),
+      Uri.parse('$riverSideBaseUrl/chat/api/channels/$channelId'),
+      Uri.parse('$riverSideBaseUrl/chat/api/channels/$channelId.json'),
+    ];
+    for (final uri in deleteCandidates) {
+      final response = await sendDelete(uri);
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        return;
+      }
+      if (response.statusCode == 403) {
+        final message = _extractErrorMessageFromResponse(response);
+        if (message.toLowerCase().contains('login')) {
+          throw const RiverSideApiException(
+            'Login session expired. Please sign in again.',
+          );
+        }
+        throw RiverSideApiException(
+          message.isEmpty
+              ? 'No permission to delete this direct message.'
+              : message,
+        );
+      }
+      if (response.statusCode == 404 || response.statusCode == 405) {
+        lastError = RiverSideApiException(
+          'Failed to delete direct message, HTTP ${response.statusCode}',
+        );
+        continue;
+      }
+      final message = _extractErrorMessageFromResponse(response);
+      throw RiverSideApiException(
+        message.isEmpty
+            ? 'Failed to delete direct message, HTTP ${response.statusCode}'
+            : message,
+      );
+    }
+
+    throw lastError ??
+        const RiverSideApiException('Failed to delete direct message.');
+  }
+
   Future<void> reactToChatChannelMessage({
     required int channelId,
     required int messageId,

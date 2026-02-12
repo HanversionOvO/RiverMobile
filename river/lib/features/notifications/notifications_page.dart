@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:river/app/app_dependencies.dart';
 import 'package:river/core/network/riverside_api_client.dart';
 import 'package:river/core/network/riverside_notification_models.dart';
@@ -42,6 +43,7 @@ class _NotificationsPageState extends State<NotificationsPage>
   List<RiverSideNotificationItem> _notifications = const [];
   List<RiverSideChatChannelItem> _channelMessages = const [];
   List<RiverSideChatChannelItem> _directMessages = const [];
+  final Set<int> _deletingDirectMessageIds = <int>{};
 
   String _nextNotificationsPath = '';
   int? _totalNotifications;
@@ -119,6 +121,7 @@ class _NotificationsPageState extends State<NotificationsPage>
         _notifications = [];
         _channelMessages = [];
         _directMessages = [];
+        _deletingDirectMessageIds.clear();
         _error = null;
         _hasRealtimeNotifications = false;
       });
@@ -158,6 +161,11 @@ class _NotificationsPageState extends State<NotificationsPage>
   void _onTabChanged() {
     if (_tabController.indexIsChanging) {
       return;
+    }
+    if (mounted) {
+      setState(() {
+        // Rebuild to update TabBarView physics for gesture-priority tuning.
+      });
     }
     _syncBackToTopVisibility();
   }
@@ -230,6 +238,7 @@ class _NotificationsPageState extends State<NotificationsPage>
           _notifications = [];
           _channelMessages = [];
           _directMessages = [];
+          _deletingDirectMessageIds.clear();
         }
       });
       _notifyUnreadCountChanged();
@@ -273,6 +282,9 @@ class _NotificationsPageState extends State<NotificationsPage>
         _directMessages = channels
             .where((item) => item.isDirectMessage)
             .toList();
+        _deletingDirectMessageIds.removeWhere(
+          (id) => !_directMessages.any((item) => item.id == id),
+        );
       });
 
       _notifyUnreadCountChanged();
@@ -378,6 +390,94 @@ class _NotificationsPageState extends State<NotificationsPage>
             ChatDetailPage(dependencies: widget.dependencies, channel: channel),
       ),
     );
+  }
+
+  Future<bool> _confirmDeleteDirectMessage(
+    RiverSideChatChannelItem item,
+  ) async {
+    final title = item.name.trim().isNotEmpty
+        ? item.name.trim()
+        : '私信 #${item.id}';
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('删除私信'),
+          content: Text('是否删除与“$title”的私信会话？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('删除'),
+            ),
+          ],
+        );
+      },
+    );
+    return result ?? false;
+  }
+
+  Future<bool> _deleteDirectMessageChannel(
+    RiverSideChatChannelItem item,
+  ) async {
+    if (_deletingDirectMessageIds.contains(item.id)) {
+      return false;
+    }
+    final cookie = _activeCookieHeader();
+    if (cookie == null || cookie.trim().isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text(_labelNeedLogin)));
+      }
+      return false;
+    }
+
+    setState(() {
+      _deletingDirectMessageIds.add(item.id);
+    });
+
+    try {
+      await widget.dependencies.accountStore.riverSideApiClient
+          .deleteDirectMessageChannel(channelId: item.id, cookieHeader: cookie);
+      if (!mounted) {
+        return false;
+      }
+      setState(() {
+        _directMessages = _directMessages
+            .where((channel) => channel.id != item.id)
+            .toList(growable: false);
+        _deletingDirectMessageIds.remove(item.id);
+      });
+      _notifyUnreadCountChanged();
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('私信已删除')));
+      return true;
+    } on RiverSideApiException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message)));
+      }
+      return false;
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('删除私信失败，请稍后重试')));
+      }
+      return false;
+    } finally {
+      if (mounted) {
+        setState(() {
+          _deletingDirectMessageIds.remove(item.id);
+        });
+      }
+    }
   }
 
   Future<void> _consumeRealtimeNotifications() async {
@@ -493,6 +593,9 @@ class _NotificationsPageState extends State<NotificationsPage>
               Expanded(
                 child: TabBarView(
                   controller: _tabController,
+                  physics: _tabController.index == 2
+                      ? const NeverScrollableScrollPhysics()
+                      : const PageScrollPhysics(),
                   children: [
                     _buildNotificationsList(theme),
                     _buildChatList(
@@ -915,7 +1018,7 @@ class _NotificationsPageState extends State<NotificationsPage>
                                         ),
                                       ),
                                       TextSpan(
-                                        text: '  ${item.actionText ?? ""}',
+                                        text: '  ${item.actionText}',
                                         style: TextStyle(
                                           color: theme
                                               .colorScheme
@@ -940,9 +1043,9 @@ class _NotificationsPageState extends State<NotificationsPage>
                             ],
                           ),
                           const SizedBox(height: 6),
-                          if (item.title != null && item.title!.isNotEmpty)
+                          if (item.title.isNotEmpty)
                             Text(
-                              item.title!,
+                              item.title,
                               style: TextStyle(
                                 fontWeight: FontWeight.w600,
                                 fontSize: 14,
@@ -951,11 +1054,10 @@ class _NotificationsPageState extends State<NotificationsPage>
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
-                          if (item.excerpt != null &&
-                              item.excerpt!.isNotEmpty) ...[
+                          if (item.excerpt.isNotEmpty) ...[
                             const SizedBox(height: 4),
                             Text(
-                              item.excerpt!.replaceAll('\n', ' '),
+                              item.excerpt.replaceAll('\n', ' '),
                               style: TextStyle(
                                 color: theme.colorScheme.onSurfaceVariant,
                                 fontSize: 13,
@@ -1010,7 +1112,8 @@ class _NotificationsPageState extends State<NotificationsPage>
                     ? item.description.trim().replaceAll('\n', ' ')
                     : '暂无最新消息');
           final directAvatar = item.avatarUrl.trim();
-          return Container(
+          final isDeletingDirect = _deletingDirectMessageIds.contains(item.id);
+          final card = Container(
             decoration: BoxDecoration(
               color: theme.colorScheme.surface,
               borderRadius: BorderRadius.circular(16),
@@ -1023,7 +1126,7 @@ class _NotificationsPageState extends State<NotificationsPage>
               ],
             ),
             child: ListTile(
-              onTap: () => _openChatDetail(item),
+              onTap: isDeletingDirect ? null : () => _openChatDetail(item),
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 16,
                 vertical: 8,
@@ -1074,7 +1177,13 @@ class _NotificationsPageState extends State<NotificationsPage>
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
-              trailing: item.unreadCount > 0
+              trailing: isDeletingDirect
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : item.unreadCount > 0
                   ? Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 8,
@@ -1095,6 +1204,56 @@ class _NotificationsPageState extends State<NotificationsPage>
                     )
                   : const Icon(Icons.chevron_right_rounded, color: Colors.grey),
             ),
+          );
+          final canSwipeDelete =
+              item.isDirectMessage && item.canDeleteSelf && !isDeletingDirect;
+          if (!item.isDirectMessage) {
+            return card;
+          }
+          return Slidable(
+            key: ValueKey<String>('direct-channel-${item.id}'),
+            enabled: canSwipeDelete,
+            closeOnScroll: true,
+            endActionPane: ActionPane(
+              motion: const DrawerMotion(),
+              extentRatio: 0.26,
+              children: [
+                CustomSlidableAction(
+                  autoClose: true,
+                  borderRadius: BorderRadius.circular(16),
+                  backgroundColor: theme.colorScheme.errorContainer,
+                  foregroundColor: theme.colorScheme.onErrorContainer,
+                  onPressed: (_) async {
+                    if (!canSwipeDelete) {
+                      return;
+                    }
+                    final confirmed = await _confirmDeleteDirectMessage(item);
+                    if (!confirmed) {
+                      return;
+                    }
+                    await _deleteDirectMessageChannel(item);
+                  },
+                  child: isDeletingDirect
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.delete_outline_rounded),
+                            SizedBox(height: 4),
+                            Text(
+                              '删除',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ),
+                ),
+              ],
+            ),
+            child: card,
           );
         },
       ),

@@ -10,6 +10,7 @@ extension RiverSideApiClientChatParsingMethods on RiverSideApiClient {
     final nestedChannel = _toStringMap(channel['channel']);
     final source = nestedChannel.isEmpty ? channel : nestedChannel;
     final chatable = _toStringMap(source['chatable']);
+    final meta = _toStringMap(source['meta']);
     final lastMessage = _toStringMap(source['last_message']);
     final membership = _toStringMap(source['membership']);
     final usersRaw =
@@ -17,7 +18,8 @@ extension RiverSideApiClientChatParsingMethods on RiverSideApiClient {
         source['members'] ??
         source['participants'] ??
         source['chatable_users'] ??
-        source['direct_message_users'];
+        source['direct_message_users'] ??
+        chatable['users'];
 
     final id =
         _asInt(source['id']) ??
@@ -163,7 +165,9 @@ extension RiverSideApiClientChatParsingMethods on RiverSideApiClient {
         ? ''
         : _firstNonEmpty(<dynamic>[
             displayUsers.first['avatar_template'],
+            displayUsers.first['user_avatar_template'],
             _toStringMap(displayUsers.first['user'])['avatar_template'],
+            _toStringMap(displayUsers.first['user'])['user_avatar_template'],
           ]);
 
     final unreadCount =
@@ -189,10 +193,14 @@ extension RiverSideApiClientChatParsingMethods on RiverSideApiClient {
       avatarUrl: _normalizeAvatarUrl(
         _firstNonEmpty(<dynamic>[
           source['avatar_template'],
+          source['user_avatar_template'],
           chatable['avatar_template'],
           avatarFromUsers,
         ]),
       ),
+      canDeleteSelf:
+          _asBool(source['can_delete_self']) ||
+          _asBool(meta['can_delete_self']),
     );
   }
 

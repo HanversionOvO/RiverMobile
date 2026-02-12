@@ -65,6 +65,7 @@ class RiverSideChatChannelItem {
     required this.lastMessageAt,
     required this.isDirectMessage,
     required this.avatarUrl,
+    required this.canDeleteSelf,
   });
 
   final int id;
@@ -75,6 +76,7 @@ class RiverSideChatChannelItem {
   final DateTime? lastMessageAt;
   final bool isDirectMessage;
   final String avatarUrl;
+  final bool canDeleteSelf;
 }
 
 @immutable
