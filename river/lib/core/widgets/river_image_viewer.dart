@@ -1,13 +1,18 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:google_mlkit_barcode_scanning/google_mlkit_barcode_scanning.dart';
 import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:river/core/constants.dart';
 import 'package:river/core/navigation/river_page_route.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 part 'river_image_viewer_components.dart';
 
@@ -83,8 +88,21 @@ class RiverImageViewerPage extends StatefulWidget {
 
 class _RiverImageViewerPageState extends State<RiverImageViewerPage> {
   static const String _actionSaveOriginal = 'save_original';
+  static const String _actionRecognizeQr = 'recognize_qr';
+  static const String _labelActionSheetTitle = '图片操作';
+  static const String _labelActionCancel = '取消';
+  static const String _labelRecognizeQr = '识别该二维码';
+  static const String _labelQrResultTitle = '二维码识别结果';
+  static const String _labelQrResultEmpty = '未识别到二维码内容';
+  static const String _labelQrCopy = '复制内容';
+  static const String _labelQrOpen = '打开内容';
+  static const String _labelCopied = '已复制到剪贴板';
 
   late final PageController _pageController;
+  final BarcodeScanner _barcodeScanner = BarcodeScanner(
+    formats: <BarcodeFormat>[BarcodeFormat.qrCode],
+  );
+  final Map<String, String?> _qrDecodeCache = <String, String?>{};
   late int _currentIndex;
   bool _showOverlay = true;
 
@@ -98,6 +116,7 @@ class _RiverImageViewerPageState extends State<RiverImageViewerPage> {
   @override
   void dispose() {
     _pageController.dispose();
+    _barcodeScanner.close();
     super.dispose();
   }
 
@@ -108,6 +127,7 @@ class _RiverImageViewerPageState extends State<RiverImageViewerPage> {
   }
 
   Future<void> _showImageActions(RiverImageViewerItem item) async {
+    final qrContent = await _resolveQrCodeContent(item);
     final actions = <RiverImageViewerAction>[
       RiverImageViewerAction(
         id: _actionSaveOriginal,
@@ -115,38 +135,20 @@ class _RiverImageViewerPageState extends State<RiverImageViewerPage> {
         icon: Icons.download_outlined,
         onSelected: (context, selected) => _saveOriginalImage(selected),
       ),
+      if (qrContent != null && qrContent.trim().isNotEmpty)
+        RiverImageViewerAction(
+          id: _actionRecognizeQr,
+          label: _labelRecognizeQr,
+          icon: Icons.qr_code_2_rounded,
+          onSelected: (context, selected) =>
+              _showQrRecognitionResult(qrContent),
+        ),
       ...widget.extraActions,
     ];
     if (actions.isEmpty) {
       return;
     }
-    final selected = await showModalBottomSheet<RiverImageViewerAction>(
-      context: context,
-      showDragHandle: true,
-      builder: (sheetContext) {
-        return SafeArea(
-          child: ListView.separated(
-            shrinkWrap: true,
-            itemCount: actions.length + 1,
-            separatorBuilder: (context, index) => const Divider(height: 1),
-            itemBuilder: (context, index) {
-              if (index == actions.length) {
-                return ListTile(
-                  title: const Text('\u53d6\u6d88'),
-                  onTap: () => Navigator.of(sheetContext).pop(),
-                );
-              }
-              final action = actions[index];
-              return ListTile(
-                leading: action.icon == null ? null : Icon(action.icon),
-                title: Text(action.label),
-                onTap: () => Navigator.of(sheetContext).pop(action),
-              );
-            },
-          ),
-        );
-      },
-    );
+    final selected = await _showModernImageActionSheet(actions);
     if (!mounted || selected == null) {
       return;
     }
@@ -163,6 +165,252 @@ class _RiverImageViewerPageState extends State<RiverImageViewerPage> {
         context,
       ).showSnackBar(SnackBar(content: Text(message)));
     }
+  }
+
+  Future<RiverImageViewerAction?> _showModernImageActionSheet(
+    List<RiverImageViewerAction> actions,
+  ) {
+    return showModalBottomSheet<RiverImageViewerAction>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: false,
+      builder: (sheetContext) {
+        final theme = Theme.of(sheetContext);
+        return SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+            child: Material(
+              clipBehavior: Clip.antiAlias,
+              color: theme.colorScheme.surface.withValues(alpha: 0.96),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+                side: BorderSide(
+                  color: theme.colorScheme.outlineVariant.withValues(
+                    alpha: 0.36,
+                  ),
+                ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: 10),
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.outlineVariant.withValues(
+                        alpha: 0.72,
+                      ),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    _labelActionSheetTitle,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ListView.separated(
+                    shrinkWrap: true,
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+                    itemCount: actions.length,
+                    separatorBuilder: (context, index) =>
+                        const SizedBox(height: 8),
+                    itemBuilder: (context, index) {
+                      final action = actions[index];
+                      return _ViewerActionTile(
+                        icon: action.icon,
+                        label: action.label,
+                        onTap: () => Navigator.of(sheetContext).pop(action),
+                      );
+                    },
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 2, 12, 12),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(sheetContext).pop(),
+                        child: const Text(_labelActionCancel),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  String _qrCacheKey(RiverImageViewerItem item) {
+    final hasCookie = (item.headers?['Cookie'] ?? '').trim().isNotEmpty;
+    return '${item.url}#${hasCookie ? 'auth' : 'anon'}';
+  }
+
+  Future<String?> _resolveQrCodeContent(RiverImageViewerItem item) async {
+    if (kIsWeb) {
+      return null;
+    }
+    if (defaultTargetPlatform != TargetPlatform.android &&
+        defaultTargetPlatform != TargetPlatform.iOS) {
+      return null;
+    }
+    final key = _qrCacheKey(item);
+    if (_qrDecodeCache.containsKey(key)) {
+      return _qrDecodeCache[key];
+    }
+    final uri = Uri.tryParse(item.url);
+    if (uri == null) {
+      _qrDecodeCache[key] = null;
+      return null;
+    }
+    try {
+      final bytes = await _downloadImageBytes(
+        uri,
+        item.headers,
+      ).timeout(const Duration(seconds: 8));
+      if (bytes.isEmpty) {
+        _qrDecodeCache[key] = null;
+        return null;
+      }
+      final tempDir = await getTemporaryDirectory();
+      final file = File(
+        '${tempDir.path}${Platform.pathSeparator}'
+        'river_qr_${DateTime.now().microsecondsSinceEpoch}.png',
+      );
+      try {
+        await file.writeAsBytes(bytes, flush: true);
+        final inputImage = InputImage.fromFilePath(file.path);
+        final barcodes = await _barcodeScanner.processImage(inputImage);
+        for (final barcode in barcodes) {
+          final value = (barcode.rawValue ?? barcode.displayValue ?? '').trim();
+          if (value.isNotEmpty) {
+            _qrDecodeCache[key] = value;
+            return value;
+          }
+        }
+      } finally {
+        if (await file.exists()) {
+          await file.delete();
+        }
+      }
+    } catch (_) {
+      // Ignore decode errors.
+    }
+    _qrDecodeCache[key] = null;
+    return null;
+  }
+
+  Future<void> _showQrRecognitionResult(String content) async {
+    final value = content.trim();
+    if (value.isEmpty) {
+      throw StateError(_labelQrResultEmpty);
+    }
+    final uri = Uri.tryParse(value);
+    final openUri = (uri != null && uri.hasScheme) ? uri : null;
+    final canOpen = openUri != null;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final theme = Theme.of(sheetContext);
+        return SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+            child: Material(
+              clipBehavior: Clip.antiAlias,
+              color: theme.colorScheme.surface.withValues(alpha: 0.96),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+                side: BorderSide(
+                  color: theme.colorScheme.outlineVariant.withValues(
+                    alpha: 0.36,
+                  ),
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _labelQrResultTitle,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surfaceContainerLowest,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: theme.colorScheme.outlineVariant.withValues(
+                            alpha: 0.42,
+                          ),
+                        ),
+                      ),
+                      child: SelectableText(
+                        value,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: () async {
+                              await Clipboard.setData(
+                                ClipboardData(text: value),
+                              );
+                              if (!mounted) {
+                                return;
+                              }
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text(_labelCopied)),
+                              );
+                            },
+                            icon: const Icon(Icons.copy_rounded),
+                            label: const Text(_labelQrCopy),
+                          ),
+                        ),
+                        if (canOpen) ...[
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () async {
+                                await launchUrl(
+                                  openUri,
+                                  mode: LaunchMode.externalApplication,
+                                );
+                              },
+                              icon: const Icon(Icons.open_in_new_rounded),
+                              label: const Text(_labelQrOpen),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _saveOriginalImage(RiverImageViewerItem item) async {

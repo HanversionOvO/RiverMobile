@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:river/app/app_dependencies.dart';
 import 'package:river/core/account/account_models.dart';
+import 'package:river/core/ai/river_ai_service.dart';
 import 'package:river/core/categories/riverside_category_utils.dart';
 import 'package:river/core/categories/riverside_category_store.dart';
 import 'package:river/core/constants.dart';

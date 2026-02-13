@@ -1,6 +1,17 @@
 part of 'topic_detail_page.dart';
 
 extension _TopicDetailPageCommentActions on _TopicDetailPageState {
+  Stream<String> _generateAiContentStreamForEditor(
+    RiverMarkdownAiRequest request,
+  ) {
+    final service = RiverAiService(widget.dependencies.settingsController);
+    return service.generateStream(
+      instruction: request.instruction,
+      currentText: request.currentMarkdown,
+      referenceText: request.referenceMarkdown,
+    );
+  }
+
   Future<void> _openAuthorProfileSheetForPost(
     RiverSideTopicPostDetail post,
   ) async {
@@ -239,6 +250,7 @@ extension _TopicDetailPageCommentActions on _TopicDetailPageState {
     String? quoteUsername,
     int? quoteTopicId,
     String? quoteContent,
+    String? aiReferenceText,
   }) async {
     final draftKey = _replyDraftKey(
       topicId: topicId,
@@ -305,6 +317,11 @@ extension _TopicDetailPageCommentActions on _TopicDetailPageState {
           initialText: '',
           emojiUrls: _emojiUrls,
           emojiGroups: _emojiGroups,
+          aiScene: RiverMarkdownAiScene.topicReply,
+          aiReplyReferenceText: (aiReferenceText ?? '').trim().isNotEmpty
+              ? aiReferenceText
+              : quoteContent,
+          onAiGenerateStream: _generateAiContentStreamForEditor,
           maxHeight: MediaQuery.sizeOf(context).height * 0.74,
           onUploadImage: _uploadReplyImage,
           onLoadCurrentDraft: loadCurrentDraft,
@@ -521,6 +538,8 @@ extension _TopicDetailPageCommentActions on _TopicDetailPageState {
           initialText: originalRaw,
           emojiUrls: _emojiUrls,
           emojiGroups: _emojiGroups,
+          aiScene: RiverMarkdownAiScene.editComment,
+          onAiGenerateStream: _generateAiContentStreamForEditor,
           maxHeight: MediaQuery.sizeOf(context).height * 0.74,
           onUploadImage: _uploadReplyImage,
           onLoadCurrentDraft: loadCurrentDraft,

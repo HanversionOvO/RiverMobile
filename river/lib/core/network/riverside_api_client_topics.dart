@@ -292,4 +292,45 @@ extension RiverSideApiClientTopicMethods on RiverSideApiClient {
     }
     return parsed;
   }
+
+  Future<RiverSideAiTopicSummary> fetchTopicAiSummary({
+    required int topicId,
+    String? cookieHeader,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$riverSideBaseUrl/discourse-ai/summarization/t/$topicId.json'),
+      headers: _buildJsonHeaders(cookieHeader: cookieHeader),
+    );
+
+    if (response.statusCode != 200) {
+      throw RiverSideApiException(
+        'Failed to load AI summary, HTTP ${response.statusCode}',
+      );
+    }
+
+    final decoded = _decodeJsonObject(
+      response,
+      fallbackMessage: 'Invalid AI summary response format',
+    );
+    final summaryMap = _toStringMap(decoded['ai_topic_summary']);
+    if (summaryMap.isEmpty) {
+      throw const RiverSideApiException('AI summary payload is missing');
+    }
+
+    final summarizedText = (summaryMap['summarized_text'] ?? '')
+        .toString()
+        .trim();
+    if (summarizedText.isEmpty) {
+      throw const RiverSideApiException('AI summary content is empty');
+    }
+
+    return RiverSideAiTopicSummary(
+      summarizedText: summarizedText,
+      algorithm: (summaryMap['algorithm'] ?? '').toString().trim(),
+      outdated: _asBool(summaryMap['outdated']),
+      canRegenerate: _asBool(summaryMap['can_regenerate']),
+      newPostsSinceSummary: _asInt(summaryMap['new_posts_since_summary']) ?? 0,
+      updatedAt: DateTime.tryParse((summaryMap['updated_at'] ?? '').toString()),
+    );
+  }
 }

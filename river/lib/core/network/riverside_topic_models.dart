@@ -236,6 +236,24 @@ class RiverSideTopicDetail {
   }
 }
 
+class RiverSideAiTopicSummary {
+  const RiverSideAiTopicSummary({
+    required this.summarizedText,
+    required this.algorithm,
+    required this.outdated,
+    required this.canRegenerate,
+    required this.newPostsSinceSummary,
+    required this.updatedAt,
+  });
+
+  final String summarizedText;
+  final String algorithm;
+  final bool outdated;
+  final bool canRegenerate;
+  final int newPostsSinceSummary;
+  final DateTime? updatedAt;
+}
+
 class RiverSidePostReaction {
   const RiverSidePostReaction({
     required this.id,

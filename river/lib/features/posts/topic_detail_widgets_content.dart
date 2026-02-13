@@ -164,7 +164,7 @@ class _MarkdownContent extends StatelessWidget {
     final chunks = _splitMarkdownRenderChunks(data);
     if (chunks.isNotEmpty &&
         chunks.any((chunk) => chunk is _MarkdownVideoChunk)) {
-      return Column(
+      final content = Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           for (var i = 0; i < chunks.length; i++) ...[
@@ -176,8 +176,16 @@ class _MarkdownContent extends StatelessWidget {
           ],
         ],
       );
+      if (!enableTextSelection) {
+        return content;
+      }
+      return _CustomMarkdownSelectionArea(child: content);
     }
-    return _buildMarkdownBody(context, data);
+    final content = _buildMarkdownBody(context, data);
+    if (!enableTextSelection) {
+      return content;
+    }
+    return _CustomMarkdownSelectionArea(child: content);
   }
 
   Widget _buildMarkdownBody(BuildContext context, String data) {
@@ -205,7 +213,7 @@ class _MarkdownContent extends StatelessWidget {
     };
     return MarkdownBody(
       data: data,
-      selectable: enableTextSelection,
+      selectable: false,
       inlineSyntaxes: inlineSyntaxes,
       builders: builders,
       sizedImageBuilder: (config) {
@@ -262,6 +270,97 @@ class _MarkdownContent extends StatelessWidget {
       return;
     }
     await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+}
+
+class _CustomMarkdownSelectionArea extends StatelessWidget {
+  const _CustomMarkdownSelectionArea({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return SelectionArea(
+      contextMenuBuilder: (context, selectableRegionState) {
+        ContextMenuButtonItem? copyItem;
+        for (final item in selectableRegionState.contextMenuButtonItems) {
+          if (item.type == ContextMenuButtonType.copy) {
+            copyItem = item;
+            break;
+          }
+        }
+        if (copyItem == null || copyItem.onPressed == null) {
+          return const SizedBox.shrink();
+        }
+        final anchors = selectableRegionState.contextMenuAnchors;
+        return TextSelectionToolbar(
+          anchorAbove: anchors.primaryAnchor,
+          anchorBelow: anchors.secondaryAnchor ?? anchors.primaryAnchor,
+          children: [
+            _SelectionCopyToolbarButton(
+              label: '复制内容',
+              onPressed: copyItem.onPressed!,
+            ),
+          ],
+        );
+      },
+      child: child,
+    );
+  }
+}
+
+class _SelectionCopyToolbarButton extends StatelessWidget {
+  const _SelectionCopyToolbarButton({
+    required this.label,
+    required this.onPressed,
+  });
+
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        clipBehavior: Clip.antiAlias,
+        child: Ink(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHigh,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.7),
+            ),
+          ),
+          child: InkWell(
+            onTap: onPressed,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.content_copy_rounded,
+                    size: 16,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    label,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

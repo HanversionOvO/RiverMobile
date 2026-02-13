@@ -1,6 +1,17 @@
 part of 'compose_topic_page.dart';
 
 extension _ComposeTopicPageActions on _ComposeTopicPageState {
+  Stream<String> _generateAiContentStreamForCompose(
+    RiverMarkdownAiRequest request,
+  ) {
+    final service = RiverAiService(widget.dependencies.settingsController);
+    return service.generateStream(
+      instruction: request.instruction,
+      currentText: request.currentMarkdown,
+      referenceText: request.referenceMarkdown,
+    );
+  }
+
   String _topicDraftKey() {
     final username =
         widget.dependencies.accountStore.activeRiverSideUsername?.trim() ?? '';
@@ -221,6 +232,8 @@ extension _ComposeTopicPageActions on _ComposeTopicPageState {
           onSaveDraft: saveDraft,
           onLoadDrafts: () => _loadComposeDraftsForEditor(draftKey: draftKey),
           onDeleteDraft: _deleteComposeDraftForEditor,
+          aiScene: RiverMarkdownAiScene.topicCompose,
+          onAiGenerateStream: _generateAiContentStreamForCompose,
           onSubmit: (markdown) async {
             _mutateState(() {
               _contentMarkdown = markdown;

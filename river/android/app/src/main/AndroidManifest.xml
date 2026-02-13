@@ -4,7 +4,7 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28"/>
     <application
-        android:label="river"
+        android:label="聚河畔"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
@@ -31,7 +31,7 @@
             android:enabled="true"
             android:exported="true"
             android:icon="@mipmap/ic_launcher"
-            android:label="river"
+            android:label="聚河畔"
             android:targetActivity=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
@@ -43,8 +43,8 @@
             android:name=".MainActivityAliasRiver"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher_river"
-            android:label="river"
+            android:icon="@mipmap/ic_launcher"
+            android:label="聚河畔"
             android:targetActivity=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
@@ -56,8 +56,8 @@
             android:name=".MainActivityAliasHp"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher_hp"
-            android:label="river"
+            android:icon="@mipmap/ic_launcher"
+            android:label="聚河畔"
             android:targetActivity=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>

@@ -11,6 +11,7 @@ import 'package:river/features/login/riverside_login_flow_mode.dart';
 import 'package:river/features/login/riverside_login_webview_page.dart';
 import 'package:river/features/mine/about_page.dart';
 import 'package:river/features/mine/appearance_settings_page.dart';
+import 'package:river/features/mine/ai_settings_page.dart';
 import 'package:river/features/mine/feedback_webview_page.dart';
 import 'package:river/features/mine/notifications_push_settings_page.dart';
 import 'package:river/features/mine/riverside_account_settings_page.dart';
@@ -220,6 +221,16 @@ class _MinePageState extends State<MinePage> {
     Navigator.of(context).push(
       riverPageRoute<void>(
         builder: (_) => NotificationsPushSettingsPage(
+          settingsController: widget.dependencies.settingsController,
+        ),
+      ),
+    );
+  }
+
+  void _openAiSettings() {
+    Navigator.of(context).push(
+      riverPageRoute<void>(
+        builder: (_) => AiSettingsPage(
           settingsController: widget.dependencies.settingsController,
         ),
       ),
@@ -483,6 +494,14 @@ class _MinePageState extends State<MinePage> {
                                 heroTagPrefix:
                                     'mine_settings_notifications_push',
                                 onTap: _openNotificationsPushSettings,
+                              ),
+                              const _SettingsDivider(),
+                              _SettingsTile(
+                                icon: Icons.auto_awesome_rounded,
+                                title: 'AI设置',
+                                subtitle: '服务商、模型与提示词',
+                                heroTagPrefix: 'mine_settings_ai',
+                                onTap: _openAiSettings,
                               ),
                               const _SettingsDivider(),
                               _SettingsTile(

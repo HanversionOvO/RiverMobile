@@ -45,7 +45,7 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
     _IconOption(
       preset: AppAppIconPreset.classic,
       title: '经典',
-      assetPath: 'assets/images/app_icon_classic.png',
+      assetPath: 'assets/images/logo.jpg',
     ),
     _IconOption(
       preset: AppAppIconPreset.riverBlue,

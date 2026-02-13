@@ -17,6 +17,10 @@ typedef RiverMarkdownDraftLoadListCallback =
     Future<List<RiverMarkdownDraftEntry>> Function();
 typedef RiverMarkdownDraftDeleteCallback =
     Future<bool> Function(RiverMarkdownDraftEntry draft);
+typedef RiverMarkdownAiGenerateCallback =
+    Future<String?> Function(RiverMarkdownAiRequest request);
+typedef RiverMarkdownAiGenerateStreamCallback =
+    Stream<String> Function(RiverMarkdownAiRequest request);
 
 class RiverMarkdownDraftEntry {
   const RiverMarkdownDraftEntry({
@@ -34,6 +38,22 @@ class RiverMarkdownDraftEntry {
   final String title;
   final String subtitle;
   final DateTime? updatedAt;
+}
+
+enum RiverMarkdownAiScene { generic, topicReply, topicCompose, editComment }
+
+class RiverMarkdownAiRequest {
+  const RiverMarkdownAiRequest({
+    required this.scene,
+    required this.instruction,
+    required this.currentMarkdown,
+    this.referenceMarkdown,
+  });
+
+  final RiverMarkdownAiScene scene;
+  final String instruction;
+  final String currentMarkdown;
+  final String? referenceMarkdown;
 }
 
 enum _EditorMode { edit, preview }
@@ -57,6 +77,10 @@ class RiverMarkdownEditor extends StatefulWidget {
     this.onSaveDraft,
     this.onLoadDrafts,
     this.onDeleteDraft,
+    this.onAiGenerate,
+    this.onAiGenerateStream,
+    this.aiScene = RiverMarkdownAiScene.generic,
+    this.aiReplyReferenceText,
   });
 
   final RiverMarkdownSubmitCallback onSubmit;
@@ -75,6 +99,10 @@ class RiverMarkdownEditor extends StatefulWidget {
   final RiverMarkdownDraftSaveCallback? onSaveDraft;
   final RiverMarkdownDraftLoadListCallback? onLoadDrafts;
   final RiverMarkdownDraftDeleteCallback? onDeleteDraft;
+  final RiverMarkdownAiGenerateCallback? onAiGenerate;
+  final RiverMarkdownAiGenerateStreamCallback? onAiGenerateStream;
+  final RiverMarkdownAiScene aiScene;
+  final String? aiReplyReferenceText;
 
   @override
   State<RiverMarkdownEditor> createState() => _RiverMarkdownEditorState();
@@ -90,6 +118,8 @@ class _RiverMarkdownEditorState extends State<RiverMarkdownEditor> {
   bool _uploadingImage = false;
   bool _loadingDraft = false;
   bool _savingDraft = false;
+  bool _generatingAi = false;
+  bool _showAiThinkingHint = false;
   _EditorMode _mode = _EditorMode.edit;
   bool _sheetExpanded = false;
   int? _draftSequence;
@@ -407,6 +437,206 @@ class _RiverMarkdownEditorState extends State<RiverMarkdownEditor> {
     );
   }
 
+  List<_AiToolAction> _buildAiToolActions() {
+    final actions = <_AiToolAction>[
+      const _AiToolAction(
+        title: '润色表达',
+        subtitle: '保持原意，提升语气和可读性',
+        instruction: '请润色这段内容，让表达更自然流畅。',
+        icon: Icons.auto_fix_high_rounded,
+      ),
+      const _AiToolAction(
+        title: '扩写内容',
+        subtitle: '补充细节与上下文',
+        instruction: '请扩写这段内容，补充必要细节，但不要偏题。',
+        icon: Icons.unfold_more_double_rounded,
+      ),
+      const _AiToolAction(
+        title: '精简内容',
+        subtitle: '保留重点并更简洁',
+        instruction: '请精简这段内容，保留核心信息。',
+        icon: Icons.short_text_rounded,
+      ),
+      const _AiToolAction(
+        title: '纠错优化',
+        subtitle: '修正语病和错别字',
+        instruction: '请修正错别字、语病，并保持原始语气。',
+        icon: Icons.spellcheck_rounded,
+      ),
+      const _AiToolAction(
+        title: '结构化排版',
+        subtitle: '优化成清晰的 Markdown 结构',
+        instruction: '请将内容改写为结构清晰的 Markdown 格式。',
+        icon: Icons.view_list_rounded,
+      ),
+    ];
+    final reference = (widget.aiReplyReferenceText ?? '').trim();
+    if (widget.aiScene == RiverMarkdownAiScene.topicReply &&
+        reference.isNotEmpty) {
+      actions.insert(
+        0,
+        const _AiToolAction(
+          title: '高情商回复',
+          subtitle: '基于被回复内容生成更得体的回复',
+          instruction: '请基于被回复内容，生成一段高情商且真诚的回复。',
+          icon: Icons.favorite_border_rounded,
+          needsReference: true,
+        ),
+      );
+    }
+    return actions;
+  }
+
+  Future<void> _openAiTools() async {
+    final hasAi =
+        widget.onAiGenerateStream != null || widget.onAiGenerate != null;
+    if (!hasAi) {
+      _showSnack('当前页面未接入 AI 能力', isError: true);
+      return;
+    }
+    FocusScope.of(context).unfocus();
+    final actions = _buildAiToolActions();
+    final selected = await showModalBottomSheet<_AiToolAction>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: false,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _AiToolsSheet(actions: actions),
+    );
+    if (!mounted || selected == null) {
+      return;
+    }
+    await _generateAiText(selected);
+  }
+
+  Future<void> _generateAiText(_AiToolAction action) async {
+    if (_generatingAi) {
+      return;
+    }
+    final originalText = _controller.text;
+    final originalSelection = _controller.selection;
+    setState(() {
+      _generatingAi = true;
+      _showAiThinkingHint = true;
+    });
+    try {
+      final request = RiverMarkdownAiRequest(
+        scene: widget.aiScene,
+        instruction: action.instruction,
+        currentMarkdown: _controller.text,
+        referenceMarkdown: action.needsReference
+            ? widget.aiReplyReferenceText
+            : null,
+      );
+      final stream = widget.onAiGenerateStream != null
+          ? widget.onAiGenerateStream!(request)
+          : _fallbackStreamFromFuture(request);
+      final anchor = _createAiInsertAnchor();
+      final buffer = StringBuffer();
+      var hasChunk = false;
+
+      await for (final chunk in stream) {
+        if (!mounted) {
+          return;
+        }
+        final value = chunk;
+        if (value.isEmpty) {
+          continue;
+        }
+        if (!hasChunk && _showAiThinkingHint) {
+          setState(() => _showAiThinkingHint = false);
+        }
+        hasChunk = true;
+        buffer.write(value);
+        _replaceAiInsertedContent(anchor, buffer.toString());
+      }
+
+      if (!mounted) {
+        return;
+      }
+      if (!hasChunk || buffer.toString().trim().isEmpty) {
+        _restoreEditorValue(originalText, originalSelection);
+        _showSnack('AI 未返回有效内容', isError: true);
+        return;
+      }
+      _showSnack('AI 生成完成');
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      _restoreEditorValue(originalText, originalSelection);
+      _showSnack('AI 生成失败：$error', isError: true);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _generatingAi = false;
+          _showAiThinkingHint = false;
+        });
+      }
+    }
+  }
+
+  Stream<String> _fallbackStreamFromFuture(
+    RiverMarkdownAiRequest request,
+  ) async* {
+    final callback = widget.onAiGenerate;
+    if (callback == null) {
+      return;
+    }
+    final generated = await callback(request);
+    final text = (generated ?? '').trim();
+    if (text.isEmpty) {
+      return;
+    }
+    const int step = 8;
+    for (var i = 0; i < text.length; i += step) {
+      final end = (i + step > text.length) ? text.length : i + step;
+      yield text.substring(i, end);
+      await Future<void>.delayed(const Duration(milliseconds: 24));
+    }
+  }
+
+  _AiInsertAnchor _createAiInsertAnchor() {
+    final text = _controller.text;
+    final selection = _controller.selection;
+    final start = selection.isValid ? selection.start : text.length;
+    final end = selection.isValid ? selection.end : text.length;
+    final safeStart = start.clamp(0, text.length);
+    final safeEnd = end.clamp(safeStart, text.length);
+    final next = '${text.substring(0, safeStart)}${text.substring(safeEnd)}';
+    _controller.value = TextEditingValue(
+      text: next,
+      selection: TextSelection.collapsed(offset: safeStart),
+    );
+    _focusNode.requestFocus();
+    return _AiInsertAnchor(start: safeStart, end: safeStart);
+  }
+
+  void _replaceAiInsertedContent(_AiInsertAnchor anchor, String content) {
+    final text = _controller.text;
+    final safeStart = anchor.start.clamp(0, text.length);
+    final safeEnd = anchor.end.clamp(safeStart, text.length);
+    final next =
+        '${text.substring(0, safeStart)}$content${text.substring(safeEnd)}';
+    anchor.end = safeStart + content.length;
+    _controller.value = TextEditingValue(
+      text: next,
+      selection: TextSelection.collapsed(offset: anchor.end),
+    );
+    _focusNode.requestFocus();
+  }
+
+  void _restoreEditorValue(String text, TextSelection selection) {
+    final safeSelection = selection.isValid
+        ? selection
+        : TextSelection.collapsed(offset: text.length);
+    _controller.value = TextEditingValue(text: text, selection: safeSelection);
+    if (_mode == _EditorMode.edit) {
+      _focusNode.requestFocus();
+    }
+  }
+
   void _applyFormat(String prefix, String suffix, String placeholder) {
     HapticFeedback.selectionClick();
     final text = _controller.text;
@@ -686,39 +916,64 @@ class _RiverMarkdownEditorState extends State<RiverMarkdownEditor> {
                   switchInCurve: Curves.easeOutCubic,
                   switchOutCurve: Curves.easeInCubic,
                   child: _mode == _EditorMode.edit
-                      ? TextField(
+                      ? Stack(
                           key: const ValueKey<String>('editor_mode_edit'),
-                          controller: _controller,
-                          focusNode: _focusNode,
-                          autofocus: widget.autofocus,
-                          expands: true,
-                          textAlignVertical: TextAlignVertical.top,
-                          maxLines: null,
-                          minLines: null,
-                          keyboardType: TextInputType.multiline,
-                          style: theme.textTheme.bodyLarge?.copyWith(
-                            height: 1.52,
-                          ),
-                          decoration: InputDecoration(
-                            hintText: widget.hintText ?? '分享你的想法...',
-                            hintStyle: theme.textTheme.bodyLarge?.copyWith(
-                              color: colorScheme.onSurfaceVariant.withValues(
-                                alpha: 0.62,
+                          children: [
+                            TextField(
+                              controller: _controller,
+                              focusNode: _focusNode,
+                              autofocus: widget.autofocus,
+                              expands: true,
+                              textAlignVertical: TextAlignVertical.top,
+                              maxLines: null,
+                              minLines: null,
+                              keyboardType: TextInputType.multiline,
+                              style: theme.textTheme.bodyLarge?.copyWith(
+                                height: 1.52,
+                              ),
+                              decoration: InputDecoration(
+                                hintText: widget.hintText ?? '分享你的想法...',
+                                hintStyle: theme.textTheme.bodyLarge?.copyWith(
+                                  color: colorScheme.onSurfaceVariant
+                                      .withValues(alpha: 0.62),
+                                ),
+                                enabledBorder: InputBorder.none,
+                                focusedBorder: InputBorder.none,
+                                disabledBorder: InputBorder.none,
+                                errorBorder: InputBorder.none,
+                                focusedErrorBorder: InputBorder.none,
+                                border: InputBorder.none,
+                                contentPadding: const EdgeInsets.fromLTRB(
+                                  18,
+                                  14,
+                                  18,
+                                  18,
+                                ),
                               ),
                             ),
-                            enabledBorder: InputBorder.none,
-                            focusedBorder: InputBorder.none,
-                            disabledBorder: InputBorder.none,
-                            errorBorder: InputBorder.none,
-                            focusedErrorBorder: InputBorder.none,
-                            border: InputBorder.none,
-                            contentPadding: const EdgeInsets.fromLTRB(
-                              18,
-                              14,
-                              18,
-                              18,
+                            AnimatedOpacity(
+                              duration: const Duration(milliseconds: 220),
+                              curve: Curves.easeOutCubic,
+                              opacity: _showAiThinkingHint ? 1 : 0,
+                              child: IgnorePointer(
+                                ignoring: true,
+                                child: Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    18,
+                                    10,
+                                    18,
+                                    0,
+                                  ),
+                                  child: Align(
+                                    alignment: Alignment.topLeft,
+                                    child: _AiThinkingHintChip(
+                                      visible: _showAiThinkingHint,
+                                    ),
+                                  ),
+                                ),
+                              ),
                             ),
-                          ),
+                          ],
                         )
                       : Container(
                           key: const ValueKey<String>('editor_mode_preview'),
@@ -786,8 +1041,13 @@ class _RiverMarkdownEditorState extends State<RiverMarkdownEditor> {
                 padding: EdgeInsets.only(bottom: bottomInset),
                 child: _EditorToolbar(
                   uploadingImage: _uploadingImage,
+                  generatingAi: _generatingAi,
+                  enableAi:
+                      widget.onAiGenerateStream != null ||
+                      widget.onAiGenerate != null,
                   onImageTap: _pickAndUploadImage,
                   onEmojiTap: _showEmojiPicker,
+                  onAiTap: _openAiTools,
                   onBoldTap: () => _applyFormat('**', '**', 'bold'),
                   onItalicTap: () => _applyFormat('*', '*', 'italic'),
                   onQuoteTap: () => _applyFormat('> ', '', 'quote'),
@@ -881,8 +1141,11 @@ class _EditorModeSwitch extends StatelessWidget {
 class _EditorToolbar extends StatelessWidget {
   const _EditorToolbar({
     required this.uploadingImage,
+    required this.generatingAi,
+    required this.enableAi,
     required this.onImageTap,
     required this.onEmojiTap,
+    required this.onAiTap,
     required this.onBoldTap,
     required this.onItalicTap,
     required this.onQuoteTap,
@@ -891,8 +1154,11 @@ class _EditorToolbar extends StatelessWidget {
   });
 
   final bool uploadingImage;
+  final bool generatingAi;
+  final bool enableAi;
   final VoidCallback onImageTap;
   final VoidCallback onEmojiTap;
+  final VoidCallback onAiTap;
   final VoidCallback onBoldTap;
   final VoidCallback onItalicTap;
   final VoidCallback onQuoteTap;
@@ -936,6 +1202,13 @@ class _EditorToolbar extends StatelessWidget {
                 icon: Icons.sentiment_satisfied_alt_outlined,
                 onTap: onEmojiTap,
               ),
+              if (enableAi) ...[
+                const SizedBox(width: 6),
+                _ToolbarAiAction(
+                  busy: generatingAi,
+                  onTap: onAiTap,
+                ),
+              ],
               const SizedBox(width: 8),
               Container(
                 width: 1,
@@ -956,6 +1229,182 @@ class _EditorToolbar extends StatelessWidget {
               _ToolbarAction(icon: Icons.link_rounded, onTap: onLinkTap),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ToolbarAiAction extends StatelessWidget {
+  const _ToolbarAiAction({required this.onTap, this.busy = false});
+
+  final VoidCallback onTap;
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return IconButton(
+      onPressed: busy ? null : onTap,
+      iconSize: 18,
+      visualDensity: VisualDensity.compact,
+      style: IconButton.styleFrom(
+        backgroundColor: colorScheme.surfaceContainerHighest.withValues(
+          alpha: 0.7,
+        ),
+        foregroundColor: colorScheme.onSurfaceVariant,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+      icon: busy
+          ? SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: colorScheme.primary,
+              ),
+            )
+          : const _AiGlowLabel(),
+    );
+  }
+}
+
+class _AiGlowLabel extends StatelessWidget {
+  const _AiGlowLabel();
+
+  @override
+  Widget build(BuildContext context) {
+    return const _AiFlowingText(
+      text: 'AI',
+      fontSize: 13,
+      fontWeight: FontWeight.w800,
+      letterSpacing: 0.2,
+      glow: true,
+    );
+  }
+}
+
+class _AiFlowingText extends StatefulWidget {
+  const _AiFlowingText({
+    required this.text,
+    this.fontSize = 14,
+    this.fontWeight = FontWeight.w700,
+    this.letterSpacing = 0,
+    this.glow = false,
+  });
+
+  final String text;
+  final double fontSize;
+  final FontWeight fontWeight;
+  final double letterSpacing;
+  final bool glow;
+
+  @override
+  State<_AiFlowingText> createState() => _AiFlowingTextState();
+}
+
+class _AiFlowingTextState extends State<_AiFlowingText>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1600),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final t = _controller.value;
+        return ShaderMask(
+          blendMode: BlendMode.srcIn,
+          shaderCallback: (bounds) {
+            final width = bounds.width <= 0 ? 1.0 : bounds.width;
+            final shifted = Rect.fromLTWH(
+              -width + 2 * width * t,
+              0,
+              width * 2,
+              bounds.height <= 0 ? 1.0 : bounds.height,
+            );
+            return const LinearGradient(
+              colors: <Color>[
+                Color(0xFF67D2FF),
+                Color(0xFF87A8FF),
+                Color(0xFFFF95D2),
+                Color(0xFF78E7D5),
+                Color(0xFF67D2FF),
+              ],
+              stops: <double>[0.0, 0.25, 0.5, 0.75, 1.0],
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+            ).createShader(shifted);
+          },
+          child: Text(
+            widget.text,
+            style: TextStyle(
+              fontSize: widget.fontSize,
+              fontWeight: widget.fontWeight,
+              letterSpacing: widget.letterSpacing,
+              shadows: widget.glow
+                  ? const <Shadow>[
+                      Shadow(color: Color(0x663AA8FF), blurRadius: 8),
+                      Shadow(color: Color(0x55FF89CB), blurRadius: 10),
+                    ]
+                  : null,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _AiThinkingHintChip extends StatelessWidget {
+  const _AiThinkingHintChip({required this.visible});
+
+  final bool visible;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return AnimatedScale(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutBack,
+      scale: visible ? 1 : 0.92,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.9),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.42),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            Icon(Icons.auto_awesome_rounded, size: 14),
+            SizedBox(width: 6),
+            _AiFlowingText(
+              text: 'AI思考中...',
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.1,
+              glow: true,
+            ),
+          ],
         ),
       ),
     );
@@ -997,6 +1446,196 @@ class _ToolbarAction extends StatelessWidget {
               ),
             )
           : Icon(icon),
+    );
+  }
+}
+
+class _AiToolAction {
+  const _AiToolAction({
+    required this.title,
+    required this.subtitle,
+    required this.instruction,
+    required this.icon,
+    this.needsReference = false,
+  });
+
+  final String title;
+  final String subtitle;
+  final String instruction;
+  final IconData icon;
+  final bool needsReference;
+}
+
+class _AiInsertAnchor {
+  _AiInsertAnchor({required this.start, required this.end});
+
+  final int start;
+  int end;
+}
+
+class _AiToolsSheet extends StatelessWidget {
+  const _AiToolsSheet({required this.actions});
+
+  final List<_AiToolAction> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final height = MediaQuery.sizeOf(context).height * 0.52;
+    return Material(
+      color: Colors.transparent,
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        child: Container(
+          height: height,
+          decoration: BoxDecoration(
+            color: colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 8, 10, 8),
+                child: Row(
+                  children: [
+                    const SizedBox(width: 38),
+                    Expanded(
+                      child: Column(
+                        children: [
+                          Container(
+                            width: 36,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: colorScheme.outlineVariant.withValues(
+                                alpha: 0.65,
+                              ),
+                              borderRadius: BorderRadius.circular(99),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.auto_awesome_rounded,
+                                size: 16,
+                                color: colorScheme.primary,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                'AI 工具箱',
+                                style: theme.textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close_rounded),
+                      style: IconButton.styleFrom(
+                        foregroundColor: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(14, 8, 14, 16),
+                  itemCount: actions.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 8),
+                  itemBuilder: (context, index) {
+                    final item = actions[index];
+                    return InkWell(
+                      borderRadius: BorderRadius.circular(14),
+                      onTap: () => Navigator.of(context).pop(item),
+                      child: Ink(
+                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                        decoration: BoxDecoration(
+                          color: colorScheme.surfaceContainerLow.withValues(
+                            alpha: 0.96,
+                          ),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: colorScheme.outlineVariant.withValues(
+                              alpha: 0.36,
+                            ),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 34,
+                              height: 34,
+                              decoration: BoxDecoration(
+                                color: colorScheme.primaryContainer.withValues(
+                                  alpha: 0.82,
+                                ),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              alignment: Alignment.center,
+                              child: Icon(
+                                item.icon,
+                                size: 17,
+                                color: colorScheme.onPrimaryContainer,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          item.title,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: theme.textTheme.bodyLarge
+                                              ?.copyWith(
+                                                fontWeight: FontWeight.w700,
+                                                letterSpacing: -0.1,
+                                              ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    item.subtitle,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Icon(
+                              Icons.chevron_right_rounded,
+                              size: 18,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

@@ -1,5 +1,68 @@
 part of 'river_image_viewer.dart';
 
+class _ViewerActionTile extends StatelessWidget {
+  const _ViewerActionTile({
+    required this.label,
+    required this.onTap,
+    this.icon,
+  });
+
+  final String label;
+  final IconData? icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.surfaceContainerLow.withValues(alpha: 0.72),
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
+          child: Row(
+            children: [
+              if (icon != null)
+                Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primaryContainer.withValues(
+                      alpha: 0.9,
+                    ),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    icon,
+                    size: 16,
+                    color: theme.colorScheme.onPrimaryContainer,
+                  ),
+                )
+              else
+                const SizedBox(width: 30, height: 30),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  label,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _PageIndicator extends StatelessWidget {
   const _PageIndicator({required this.itemCount, required this.currentIndex});
 

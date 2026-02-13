@@ -1,6 +1,17 @@
 part of 'topic_detail_page.dart';
 
 extension _CommentDetailPageActions on _CommentDetailPageState {
+  Stream<String> _generateAiContentStreamForEditor(
+    RiverMarkdownAiRequest request,
+  ) {
+    final service = RiverAiService(widget.dependencies.settingsController);
+    return service.generateStream(
+      instruction: request.instruction,
+      currentText: request.currentMarkdown,
+      referenceText: request.referenceMarkdown,
+    );
+  }
+
   List<_ReactionOption> _availableReactionOptionsForComment() {
     final reactionIds = <String>{};
     reactionIds.addAll(
@@ -468,6 +479,9 @@ extension _CommentDetailPageActions on _CommentDetailPageState {
           initialText: '',
           emojiUrls: _emojiUrls,
           emojiGroups: _emojiGroups,
+          aiScene: RiverMarkdownAiScene.topicReply,
+          aiReplyReferenceText: quoteContent,
+          onAiGenerateStream: _generateAiContentStreamForEditor,
           maxHeight: MediaQuery.sizeOf(context).height * 0.74,
           onUploadImage: _uploadReplyImage,
           onLoadCurrentDraft: loadCurrentDraft,
@@ -666,6 +680,8 @@ extension _CommentDetailPageActions on _CommentDetailPageState {
           initialText: originalRaw,
           emojiUrls: _emojiUrls,
           emojiGroups: _emojiGroups,
+          aiScene: RiverMarkdownAiScene.editComment,
+          onAiGenerateStream: _generateAiContentStreamForEditor,
           maxHeight: MediaQuery.sizeOf(context).height * 0.74,
           onUploadImage: _uploadReplyImage,
           onLoadCurrentDraft: loadCurrentDraft,

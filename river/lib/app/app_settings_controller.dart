@@ -10,6 +10,8 @@ enum AppAppIconPreset { classic, riverBlue, minimal }
 
 enum AppCornerPreset { compact, standard, relaxed }
 
+enum AppAiProvider { deepseek, openAiCompatible }
+
 class AppSettingsController extends ChangeNotifier {
   static const String _themeModeKey = 'app.theme_mode';
   static const String _themeSeedColorKey = 'app.theme_seed_color';
@@ -29,8 +31,19 @@ class AppSettingsController extends ChangeNotifier {
       'app.topic_comments_realtime_refresh_banner';
   static const String _riverSideBaseUrlKey = 'app.riverside_base_url';
   static const String _updateManifestUrlKey = 'app.update_manifest_url';
+  static const String _aiProviderKey = 'app.ai_provider';
+  static const String _aiBaseUrlKey = 'app.ai_base_url';
+  static const String _aiModelKey = 'app.ai_model';
+  static const String _aiApiKeyKey = 'app.ai_api_key';
+  static const String _aiSystemPromptKey = 'app.ai_system_prompt';
+  static const String _aiTemperatureKey = 'app.ai_temperature';
 
   static const Color defaultSeedColor = Color(0xFF12457A);
+  static const String defaultAiBaseUrl =
+      'https://api.deepseek.com/v1/chat/completions';
+  static const String defaultAiModel = 'deepseek-chat';
+  static const String defaultAiSystemPrompt =
+      '你是 River App 的写作助手，请用简洁、自然、友好的中文输出，不要添加多余解释。';
 
   ThemeMode _themeMode = ThemeMode.system;
   Color _themeSeedColor = defaultSeedColor;
@@ -46,6 +59,12 @@ class AppSettingsController extends ChangeNotifier {
   bool _showTopicCommentsRealtimeRefreshBanner = true;
   String _riverSideBaseUrl = RiverServerConfig.defaultBaseUrl;
   String _updateManifestUrl = RiverServerConfig.defaultUpdateManifestUrl;
+  AppAiProvider _aiProvider = AppAiProvider.deepseek;
+  String _aiBaseUrl = defaultAiBaseUrl;
+  String _aiModel = defaultAiModel;
+  String _aiApiKey = '';
+  String _aiSystemPrompt = defaultAiSystemPrompt;
+  double _aiTemperature = 0.7;
 
   SharedPreferences? _prefs;
 
@@ -65,6 +84,16 @@ class AppSettingsController extends ChangeNotifier {
       _showTopicCommentsRealtimeRefreshBanner;
   String get riverSideBaseUrl => _riverSideBaseUrl;
   String get updateManifestUrl => _updateManifestUrl;
+  AppAiProvider get aiProvider => _aiProvider;
+  String get aiBaseUrl => _aiBaseUrl;
+  String get aiModel => _aiModel;
+  String get aiApiKey => _aiApiKey;
+  String get aiSystemPrompt => _aiSystemPrompt;
+  double get aiTemperature => _aiTemperature;
+  bool get aiConfigured =>
+      _aiBaseUrl.trim().isNotEmpty &&
+      _aiModel.trim().isNotEmpty &&
+      _aiApiKey.trim().isNotEmpty;
 
   Future<void> initialize() async {
     _prefs ??= await SharedPreferences.getInstance();
@@ -153,6 +182,47 @@ class AppSettingsController extends ChangeNotifier {
       } catch (_) {
         _updateManifestUrl = RiverServerConfig.defaultUpdateManifestUrl;
       }
+    }
+
+    final aiProviderRaw = _prefs?.getString(_aiProviderKey);
+    if (aiProviderRaw != null) {
+      for (final provider in AppAiProvider.values) {
+        if (provider.name == aiProviderRaw) {
+          _aiProvider = provider;
+          break;
+        }
+      }
+    }
+
+    final aiBaseUrlRaw = _prefs?.getString(_aiBaseUrlKey);
+    if (aiBaseUrlRaw != null && aiBaseUrlRaw.trim().isNotEmpty) {
+      try {
+        _aiBaseUrl = RiverServerConfig.normalizeUrl(aiBaseUrlRaw);
+      } catch (_) {
+        _aiBaseUrl = defaultAiBaseUrl;
+      }
+    }
+
+    final aiModelRaw = _prefs?.getString(_aiModelKey);
+    if (aiModelRaw != null) {
+      final model = aiModelRaw.trim();
+      _aiModel = model.isEmpty ? defaultAiModel : model;
+    }
+
+    final aiApiKeyRaw = _prefs?.getString(_aiApiKeyKey);
+    if (aiApiKeyRaw != null) {
+      _aiApiKey = aiApiKeyRaw.trim();
+    }
+
+    final aiSystemPromptRaw = _prefs?.getString(_aiSystemPromptKey);
+    if (aiSystemPromptRaw != null) {
+      final prompt = aiSystemPromptRaw.trim();
+      _aiSystemPrompt = prompt.isEmpty ? defaultAiSystemPrompt : prompt;
+    }
+
+    final aiTemperatureRaw = _prefs?.getDouble(_aiTemperatureKey);
+    if (aiTemperatureRaw != null) {
+      _aiTemperature = _clampAiTemperature(aiTemperatureRaw);
     }
 
     RiverServerConfig.instance.apply(
@@ -294,6 +364,66 @@ class AppSettingsController extends ChangeNotifier {
     unawaited(_saveUpdateManifestUrl());
   }
 
+  void updateAiProvider(AppAiProvider value) {
+    if (_aiProvider == value) {
+      return;
+    }
+    _aiProvider = value;
+    notifyListeners();
+    unawaited(_saveAiProvider());
+  }
+
+  void updateAiBaseUrl(String value) {
+    final normalized = RiverServerConfig.normalizeUrl(value);
+    if (_aiBaseUrl == normalized) {
+      return;
+    }
+    _aiBaseUrl = normalized;
+    notifyListeners();
+    unawaited(_saveAiBaseUrl());
+  }
+
+  void updateAiModel(String value) {
+    final normalized = value.trim();
+    if (normalized.isEmpty || _aiModel == normalized) {
+      return;
+    }
+    _aiModel = normalized;
+    notifyListeners();
+    unawaited(_saveAiModel());
+  }
+
+  void updateAiApiKey(String value) {
+    final normalized = value.trim();
+    if (_aiApiKey == normalized) {
+      return;
+    }
+    _aiApiKey = normalized;
+    notifyListeners();
+    unawaited(_saveAiApiKey());
+  }
+
+  void updateAiSystemPrompt(String value) {
+    final normalized = value.trim();
+    final next = normalized.isEmpty ? defaultAiSystemPrompt : normalized;
+    if (_aiSystemPrompt == next) {
+      return;
+    }
+    _aiSystemPrompt = next;
+    notifyListeners();
+    unawaited(_saveAiSystemPrompt());
+  }
+
+  void updateAiTemperature(double value) {
+    final next = _clampAiTemperature(value);
+    if ((_aiTemperature - next).abs() < 0.001) {
+      return;
+    }
+    _aiTemperature = next;
+    notifyListeners();
+    unawaited(_saveAiTemperature());
+  }
+
   String? _mapLegacyFontPresetToFamily(String? presetName) {
     switch (presetName) {
       case 'system':
@@ -331,6 +461,16 @@ class AppSettingsController extends ChangeNotifier {
     }
     if (value > 1.4) {
       return 1.4;
+    }
+    return value;
+  }
+
+  double _clampAiTemperature(double value) {
+    if (value < 0) {
+      return 0;
+    }
+    if (value > 2) {
+      return 2;
     }
     return value;
   }
@@ -412,5 +552,35 @@ class AppSettingsController extends ChangeNotifier {
   Future<void> _saveUpdateManifestUrl() async {
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs!.setString(_updateManifestUrlKey, _updateManifestUrl);
+  }
+
+  Future<void> _saveAiProvider() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_aiProviderKey, _aiProvider.name);
+  }
+
+  Future<void> _saveAiBaseUrl() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_aiBaseUrlKey, _aiBaseUrl);
+  }
+
+  Future<void> _saveAiModel() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_aiModelKey, _aiModel);
+  }
+
+  Future<void> _saveAiApiKey() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_aiApiKeyKey, _aiApiKey);
+  }
+
+  Future<void> _saveAiSystemPrompt() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_aiSystemPromptKey, _aiSystemPrompt);
+  }
+
+  Future<void> _saveAiTemperature() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setDouble(_aiTemperatureKey, _aiTemperature);
   }
 }

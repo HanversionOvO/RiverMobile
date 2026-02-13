@@ -46,6 +46,9 @@ class _MainPostCard extends StatefulWidget {
     this.bodyRevealAnimation,
     this.pendingHeroReactionId,
     this.reactionPulseToken = 0,
+    required this.onAiSummaryPressed,
+    this.aiSummaryLoading = false,
+    this.showAiSummaryMarquee = false,
     this.showReplyAction = true,
     this.isJumpHighlighted = false,
     this.jumpHighlightToken = 0,
@@ -68,6 +71,9 @@ class _MainPostCard extends StatefulWidget {
   final Animation<double>? bodyRevealAnimation;
   final String? pendingHeroReactionId;
   final int reactionPulseToken;
+  final VoidCallback onAiSummaryPressed;
+  final bool aiSummaryLoading;
+  final bool showAiSummaryMarquee;
   final bool showReplyAction;
   final bool isJumpHighlighted;
   final int jumpHighlightToken;
@@ -138,6 +144,10 @@ class _MainPostCardState extends State<_MainPostCard>
           pendingHeroReactionId: widget.pendingHeroReactionId,
           pulseToken: widget.reactionPulseToken,
           showReplyAction: widget.showReplyAction,
+          leadingAction: _AiSummaryButton(
+            onPressed: widget.onAiSummaryPressed,
+            loading: widget.aiSummaryLoading,
+          ),
         ),
       ],
     );
@@ -169,37 +179,313 @@ class _MainPostCardState extends State<_MainPostCard>
         highlighted: widget.isJumpHighlighted,
         token: widget.jumpHighlightToken,
         borderRadius: BorderRadius.circular(20),
-        child: Card(
-          margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-          elevation: 0,
-          color: theme.colorScheme.surfaceContainerLow,
-          clipBehavior: Clip.antiAlias,
-          shape: RoundedRectangleBorder(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+          child: _AiMarqueeBorder(
+            enabled: widget.showAiSummaryMarquee,
             borderRadius: BorderRadius.circular(20),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _PostAuthorHeader(
-                  post: post,
-                  onTap: () => widget.onAuthorTap(post),
-                  heroTagAvatar:
-                      widget.authorAvatarHeroTag ??
-                      _topicPostAuthorAvatarHeroTag(post),
-                  heroTagName:
-                      widget.authorNameHeroTag ??
-                      _topicPostAuthorNameHeroTag(post),
+            child: Card(
+              margin: EdgeInsets.zero,
+              elevation: 0,
+              color: theme.colorScheme.surfaceContainerLow,
+              clipBehavior: Clip.antiAlias,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _PostAuthorHeader(
+                      post: post,
+                      onTap: () => widget.onAuthorTap(post),
+                      heroTagAvatar:
+                          widget.authorAvatarHeroTag ??
+                          _topicPostAuthorAvatarHeroTag(post),
+                      heroTagName:
+                          widget.authorNameHeroTag ??
+                          _topicPostAuthorNameHeroTag(post),
+                    ),
+                    const SizedBox(height: 10),
+                    revealedBody,
+                  ],
                 ),
-                const SizedBox(height: 10),
-                revealedBody,
-              ],
+              ),
             ),
           ),
         ),
       ),
     );
+  }
+}
+
+class _AiSummaryButton extends StatefulWidget {
+  const _AiSummaryButton({required this.onPressed, required this.loading});
+
+  final VoidCallback onPressed;
+  final bool loading;
+
+  @override
+  State<_AiSummaryButton> createState() => _AiSummaryButtonState();
+}
+
+class _AiSummaryButtonState extends State<_AiSummaryButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 5200),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final foreground = isDark
+        ? Colors.white.withValues(alpha: 0.92)
+        : theme.colorScheme.onSurface.withValues(alpha: 0.88);
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        final phase = _controller.value * math.pi * 2;
+        final pulse = 0.55 + 0.45 * (math.sin(phase) * 0.5 + 0.5);
+        final gradientBegin = Alignment(
+          math.cos(phase) * 0.45,
+          math.sin(phase) * 0.45,
+        );
+        final gradientEnd = Alignment(
+          -math.cos(phase) * 0.45,
+          -math.sin(phase) * 0.45,
+        );
+
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+            child: Ink(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(999),
+                gradient: LinearGradient(
+                  begin: gradientBegin,
+                  end: gradientEnd,
+                  colors: [
+                    const Color(
+                      0xFFAED8FF,
+                    ).withValues(alpha: (isDark ? 0.30 : 0.40) * pulse),
+                    const Color(
+                      0xFFCDB8FF,
+                    ).withValues(alpha: (isDark ? 0.28 : 0.38) * pulse),
+                    const Color(
+                      0xFFFFCFE1,
+                    ).withValues(alpha: (isDark ? 0.26 : 0.36) * pulse),
+                    const Color(
+                      0xFFBDEDE3,
+                    ).withValues(alpha: (isDark ? 0.24 : 0.34) * pulse),
+                  ],
+                ),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: isDark ? 0.24 : 0.42),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(
+                      0xFF9CC8FF,
+                    ).withValues(alpha: (isDark ? 0.14 : 0.12) * pulse),
+                    blurRadius: 14,
+                    spreadRadius: 0.3,
+                  ),
+                ],
+              ),
+              child: Material(
+                color: theme.colorScheme.surface.withValues(
+                  alpha: isDark ? 0.22 : 0.14,
+                ),
+                borderRadius: BorderRadius.circular(999),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(999),
+                  onTap: widget.loading ? null : widget.onPressed,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 11,
+                      vertical: 7,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (widget.loading)
+                          SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                foreground,
+                              ),
+                            ),
+                          )
+                        else
+                          Icon(
+                            Icons.auto_awesome_rounded,
+                            size: 16,
+                            color: foreground,
+                          ),
+                        const SizedBox(width: 6),
+                        Text(
+                          widget.loading ? 'AI总结中...' : 'AI总结',
+                          style: theme.textTheme.labelLarge?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: foreground,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _AiMarqueeBorder extends StatefulWidget {
+  const _AiMarqueeBorder({
+    required this.enabled,
+    required this.borderRadius,
+    required this.child,
+  });
+
+  final bool enabled;
+  final BorderRadius borderRadius;
+  final Widget child;
+
+  @override
+  State<_AiMarqueeBorder> createState() => _AiMarqueeBorderState();
+}
+
+class _AiMarqueeBorderState extends State<_AiMarqueeBorder>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1500),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.enabled) {
+      _controller.repeat();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _AiMarqueeBorder oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.enabled && widget.enabled) {
+      _controller.repeat();
+      return;
+    }
+    if (oldWidget.enabled && !widget.enabled) {
+      _controller.stop();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.enabled) {
+      return widget.child;
+    }
+    final theme = Theme.of(context);
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        final isDark = theme.brightness == Brightness.dark;
+        return Stack(
+          children: [
+            widget.child,
+            Positioned.fill(
+              child: IgnorePointer(
+                child: CustomPaint(
+                  painter: _AiMarqueeBorderPainter(
+                    progress: _controller.value,
+                    borderRadius: widget.borderRadius,
+                    darkMode: isDark,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _AiMarqueeBorderPainter extends CustomPainter {
+  _AiMarqueeBorderPainter({
+    required this.progress,
+    required this.borderRadius,
+    required this.darkMode,
+  });
+
+  final double progress;
+  final BorderRadius borderRadius;
+  final bool darkMode;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) {
+      return;
+    }
+    final rect = Offset.zero & size;
+    final rrect = borderRadius.toRRect(rect).deflate(1.2);
+    final alpha = darkMode ? 1.0 : 0.86;
+    final sweep = SweepGradient(
+      colors: [
+        Colors.transparent,
+        const Color(0xFF4CC9F0).withValues(alpha: 0.35 * alpha),
+        const Color(0xFF3A86FF).withValues(alpha: 0.75 * alpha),
+        const Color(0xFF7B2FF7).withValues(alpha: 0.92 * alpha),
+        const Color(0xFFF72585).withValues(alpha: 0.86 * alpha),
+        const Color(0xFFFF9E00).withValues(alpha: 0.62 * alpha),
+        Colors.transparent,
+        Colors.transparent,
+      ],
+      stops: const [0.0, 0.06, 0.13, 0.20, 0.27, 0.34, 0.42, 1.0],
+      transform: GradientRotation(progress * math.pi * 2),
+    );
+    final glowPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 5.6
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7.2)
+      ..shader = sweep.createShader(rect);
+    final corePaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.2
+      ..shader = sweep.createShader(rect);
+    canvas.drawRRect(rrect, glowPaint);
+    canvas.drawRRect(rrect, corePaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _AiMarqueeBorderPainter oldDelegate) {
+    return oldDelegate.progress != progress ||
+        oldDelegate.borderRadius != borderRadius ||
+        oldDelegate.darkMode != darkMode;
   }
 }
 
@@ -565,6 +851,7 @@ class _PostReactionBar extends StatelessWidget {
     this.enableReactionHero = true,
     this.showPrimaryActions = true,
     this.showReplyAction = true,
+    this.leadingAction,
   });
 
   final RiverSideTopicPostDetail post;
@@ -577,6 +864,7 @@ class _PostReactionBar extends StatelessWidget {
   final bool enableReactionHero;
   final bool showPrimaryActions;
   final bool showReplyAction;
+  final Widget? leadingAction;
 
   @override
   Widget build(BuildContext context) {
@@ -598,6 +886,7 @@ class _PostReactionBar extends StatelessWidget {
       runSpacing: 8,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
+        if (leadingAction case final Widget actionWidget) actionWidget,
         if (showPrimaryActions) ...[
           if (showReplyAction)
             _ActionPillButton(
