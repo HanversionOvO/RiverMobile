@@ -46,7 +46,6 @@ class _PostsSecondFloorLayer extends StatelessWidget {
   const _PostsSecondFloorLayer({
     required this.progress,
     required this.feedLabel,
-    required this.armed,
     required this.bottomBarHeight,
     required this.bottomNavigationReserveHeight,
     required this.interactive,
@@ -57,7 +56,6 @@ class _PostsSecondFloorLayer extends StatelessWidget {
 
   final double progress;
   final String feedLabel;
-  final bool armed;
   final double bottomBarHeight;
   final double bottomNavigationReserveHeight;
   final bool interactive;
@@ -98,45 +96,249 @@ class _PostsSecondFloorLayer extends StatelessWidget {
                 child: ClipRect(
                   child: Material(
                     color: theme.colorScheme.surface,
-                    child: Column(
-                      children: [
-                        Padding(
-                          padding: EdgeInsets.fromLTRB(
-                            16,
-                            topInset + 10,
-                            12,
-                            10,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            theme.colorScheme.surfaceContainerLowest,
+                            theme.colorScheme.surface,
+                          ],
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          Padding(
+                            padding: EdgeInsets.fromLTRB(
+                              16,
+                              topInset + 10,
+                              12,
+                              12,
+                            ),
+                            child: Row(
+                              children: [
+                                Text(
+                                  '二楼',
+                                  style: theme.textTheme.headlineSmall
+                                      ?.copyWith(fontWeight: FontWeight.w800),
+                                ),
+                                const SizedBox(width: 10),
+                                Text(
+                                  feedLabel,
+                                  style: theme.textTheme.titleSmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const Spacer(),
+                                IconButton(
+                                  tooltip: '关闭',
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: onClose,
+                                  icon: const Icon(Icons.close_rounded),
+                                ),
+                              ],
+                            ),
                           ),
-                          child: Row(
-                            children: [
-                              Text(
-                                '最近',
-                                style: theme.textTheme.headlineSmall?.copyWith(
-                                  fontWeight: FontWeight.w800,
+                          Expanded(
+                            child: ListView(
+                              padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(14),
+                                  decoration: BoxDecoration(
+                                    color:
+                                        theme.colorScheme.surfaceContainerLow,
+                                    borderRadius: BorderRadius.circular(18),
+                                    border: Border.all(
+                                      color: theme.colorScheme.outlineVariant
+                                          .withValues(alpha: 0.25),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 36,
+                                        height: 36,
+                                        decoration: BoxDecoration(
+                                          color: theme.colorScheme.primary
+                                              .withValues(alpha: 0.12),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
+                                        child: Icon(
+                                          Icons.smart_toy_outlined,
+                                          size: 18,
+                                          color: theme.colorScheme.primary,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Text(
+                                          'AI 智能体专区（预留）',
+                                          style: theme.textTheme.bodyMedium
+                                              ?.copyWith(
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  '快捷入口',
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                Wrap(
+                                  spacing: 10,
+                                  runSpacing: 10,
+                                  children: const [
+                                    _SecondFloorQuickChip(
+                                      icon: Icons.bookmark_border_rounded,
+                                      label: '收藏',
+                                    ),
+                                    _SecondFloorQuickChip(
+                                      icon: Icons.history_rounded,
+                                      label: '浏览记录',
+                                    ),
+                                    _SecondFloorQuickChip(
+                                      icon:
+                                          Icons.local_fire_department_outlined,
+                                      label: '热门趋势',
+                                    ),
+                                    _SecondFloorQuickChip(
+                                      icon: Icons.person_search_outlined,
+                                      label: '关注动态',
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 18),
+                                Text(
+                                  '我的小程序',
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    const spacing = 10.0;
+                                    final itemWidth =
+                                        (constraints.maxWidth - spacing * 3) /
+                                        4;
+                                    final miniApps = const [
+                                      _SecondFloorMiniAppItem(
+                                        icon: Icons.explore_outlined,
+                                        label: '发现',
+                                      ),
+                                      _SecondFloorMiniAppItem(
+                                        icon: Icons.chat_bubble_outline_rounded,
+                                        label: '消息',
+                                      ),
+                                      _SecondFloorMiniAppItem(
+                                        icon:
+                                            Icons.insert_chart_outlined_rounded,
+                                        label: '统计',
+                                      ),
+                                      _SecondFloorMiniAppItem(
+                                        icon: Icons.palette_outlined,
+                                        label: '主题',
+                                      ),
+                                      _SecondFloorMiniAppItem(
+                                        icon: Icons.book_outlined,
+                                        label: '草稿',
+                                      ),
+                                      _SecondFloorMiniAppItem(
+                                        icon: Icons.task_alt_rounded,
+                                        label: '待办',
+                                      ),
+                                      _SecondFloorMiniAppItem(
+                                        icon: Icons.image_outlined,
+                                        label: '图集',
+                                      ),
+                                      _SecondFloorMiniAppItem(
+                                        icon: Icons.more_horiz_rounded,
+                                        label: '更多',
+                                      ),
+                                    ];
+                                    return Wrap(
+                                      spacing: spacing,
+                                      runSpacing: spacing,
+                                      children: miniApps
+                                          .map(
+                                            (item) => SizedBox(
+                                              width: itemWidth,
+                                              height: itemWidth * 0.95,
+                                              child: item,
+                                            ),
+                                          )
+                                          .toList(growable: false),
+                                    );
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            padding: EdgeInsets.only(
+                              bottom:
+                                  bottomInset + bottomNavigationReserveHeight,
+                            ),
+                            decoration: BoxDecoration(
+                              border: Border(
+                                top: BorderSide(
+                                  color: theme.colorScheme.outlineVariant
+                                      .withValues(alpha: 0.25),
                                 ),
                               ),
-                              const Spacer(),
-                              Container(
+                            ),
+                            child: SizedBox(
+                              height: bottomBarHeight,
+                              child: Padding(
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 8,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: theme.colorScheme.surfaceContainerHigh,
-                                  borderRadius: BorderRadius.circular(20),
+                                  horizontal: 16,
                                 ),
                                 child: Row(
-                                  mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Icon(
-                                      Icons.search_rounded,
-                                      size: 16,
+                                      Icons.layers_rounded,
+                                      size: 18,
+                                      color: theme.colorScheme.primary,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      '二楼',
+                                      style: theme.textTheme.titleSmall
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                    ),
+                                    const Spacer(),
+                                    Text(
+                                      '当前：$feedLabel',
+                                      style: theme.textTheme.labelMedium
+                                          ?.copyWith(
+                                            color: theme
+                                                .colorScheme
+                                                .onSurfaceVariant,
+                                          ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Icon(
+                                      Icons.keyboard_arrow_up_rounded,
+                                      size: 18,
                                       color: theme.colorScheme.onSurfaceVariant,
                                     ),
-                                    const SizedBox(width: 6),
+                                    const SizedBox(width: 2),
                                     Text(
-                                      '搜索',
-                                      style: theme.textTheme.labelLarge
+                                      '上滑返回',
+                                      style: theme.textTheme.labelMedium
                                           ?.copyWith(
                                             color: theme
                                                 .colorScheme
@@ -146,168 +348,10 @@ class _PostsSecondFloorLayer extends StatelessWidget {
                                   ],
                                 ),
                               ),
-                              const SizedBox(width: 4),
-                              IconButton(
-                                tooltip: '关闭',
-                                visualDensity: VisualDensity.compact,
-                                onPressed: onClose,
-                                icon: const Icon(Icons.close_rounded),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Expanded(
-                          child: ListView(
-                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                            children: [
-                              Text(
-                                '最近使用的小程序',
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              Wrap(
-                                spacing: 18,
-                                runSpacing: 18,
-                                children: List<Widget>.generate(8, (index) {
-                                  final hue = (index * 35.0) % 360;
-                                  final color = HSVColor.fromAHSV(
-                                    1,
-                                    hue,
-                                    0.45,
-                                    0.88,
-                                  ).toColor();
-                                  return SizedBox(
-                                    width: 64,
-                                    child: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Container(
-                                          width: 56,
-                                          height: 56,
-                                          decoration: BoxDecoration(
-                                            color: color.withValues(
-                                              alpha: 0.22,
-                                            ),
-                                            borderRadius: BorderRadius.circular(
-                                              18,
-                                            ),
-                                          ),
-                                          child: Icon(
-                                            Icons.widgets_rounded,
-                                            color: color,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 6),
-                                        Text(
-                                          '应用${index + 1}',
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: theme.textTheme.labelSmall,
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                }),
-                              ),
-                              const SizedBox(height: 24),
-                              Container(
-                                padding: const EdgeInsets.all(14),
-                                decoration: BoxDecoration(
-                                  color: theme.colorScheme.surfaceContainerLow,
-                                  borderRadius: BorderRadius.circular(16),
-                                  border: Border.all(
-                                    color: theme.colorScheme.outlineVariant
-                                        .withValues(alpha: 0.25),
-                                  ),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      Icons.tips_and_updates_rounded,
-                                      color: theme.colorScheme.primary,
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Text(
-                                        armed ? '松手进入二楼' : '继续下拉可进入二楼',
-                                        style: theme.textTheme.bodyMedium
-                                            ?.copyWith(
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Container(
-                          padding: EdgeInsets.only(
-                            bottom: bottomInset + bottomNavigationReserveHeight,
-                          ),
-                          decoration: BoxDecoration(
-                            border: Border(
-                              top: BorderSide(
-                                color: theme.colorScheme.outlineVariant
-                                    .withValues(alpha: 0.25),
-                              ),
                             ),
                           ),
-                          child: SizedBox(
-                            height: bottomBarHeight,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.layers_rounded,
-                                    size: 18,
-                                    color: theme.colorScheme.primary,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    '二楼',
-                                    style: theme.textTheme.titleSmall?.copyWith(
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                  const Spacer(),
-                                  Text(
-                                    '当前：$feedLabel',
-                                    style: theme.textTheme.labelMedium
-                                        ?.copyWith(
-                                          color: theme
-                                              .colorScheme
-                                              .onSurfaceVariant,
-                                        ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Icon(
-                                    Icons.keyboard_arrow_up_rounded,
-                                    size: 18,
-                                    color: theme.colorScheme.onSurfaceVariant,
-                                  ),
-                                  const SizedBox(width: 2),
-                                  Text(
-                                    '上滑返回',
-                                    style: theme.textTheme.labelMedium
-                                        ?.copyWith(
-                                          color: theme
-                                              .colorScheme
-                                              .onSurfaceVariant,
-                                        ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -316,6 +360,79 @@ class _PostsSecondFloorLayer extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _SecondFloorQuickChip extends StatelessWidget {
+  const _SecondFloorQuickChip({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.28),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: theme.colorScheme.onSurfaceVariant),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: theme.colorScheme.onSurface,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SecondFloorMiniAppItem extends StatelessWidget {
+  const _SecondFloorMiniAppItem({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.22),
+        ),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 22, color: theme.colorScheme.primary),
+          const SizedBox(height: 7),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1602,7 +1719,6 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
                   child: _PostsSecondFloorLayer(
                     progress: progress,
                     feedLabel: _feeds[_tabController.index].label,
-                    armed: _secondFloorArmed,
                     bottomBarHeight: _secondFloorBottomBarHeight,
                     bottomNavigationReserveHeight:
                         _secondFloorBottomNavReserveHeight,
