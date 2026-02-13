@@ -53,6 +53,12 @@ class _ViewerZoomableImageState extends State<_ViewerZoomableImage>
   static const double _doubleTapMidScale = 2;
   static const double _doubleTapMaxScale = 4;
   static const double _miniMapShowScale = 2;
+  static const List<double> _doubleTapScaleSequence = <double>[
+    _doubleTapMidScale,
+    _doubleTapMaxScale,
+    _doubleTapMidScale,
+    _doubleTapMinScale,
+  ];
 
   bool _retryWithoutCookie = false;
   bool _fallbackToDirectImage = false;
@@ -63,10 +69,18 @@ class _ViewerZoomableImageState extends State<_ViewerZoomableImage>
   Animation<Matrix4>? _matrixAnimation;
   TapDownDetails? _doubleTapDetails;
   Size _viewportSize = Size.zero;
+  Size? _imagePixelSize;
+  Object? _imageProviderIdentity;
+  ImageStream? _imageStream;
+  ImageStreamListener? _imageStreamListener;
+  int _doubleTapCycleIndex = 0;
+  bool _showMiniMapOverlay = true;
+  Timer? _miniMapFadeTimer;
 
   @override
   void initState() {
     super.initState();
+    _transformController.addListener(_onMatrixChanged);
     _matrixAnimationController =
         AnimationController(
           vsync: this,
@@ -81,6 +95,9 @@ class _ViewerZoomableImageState extends State<_ViewerZoomableImage>
 
   @override
   void dispose() {
+    _miniMapFadeTimer?.cancel();
+    _detachImageStream();
+    _transformController.removeListener(_onMatrixChanged);
     _matrixAnimationController.dispose();
     _transformController.dispose();
     super.dispose();
@@ -93,6 +110,7 @@ class _ViewerZoomableImageState extends State<_ViewerZoomableImage>
     final requestHeaders = _retryWithoutCookie
         ? _headersWithoutCookie(widget.item.headers)
         : widget.item.headers;
+    _resolveImagePixelSize(requestHeaders);
 
     final image = _fallbackToDirectImage
         ? _buildDirectImage(requestHeaders, hasCookie)
@@ -128,16 +146,36 @@ class _ViewerZoomableImageState extends State<_ViewerZoomableImage>
                       transformationController: _transformController,
                       minScale: 1,
                       maxScale: 4,
+                      onInteractionStart: (_) {
+                        _syncDoubleTapCycleToScale(_currentScale);
+                        _showMiniMapTemporarily();
+                      },
+                      onInteractionUpdate: (_) {
+                        _showMiniMapTemporarily();
+                      },
+                      onInteractionEnd: (_) {
+                        _syncDoubleTapCycleToScale(_currentScale);
+                        _showMiniMapTemporarily();
+                      },
                       child: child!,
                     ),
                   ),
                   if (scale >= _miniMapShowScale)
-                    _MiniMapPanel(
-                      imageUrl: widget.item.url,
-                      headers: requestHeaders,
-                      viewportSize: _viewportSize,
-                      matrix: _transformController.value,
-                      onPanUpdate: _onMiniMapPanUpdate,
+                    IgnorePointer(
+                      ignoring: !_showMiniMapOverlay,
+                      child: AnimatedOpacity(
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeOutCubic,
+                        opacity: _showMiniMapOverlay ? 1 : 0,
+                        child: _MiniMapPanel(
+                          imageUrl: widget.item.url,
+                          headers: requestHeaders,
+                          viewportSize: _viewportSize,
+                          matrix: _transformController.value,
+                          imagePixelSize: _imagePixelSize,
+                          onPanUpdate: _onMiniMapPanUpdate,
+                        ),
+                      ),
                     ),
                 ],
               );
@@ -156,13 +194,70 @@ class _ViewerZoomableImageState extends State<_ViewerZoomableImage>
 
   double get _currentTranslateY => _transformController.value.storage[13];
 
+  void _onMatrixChanged() {
+    final scale = _currentScale;
+    if (scale < _miniMapShowScale) {
+      _miniMapFadeTimer?.cancel();
+      if (!_showMiniMapOverlay && mounted) {
+        setState(() {
+          _showMiniMapOverlay = true;
+        });
+      }
+    }
+  }
+
+  void _syncDoubleTapCycleToScale(double scale) {
+    if ((scale - _doubleTapMinScale).abs() < 0.08) {
+      _doubleTapCycleIndex = 0;
+      return;
+    }
+    if ((scale - _doubleTapMaxScale).abs() < 0.12) {
+      _doubleTapCycleIndex = 2;
+      return;
+    }
+    if ((scale - _doubleTapMidScale).abs() < 0.12) {
+      if (_doubleTapCycleIndex == 0 || _doubleTapCycleIndex == 2) {
+        _doubleTapCycleIndex = 1;
+      }
+      return;
+    }
+    if (scale < _doubleTapMidScale) {
+      _doubleTapCycleIndex = 0;
+      return;
+    }
+    _doubleTapCycleIndex = 2;
+  }
+
+  void _showMiniMapTemporarily() {
+    if (_currentScale < _miniMapShowScale) {
+      return;
+    }
+    if (!_showMiniMapOverlay && mounted) {
+      setState(() {
+        _showMiniMapOverlay = true;
+      });
+    }
+    _miniMapFadeTimer?.cancel();
+    _miniMapFadeTimer = Timer(const Duration(milliseconds: 1400), () {
+      if (!mounted || _currentScale < _miniMapShowScale) {
+        return;
+      }
+      setState(() {
+        _showMiniMapOverlay = false;
+      });
+    });
+  }
+
   void _onDoubleTap() {
     if (_viewportSize.width <= 0 || _viewportSize.height <= 0) {
       return;
     }
 
     final currentScale = _currentScale;
-    final targetScale = _nextScale(currentScale);
+    _syncDoubleTapCycleToScale(currentScale);
+    final targetScale = _doubleTapScaleSequence[_doubleTapCycleIndex];
+    _doubleTapCycleIndex =
+        (_doubleTapCycleIndex + 1) % _doubleTapScaleSequence.length;
     final tapPosition =
         _doubleTapDetails?.localPosition ??
         Offset(_viewportSize.width / 2, _viewportSize.height / 2);
@@ -179,20 +274,8 @@ class _ViewerZoomableImageState extends State<_ViewerZoomableImage>
       ty: targetTy,
     );
 
+    _showMiniMapTemporarily();
     _animateToMatrix(_composeMatrix(targetScale, clamped.dx, clamped.dy));
-  }
-
-  double _nextScale(double currentScale) {
-    if (currentScale < _doubleTapMidScale - 0.01) {
-      return _doubleTapMidScale;
-    }
-    if (currentScale < _doubleTapMaxScale - 0.01) {
-      return _doubleTapMaxScale;
-    }
-    if (currentScale > _doubleTapMidScale + 0.01) {
-      return _doubleTapMidScale;
-    }
-    return _doubleTapMinScale;
   }
 
   void _animateToMatrix(Matrix4 target) {
@@ -244,6 +327,7 @@ class _ViewerZoomableImageState extends State<_ViewerZoomableImage>
     final targetTy = -nextTop * scale;
     final clamped = _clampTranslation(scale: scale, tx: targetTx, ty: targetTy);
     _transformController.value = _composeMatrix(scale, clamped.dx, clamped.dy);
+    _showMiniMapTemporarily();
   }
 
   Offset _clampTranslation({
@@ -267,6 +351,58 @@ class _ViewerZoomableImageState extends State<_ViewerZoomableImage>
     matrix.storage[12] = tx;
     matrix.storage[13] = ty;
     return matrix;
+  }
+
+  ImageProvider<Object>? _currentImageProvider(Map<String, String>? headers) {
+    if (_useProvidedImage && widget.item.imageProvider != null) {
+      return widget.item.imageProvider;
+    }
+    return CachedNetworkImageProvider(
+      widget.item.url,
+      headers: headers,
+      cacheKey: _buildImageCacheKey(widget.item.url, headers),
+    );
+  }
+
+  void _resolveImagePixelSize(Map<String, String>? headers) {
+    final provider = _currentImageProvider(headers);
+    if (provider == null) {
+      return;
+    }
+    final identity = provider.toString();
+    if (_imageProviderIdentity == identity) {
+      return;
+    }
+    _detachImageStream();
+    _imageProviderIdentity = identity;
+    final stream = provider.resolve(const ImageConfiguration());
+    final listener = ImageStreamListener((info, _) {
+      final width = info.image.width.toDouble();
+      final height = info.image.height.toDouble();
+      if (!mounted || width <= 0 || height <= 0) {
+        return;
+      }
+      final next = Size(width, height);
+      if (_imagePixelSize == next) {
+        return;
+      }
+      setState(() {
+        _imagePixelSize = next;
+      });
+    });
+    stream.addListener(listener);
+    _imageStream = stream;
+    _imageStreamListener = listener;
+  }
+
+  void _detachImageStream() {
+    final stream = _imageStream;
+    final listener = _imageStreamListener;
+    if (stream != null && listener != null) {
+      stream.removeListener(listener);
+    }
+    _imageStream = null;
+    _imageStreamListener = null;
   }
 
   Widget _buildProvidedImage() {
@@ -394,6 +530,7 @@ class _MiniMapPanel extends StatelessWidget {
     required this.headers,
     required this.viewportSize,
     required this.matrix,
+    required this.imagePixelSize,
     required this.onPanUpdate,
   });
 
@@ -401,6 +538,7 @@ class _MiniMapPanel extends StatelessWidget {
   final Map<String, String>? headers;
   final Size viewportSize;
   final Matrix4 matrix;
+  final Size? imagePixelSize;
   final void Function(Offset delta, Size miniMapSize) onPanUpdate;
 
   @override
@@ -413,10 +551,33 @@ class _MiniMapPanel extends StatelessWidget {
     if (width <= 0 || height <= 0) {
       return const SizedBox.shrink();
     }
-    final miniMapWidth = 88.0;
-    final miniMapHeight = (miniMapWidth * (height / width))
-        .clamp(96, 160)
-        .toDouble();
+    final imageAspect =
+        imagePixelSize == null ||
+            imagePixelSize!.width <= 0 ||
+            imagePixelSize!.height <= 0
+        ? width / height
+        : imagePixelSize!.width / imagePixelSize!.height;
+    const maxMiniMapWidth = 116.0;
+    const maxMiniMapHeight = 188.0;
+    const minMiniMapSize = 56.0;
+    var miniMapWidth = maxMiniMapWidth;
+    var miniMapHeight = miniMapWidth / imageAspect;
+    if (miniMapHeight > maxMiniMapHeight) {
+      miniMapHeight = maxMiniMapHeight;
+      miniMapWidth = miniMapHeight * imageAspect;
+    }
+    if (miniMapWidth > maxMiniMapWidth) {
+      miniMapWidth = maxMiniMapWidth;
+      miniMapHeight = miniMapWidth / imageAspect;
+    }
+    if (miniMapWidth < minMiniMapSize) {
+      miniMapWidth = minMiniMapSize;
+      miniMapHeight = miniMapWidth / imageAspect;
+    }
+    if (miniMapHeight < minMiniMapSize) {
+      miniMapHeight = minMiniMapSize;
+      miniMapWidth = miniMapHeight * imageAspect;
+    }
 
     final visibleContentWidth = width / scale;
     final visibleContentHeight = height / scale;
@@ -453,11 +614,14 @@ class _MiniMapPanel extends StatelessWidget {
             child: Stack(
               children: [
                 Positioned.fill(
-                  child: CachedNetworkImage(
-                    imageUrl: imageUrl,
-                    httpHeaders: headers,
-                    cacheKey: _buildImageCacheKey(imageUrl, headers),
-                    fit: BoxFit.cover,
+                  child: ColoredBox(
+                    color: Colors.black45,
+                    child: CachedNetworkImage(
+                      imageUrl: imageUrl,
+                      httpHeaders: headers,
+                      cacheKey: _buildImageCacheKey(imageUrl, headers),
+                      fit: BoxFit.contain,
+                    ),
                   ),
                 ),
                 Positioned(

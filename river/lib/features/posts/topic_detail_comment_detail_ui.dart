@@ -44,6 +44,8 @@ extension _CommentDetailPageUi on _CommentDetailPageState {
                   cookieHeader: _activeCookieHeader(),
                   emojiUrls: _emojiUrls,
                   onQuoteTap: _showQuoteBottomSheet,
+                  onMentionTap: _openMentionProfileFromContent,
+                  onTopicLinkTap: _openTopicFromContent,
                   heroTag: widget.heroTag,
                   reacting: _reactingPostIds.contains(_rootPost.id),
                   pendingHeroReactionId:
@@ -168,6 +170,8 @@ extension _CommentDetailPageUi on _CommentDetailPageState {
                 cookieHeader: _activeCookieHeader(),
                 emojiUrls: _emojiUrls,
                 onQuoteTap: _showQuoteBottomSheet,
+                onMentionTap: _openMentionProfileFromContent,
+                onTopicLinkTap: _openTopicFromContent,
                 reacting: _reactingPostIds.contains(post.id),
                 pendingHeroReactionId: _pendingReactionHeroByPostId[post.id],
                 reactionPulseToken: _reactionPulseTokenByPostId[post.id] ?? 0,

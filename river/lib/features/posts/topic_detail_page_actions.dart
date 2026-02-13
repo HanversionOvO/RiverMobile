@@ -342,7 +342,8 @@ extension _TopicDetailPageCommentActions on _TopicDetailPageState {
   }
 
   Future<void> _copyCommentContent(RiverSideTopicPostDetail post) async {
-    await Clipboard.setData(ClipboardData(text: post.contentMarkdown));
+    final pureContent = _stripQuotedMarkdown(post.contentMarkdown);
+    await Clipboard.setData(ClipboardData(text: pureContent));
     if (!mounted) {
       return;
     }

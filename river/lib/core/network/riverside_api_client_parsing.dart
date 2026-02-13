@@ -44,6 +44,15 @@ extension RiverSideApiClientParsingMethods on RiverSideApiClient {
       post['current_user_reaction'],
     );
     final reactionUsersCount = _asInt(post['reaction_users_count']) ?? 0;
+    final replyToPostNumber = _asInt(post['reply_to_post_number']);
+    final replyToUserMap = _toStringMap(post['reply_to_user']);
+    final replyToUsername =
+        (post['reply_to_username'] ??
+                post['reply_to_user_username'] ??
+                replyToUserMap['username'] ??
+                '')
+            .toString()
+            .trim();
 
     final onlineValue = post['online'];
     final isOnline = onlineValue is bool
@@ -69,6 +78,8 @@ extension RiverSideApiClientParsingMethods on RiverSideApiClient {
       reactions: reactions,
       currentUserReaction: currentUserReaction,
       reactionUsersCount: reactionUsersCount,
+      replyToPostNumber: replyToPostNumber,
+      replyToUsername: replyToUsername,
     );
   }
 

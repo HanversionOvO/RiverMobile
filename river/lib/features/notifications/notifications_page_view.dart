@@ -699,45 +699,95 @@ extension _NotificationsPageView on _NotificationsPageState {
       return const SizedBox.shrink();
     }
     return Positioned(
-      left: 24,
-      right: 24,
+      left: 16,
+      right: 16,
       bottom: 24,
       child: SafeArea(
         top: false,
         child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 300),
+          duration: const Duration(milliseconds: 240),
           transitionBuilder: (child, animation) {
-            return SlideTransition(
-              position:
-                  Tween<Offset>(
-                    begin: const Offset(0, 2),
-                    end: Offset.zero,
-                  ).animate(
-                    CurvedAnimation(
-                      parent: animation,
-                      curve: Curves.easeOutBack,
-                    ),
-                  ),
-              child: FadeTransition(opacity: animation, child: child),
+            final curved = CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOutCubic,
+            );
+            return FadeTransition(
+              opacity: curved,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, 0.18),
+                  end: Offset.zero,
+                ).animate(curved),
+                child: child,
+              ),
             );
           },
           child: _hasRealtimeNotifications
-              ? Container(
-                  decoration: BoxDecoration(
-                    boxShadow: [
-                      BoxShadow(
-                        color: theme.colorScheme.primary.withValues(alpha: 0.3),
-                        blurRadius: 16,
-                        offset: const Offset(0, 8),
+              ? Material(
+                  key: const ValueKey<String>('notifications-realtime-hint'),
+                  color: Colors.transparent,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOutCubic,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primaryContainer.withValues(
+                        alpha: 0.38,
                       ),
-                    ],
-                  ),
-                  child: FloatingActionButton.extended(
-                    onPressed: _consumeRealtimeNotifications,
-                    icon: const Icon(Icons.refresh_rounded),
-                    label: const Text('收到新消息，点击刷新'),
-                    backgroundColor: theme.colorScheme.primary,
-                    foregroundColor: theme.colorScheme.onPrimary,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: theme.colorScheme.primary.withValues(
+                          alpha: 0.24,
+                        ),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(14),
+                            onTap: _consumeRealtimeNotifications,
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(
+                                12,
+                                10,
+                                10,
+                                10,
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.notifications_active_rounded,
+                                    size: 16,
+                                    color: theme.colorScheme.primary,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      '有新通知，点击查看',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: theme.textTheme.labelMedium
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w700,
+                                            color: theme.colorScheme.onSurface,
+                                          ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: '关闭',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => _setState(
+                            () => _hasRealtimeNotifications = false,
+                          ),
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                      ],
+                    ),
                   ),
                 )
               : const SizedBox.shrink(),

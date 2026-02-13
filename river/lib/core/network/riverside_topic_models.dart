@@ -108,6 +108,8 @@ class RiverSideTopicPostDetail {
     this.reactions = const <RiverSidePostReaction>[],
     this.currentUserReaction,
     this.reactionUsersCount = 0,
+    this.replyToPostNumber,
+    this.replyToUsername = '',
   });
 
   final int id;
@@ -126,6 +128,8 @@ class RiverSideTopicPostDetail {
   final List<RiverSidePostReaction> reactions;
   final RiverSideCurrentUserReaction? currentUserReaction;
   final int reactionUsersCount;
+  final int? replyToPostNumber;
+  final String replyToUsername;
 
   RiverSideTopicPostDetail copyWith({
     int? id,
@@ -146,6 +150,8 @@ class RiverSideTopicPostDetail {
     RiverSideCurrentUserReaction? currentUserReaction,
     bool clearCurrentUserReaction = false,
     int? reactionUsersCount,
+    int? replyToPostNumber,
+    String? replyToUsername,
   }) {
     return RiverSideTopicPostDetail(
       id: id ?? this.id,
@@ -168,6 +174,8 @@ class RiverSideTopicPostDetail {
           ? null
           : (currentUserReaction ?? this.currentUserReaction),
       reactionUsersCount: reactionUsersCount ?? this.reactionUsersCount,
+      replyToPostNumber: replyToPostNumber ?? this.replyToPostNumber,
+      replyToUsername: replyToUsername ?? this.replyToUsername,
     );
   }
 }

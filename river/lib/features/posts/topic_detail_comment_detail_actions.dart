@@ -210,6 +210,32 @@ extension _CommentDetailPageActions on _CommentDetailPageState {
     );
   }
 
+  Future<void> _openMentionProfileFromContent(String username) async {
+    final normalized = username.trim();
+    if (normalized.isEmpty) {
+      return;
+    }
+    await showRiverSideUserProfileSheet(
+      context: context,
+      dependencies: widget.dependencies,
+      username: normalized,
+    );
+  }
+
+  Future<void> _openTopicFromContent(int topicId) async {
+    if (topicId <= 0 || topicId == _rootPost.topicId) {
+      return;
+    }
+    await Navigator.of(context).push(
+      riverPageRoute<void>(
+        builder: (_) => TopicDetailPage(
+          dependencies: widget.dependencies,
+          topicId: topicId,
+        ),
+      ),
+    );
+  }
+
   String _buildReplyPayload({
     required String markdown,
     String? quoteUsername,
@@ -477,7 +503,8 @@ extension _CommentDetailPageActions on _CommentDetailPageState {
   }
 
   Future<void> _copyCommentContent(RiverSideTopicPostDetail post) async {
-    await Clipboard.setData(ClipboardData(text: post.contentMarkdown));
+    final pureContent = _stripQuotedMarkdown(post.contentMarkdown);
+    await Clipboard.setData(ClipboardData(text: pureContent));
     if (!mounted) {
       return;
     }

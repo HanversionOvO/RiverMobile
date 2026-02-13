@@ -165,6 +165,188 @@ class _EmojiInlineSyntax extends md.InlineSyntax {
   }
 }
 
+class _MentionInlineSyntax extends md.InlineSyntax {
+  _MentionInlineSyntax() : super(r'(?<![\w/`])@([a-zA-Z0-9_\-\.]{2,32})');
+
+  @override
+  bool onMatch(md.InlineParser parser, Match match) {
+    final username = (match.group(1) ?? '').trim();
+    if (username.isEmpty) {
+      return false;
+    }
+    final element = md.Element.text('mention', '@$username');
+    element.attributes['data-username'] = username;
+    parser.addNode(element);
+    return true;
+  }
+}
+
+class _MentionBuilder extends MarkdownElementBuilder {
+  _MentionBuilder({required this.onTap});
+
+  final ValueChanged<String> onTap;
+
+  @override
+  Widget? visitElementAfter(md.Element element, TextStyle? preferredStyle) {
+    final username = (element.attributes['data-username'] ?? '').trim();
+    if (username.isEmpty) {
+      return Text(element.textContent, style: preferredStyle);
+    }
+    return _InlinePillLink(
+      icon: Icons.alternate_email_rounded,
+      label: '@$username',
+      onTap: () => onTap(username),
+    );
+  }
+}
+
+class _TopicAwareLinkBuilder extends MarkdownElementBuilder {
+  _TopicAwareLinkBuilder({
+    this.onTapMention,
+    this.onTapTopicLink,
+    required this.onTapExternalLink,
+  });
+
+  final ValueChanged<String>? onTapMention;
+  final ValueChanged<int>? onTapTopicLink;
+  final ValueChanged<String?> onTapExternalLink;
+
+  @override
+  Widget? visitElementAfter(md.Element element, TextStyle? preferredStyle) {
+    final href = (element.attributes['href'] ?? '').trim();
+    if (href.isEmpty) {
+      return Text(element.textContent, style: preferredStyle);
+    }
+    final resolved = _resolveForumUrl(href);
+
+    final mentionUsername = _tryParseMentionUsernameFromUrl(resolved);
+    if (mentionUsername != null && onTapMention != null) {
+      final label = element.textContent.trim();
+      final shown = label.isEmpty
+          ? '@$mentionUsername'
+          : (label.startsWith('@') ? label : '@$mentionUsername');
+      return _InlinePillLink(
+        icon: Icons.alternate_email_rounded,
+        label: shown,
+        onTap: () => onTapMention!(mentionUsername),
+      );
+    }
+
+    final topicId = _tryParseTopicIdFromUrl(resolved);
+    if (topicId != null && onTapTopicLink != null) {
+      final label = element.textContent.trim();
+      return _InlinePillLink(
+        icon: Icons.article_outlined,
+        label: label.isEmpty ? '帖子 #$topicId' : label,
+        onTap: () => onTapTopicLink!(topicId),
+      );
+    }
+
+    return InkWell(
+      onTap: () => onTapExternalLink(resolved),
+      child: Text(
+        element.textContent.trim().isEmpty ? resolved : element.textContent,
+        style: preferredStyle?.copyWith(
+          color: Colors.blue,
+          decoration: TextDecoration.underline,
+        ),
+      ),
+    );
+  }
+}
+
+class _InlinePillLink extends StatelessWidget {
+  const _InlinePillLink({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 1),
+      child: Material(
+        color: theme.colorScheme.primaryContainer.withValues(alpha: 0.62),
+        borderRadius: BorderRadius.circular(999),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 12, color: theme.colorScheme.primary),
+                const SizedBox(width: 4),
+                Text(
+                  label,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.primary,
+                    fontWeight: FontWeight.w700,
+                    height: 1.1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+String? _tryParseMentionUsernameFromUrl(String url) {
+  final uri = Uri.tryParse(url);
+  if (uri == null) {
+    return null;
+  }
+  final host = uri.host.toLowerCase();
+  if (host.isNotEmpty && !isRiverSideHost(host)) {
+    return null;
+  }
+  final segments = uri.pathSegments.where((segment) => segment.isNotEmpty);
+  final parts = segments.toList(growable: false);
+  if (parts.length < 2 || parts.first != 'u') {
+    return null;
+  }
+  final username = parts[1].split('.').first.trim();
+  if (username.isEmpty) {
+    return null;
+  }
+  return username;
+}
+
+int? _tryParseTopicIdFromUrl(String url) {
+  final uri = Uri.tryParse(url);
+  if (uri == null) {
+    return null;
+  }
+  final host = uri.host.toLowerCase();
+  if (host.isNotEmpty && !isRiverSideHost(host)) {
+    return null;
+  }
+  final parts = uri.pathSegments
+      .where((segment) => segment.isNotEmpty)
+      .toList(growable: false);
+  if (parts.isEmpty || parts.first != 't') {
+    return null;
+  }
+  for (var i = parts.length - 1; i >= 1; i--) {
+    final parsed = int.tryParse(parts[i]);
+    if (parsed != null && parsed > 0) {
+      return parsed;
+    }
+  }
+  return null;
+}
+
 class _EmojiBuilder extends MarkdownElementBuilder {
   _EmojiBuilder({required this.headers});
 
@@ -348,6 +530,207 @@ List<String> _extractMarkdownImageUrls(String markdown) {
   }
 
   return urls;
+}
+
+abstract class _MarkdownRenderChunk {
+  const _MarkdownRenderChunk();
+}
+
+class _MarkdownTextChunk extends _MarkdownRenderChunk {
+  const _MarkdownTextChunk(this.markdown);
+
+  final String markdown;
+}
+
+class _MarkdownVideoChunk extends _MarkdownRenderChunk {
+  const _MarkdownVideoChunk(this.video);
+
+  final _VideoSourceDescriptor video;
+}
+
+class _VideoSourceDescriptor {
+  const _VideoSourceDescriptor({
+    required this.sourceUrl,
+    required this.embedUrl,
+    required this.providerLabel,
+    required this.directVideo,
+  });
+
+  final String sourceUrl;
+  final String embedUrl;
+  final String providerLabel;
+  final bool directVideo;
+}
+
+List<_MarkdownRenderChunk> _splitMarkdownRenderChunks(String markdown) {
+  final source = markdown.trim();
+  if (source.isEmpty) {
+    return const <_MarkdownRenderChunk>[];
+  }
+
+  final chunks = <_MarkdownRenderChunk>[];
+  final urlPattern = RegExp(r'(https?:\/\/[^\s<>()]+)', caseSensitive: false);
+  final buffer = StringBuffer();
+  var cursor = 0;
+
+  void flushTextBuffer() {
+    final text = buffer.toString().trim();
+    if (text.isNotEmpty) {
+      chunks.add(_MarkdownTextChunk(text));
+    }
+    buffer.clear();
+  }
+
+  for (final match in urlPattern.allMatches(source)) {
+    if (match.start > cursor) {
+      buffer.write(source.substring(cursor, match.start));
+    }
+
+    final rawUrl = (match.group(0) ?? '').trim();
+    final beforeChar = match.start > 0 ? source[match.start - 1] : '\n';
+    final afterChar = match.end < source.length ? source[match.end] : '\n';
+    final standaloneBefore = RegExp(r'\s').hasMatch(beforeChar);
+    final standaloneAfter = RegExp(r'[\s\]\)!?,.;:]').hasMatch(afterChar);
+    if (!standaloneBefore || !standaloneAfter) {
+      buffer.write(rawUrl);
+      cursor = match.end;
+      continue;
+    }
+    final split = _splitUrlAndTrailing(rawUrl);
+    final resolvedUrl = _resolveForumUrl(split.item1);
+    final descriptor = _parseVideoSourceDescriptor(resolvedUrl);
+
+    if (descriptor == null) {
+      buffer.write(rawUrl);
+    } else {
+      flushTextBuffer();
+      chunks.add(_MarkdownVideoChunk(descriptor));
+      if (split.item2.isNotEmpty) {
+        buffer.write(split.item2);
+      }
+    }
+
+    cursor = match.end;
+  }
+
+  if (cursor < source.length) {
+    buffer.write(source.substring(cursor));
+  }
+  flushTextBuffer();
+  return chunks;
+}
+
+({String item1, String item2}) _splitUrlAndTrailing(String rawUrl) {
+  var url = rawUrl;
+  var trailing = '';
+  while (url.isNotEmpty &&
+      RegExp(r'[),.!?;:]$').hasMatch(url) &&
+      !RegExp(r'[\w/]$').hasMatch(url)) {
+    trailing = '${url[url.length - 1]}$trailing';
+    url = url.substring(0, url.length - 1);
+  }
+  return (item1: url, item2: trailing);
+}
+
+_VideoSourceDescriptor? _parseVideoSourceDescriptor(String resolvedUrl) {
+  if (resolvedUrl.isEmpty) {
+    return null;
+  }
+  final uri = Uri.tryParse(resolvedUrl);
+  if (uri == null) {
+    return null;
+  }
+
+  final host = uri.host.toLowerCase();
+  final youtubeId = _extractYoutubeVideoId(uri);
+  if (youtubeId != null) {
+    return _VideoSourceDescriptor(
+      sourceUrl: resolvedUrl,
+      embedUrl:
+          'https://www.youtube.com/embed/$youtubeId?playsinline=1&autoplay=0&rel=0&modestbranding=1',
+      providerLabel: 'YouTube',
+      directVideo: false,
+    );
+  }
+
+  final bilibiliBv = _extractBilibiliBvId(uri);
+  if (bilibiliBv != null) {
+    return _VideoSourceDescriptor(
+      sourceUrl: resolvedUrl,
+      embedUrl:
+          'https://player.bilibili.com/player.html?bvid=$bilibiliBv&high_quality=1&autoplay=0',
+      providerLabel: 'Bilibili',
+      directVideo: false,
+    );
+  }
+
+  if (host.contains('b23.tv')) {
+    return _VideoSourceDescriptor(
+      sourceUrl: resolvedUrl,
+      embedUrl: resolvedUrl,
+      providerLabel: 'Bilibili',
+      directVideo: false,
+    );
+  }
+
+  final path = uri.path.toLowerCase();
+  const directSuffixes = <String>['.mp4', '.m4v', '.mov', '.webm', '.m3u8'];
+  if (directSuffixes.any(path.endsWith)) {
+    return _VideoSourceDescriptor(
+      sourceUrl: resolvedUrl,
+      embedUrl: resolvedUrl,
+      providerLabel: '视频',
+      directVideo: true,
+    );
+  }
+
+  return null;
+}
+
+String? _extractYoutubeVideoId(Uri uri) {
+  final host = uri.host.toLowerCase();
+  if (host.contains('youtu.be')) {
+    final parts = uri.pathSegments.where((segment) => segment.isNotEmpty);
+    if (parts.isEmpty) {
+      return null;
+    }
+    return parts.first;
+  }
+  if (!host.contains('youtube.com')) {
+    return null;
+  }
+  final v = uri.queryParameters['v']?.trim();
+  if (v != null && v.isNotEmpty) {
+    return v;
+  }
+  final parts = uri.pathSegments.where((segment) => segment.isNotEmpty);
+  if (parts.isEmpty) {
+    return null;
+  }
+  final list = parts.toList(growable: false);
+  if (list.first == 'shorts' || list.first == 'embed') {
+    if (list.length >= 2) {
+      return list[1];
+    }
+  }
+  return null;
+}
+
+String? _extractBilibiliBvId(Uri uri) {
+  final host = uri.host.toLowerCase();
+  if (!host.contains('bilibili.com') && !host.contains('b23.tv')) {
+    return null;
+  }
+  final queryBv = uri.queryParameters['bvid']?.trim();
+  if (queryBv != null && queryBv.isNotEmpty) {
+    return queryBv;
+  }
+  final joinedPath = '/${uri.pathSegments.join('/')}';
+  final match = RegExp(r'BV[0-9A-Za-z]+').firstMatch(joinedPath);
+  if (match == null) {
+    return null;
+  }
+  return match.group(0);
 }
 
 String _resolveForumUrl(String source) {

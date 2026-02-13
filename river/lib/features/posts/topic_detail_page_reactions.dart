@@ -387,15 +387,7 @@ class _ReactionPickerSheetState extends State<_ReactionPickerSheet>
                       );
                     }),
                   ),
-                  const SizedBox(height: 6),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton.icon(
-                      onPressed: () => Navigator.of(context).maybePop(),
-                      icon: const Icon(Icons.keyboard_arrow_down_rounded),
-                      label: const Text('\u53d6\u6d88'),
-                    ),
-                  ),
+                  const SizedBox(height: 2),
                 ],
               ),
             ),

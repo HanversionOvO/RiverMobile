@@ -34,6 +34,8 @@ class _MainPostCard extends StatefulWidget {
     required this.cookieHeader,
     required this.emojiUrls,
     required this.onQuoteTap,
+    required this.onMentionTap,
+    required this.onTopicLinkTap,
     required this.isReacting,
     required this.onReactPressed,
     required this.onReplyPressed,
@@ -53,6 +55,8 @@ class _MainPostCard extends StatefulWidget {
   final String? cookieHeader;
   final Map<String, String> emojiUrls;
   final ValueChanged<_QuoteBlock> onQuoteTap;
+  final ValueChanged<String> onMentionTap;
+  final ValueChanged<int> onTopicLinkTap;
   final bool isReacting;
   final ValueChanged<RiverSideTopicPostDetail> onReactPressed;
   final ValueChanged<RiverSideTopicPostDetail> onReplyPressed;
@@ -119,6 +123,8 @@ class _MainPostCardState extends State<_MainPostCard>
           cookieHeader: widget.cookieHeader,
           emojiUrls: widget.emojiUrls,
           onQuoteTap: widget.onQuoteTap,
+          onMentionTap: widget.onMentionTap,
+          onTopicLinkTap: widget.onTopicLinkTap,
         ),
         const SizedBox(height: 12),
         _PostReactionBar(
@@ -204,6 +210,8 @@ class _CommentCard extends StatefulWidget {
     required this.cookieHeader,
     required this.emojiUrls,
     required this.onQuoteTap,
+    required this.onMentionTap,
+    required this.onTopicLinkTap,
     required this.isReacting,
     required this.onReactPressed,
     required this.onReplyPressed,
@@ -222,6 +230,8 @@ class _CommentCard extends StatefulWidget {
   final String? cookieHeader;
   final Map<String, String> emojiUrls;
   final ValueChanged<_QuoteBlock> onQuoteTap;
+  final ValueChanged<String> onMentionTap;
+  final ValueChanged<int> onTopicLinkTap;
   final bool isReacting;
   final ValueChanged<RiverSideTopicPostDetail> onReactPressed;
   final ValueChanged<RiverSideTopicPostDetail> onReplyPressed;
@@ -318,8 +328,12 @@ class _CommentCardState extends State<_CommentCard>
                       cookieHeader: widget.cookieHeader,
                       emojiUrls: widget.emojiUrls,
                       onQuoteTap: widget.onQuoteTap,
+                      onMentionTap: widget.onMentionTap,
+                      onTopicLinkTap: widget.onTopicLinkTap,
                       enableImageHero: false,
                       enableTextSelection: false,
+                      replyToPostNumber: widget.post.replyToPostNumber,
+                      replyToUsername: widget.post.replyToUsername,
                     ),
                     if (hasReactionStatus) ...[
                       const SizedBox(height: 10),
@@ -412,6 +426,8 @@ class _CommentDetailPostCard extends StatelessWidget {
     required this.cookieHeader,
     required this.emojiUrls,
     required this.onQuoteTap,
+    required this.onMentionTap,
+    required this.onTopicLinkTap,
     required this.onReplyPressed,
     required this.onReactPressed,
     required this.onReactionStatusPressed,
@@ -427,6 +443,8 @@ class _CommentDetailPostCard extends StatelessWidget {
   final String? cookieHeader;
   final Map<String, String> emojiUrls;
   final ValueChanged<_QuoteBlock> onQuoteTap;
+  final ValueChanged<String> onMentionTap;
+  final ValueChanged<int> onTopicLinkTap;
   final ValueChanged<RiverSideTopicPostDetail> onReplyPressed;
   final ValueChanged<RiverSideTopicPostDetail> onReactPressed;
   final void Function(RiverSideTopicPostDetail post, String reactionId)
@@ -494,8 +512,12 @@ class _CommentDetailPostCard extends StatelessWidget {
                 cookieHeader: cookieHeader,
                 emojiUrls: emojiUrls,
                 onQuoteTap: onQuoteTap,
+                onMentionTap: onMentionTap,
+                onTopicLinkTap: onTopicLinkTap,
                 enableImageHero: false,
                 enableTextSelection: false,
+                replyToPostNumber: post.replyToPostNumber,
+                replyToUsername: post.replyToUsername,
               ),
               if (hasReactionStatus) ...[
                 const SizedBox(height: 10),

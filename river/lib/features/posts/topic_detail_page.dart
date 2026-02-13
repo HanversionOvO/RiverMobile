@@ -20,6 +20,7 @@ import 'package:river/core/widgets/river_markdown_editor.dart';
 import 'package:river/features/mine/riverside_profile_sheet.dart';
 import 'package:river/core/navigation/river_page_route.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
 part 'topic_detail_comment_detail_page.dart';
 part 'topic_detail_comment_detail_actions.dart';
@@ -629,6 +630,32 @@ class _TopicDetailPageState extends State<TopicDetailPage>
     });
   }
 
+  Future<void> _openMentionProfileFromContent(String username) async {
+    final normalized = username.trim();
+    if (normalized.isEmpty) {
+      return;
+    }
+    await showRiverSideUserProfileSheet(
+      context: context,
+      dependencies: widget.dependencies,
+      username: normalized,
+    );
+  }
+
+  Future<void> _openTopicFromContent(int topicId) async {
+    if (topicId <= 0 || topicId == widget.topicId) {
+      return;
+    }
+    await Navigator.of(context).push(
+      riverPageRoute<void>(
+        builder: (_) => TopicDetailPage(
+          dependencies: widget.dependencies,
+          topicId: topicId,
+        ),
+      ),
+    );
+  }
+
   void _triggerJumpHighlight(int postNumber) {
     _jumpHighlightClearTimer?.cancel();
     _mutateState(() {
@@ -1106,6 +1133,8 @@ class _TopicDetailPageState extends State<TopicDetailPage>
                             cookieHeader: cookieHeader,
                             emojiUrls: _emojiUrls,
                             onQuoteTap: _showQuoteBottomSheet,
+                            onMentionTap: _openMentionProfileFromContent,
+                            onTopicLinkTap: _openTopicFromContent,
                             isReacting: _reactingPostIds.contains(
                               detail.mainPost.id,
                             ),
@@ -1206,6 +1235,8 @@ class _TopicDetailPageState extends State<TopicDetailPage>
                                   cookieHeader: cookieHeader,
                                   emojiUrls: _emojiUrls,
                                   onQuoteTap: _showQuoteBottomSheet,
+                                  onMentionTap: _openMentionProfileFromContent,
+                                  onTopicLinkTap: _openTopicFromContent,
                                   isReacting: _reactingPostIds.contains(
                                     post.id,
                                   ),
