@@ -183,6 +183,11 @@ class _TopicDetailPageState extends State<TopicDetailPage>
   static const String _labelActionCopyContent = '复制内容';
   static const String _labelActionEditComment = '编辑评论';
   static const String _labelActionDeleteComment = '删除评论';
+  static const String _labelActionEditMainPost = '编辑主贴';
+  static const String _labelActionDeleteMainPost = '删除帖子';
+  static const String _labelDeleteMainPostTitle = '删除帖子';
+  static const String _labelDeleteMainPostHint = '确定要删除该帖子吗？';
+  static const String _labelDeleteMainPostSuccess = '帖子已删除';
   static const String _labelSave = '保存';
   static const String _labelCancel = '取消';
   static const String _labelDelete = '删除';
@@ -1979,19 +1984,27 @@ class _TopicDetailPageState extends State<TopicDetailPage>
                                 detail.mainPost.id,
                               ),
                               onReactPressed: _onReactPressed,
-                              onReplyPressed: (post) =>
-                                  _openReplyComposer(
-                                    topicId: post.topicId,
-                                    aiReferenceText: _stripQuotedMarkdown(
-                                      post.contentMarkdown,
-                                    ),
-                                  ),
+                              onReplyPressed: (post) => _openReplyComposer(
+                                topicId: post.topicId,
+                                aiReferenceText: _stripQuotedMarkdown(
+                                  post.contentMarkdown,
+                                ),
+                              ),
                               onReactionStatusPressed: (post, reactionId) =>
                                   _onReactionStatusPressed(
                                     post: post,
                                     reactionId: reactionId,
                                   ),
                               onAuthorTap: _openAuthorProfileSheetForPost,
+                              showOwnerActions: _isOwnComment(detail.mainPost),
+                              onEditPressed: _isOwnComment(detail.mainPost)
+                                  ? () => _openEditCommentComposer(
+                                      detail.mainPost,
+                                    )
+                                  : null,
+                              onDeletePressed: _isOwnComment(detail.mainPost)
+                                  ? () => _deleteMainPost(detail.mainPost)
+                                  : null,
                               authorAvatarHeroTag: mainAuthorAvatarHeroTag,
                               authorNameHeroTag: mainAuthorNameHeroTag,
                               bodyRevealAnimation:
@@ -2395,7 +2408,9 @@ class _TopicSharePosterCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(10),
                     border: Border(
                       left: BorderSide(
-                        color: theme.colorScheme.primary.withValues(alpha: 0.55),
+                        color: theme.colorScheme.primary.withValues(
+                          alpha: 0.55,
+                        ),
                         width: 3,
                       ),
                     ),

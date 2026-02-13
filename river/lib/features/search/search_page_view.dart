@@ -103,19 +103,22 @@ extension _SearchPageView on _SearchPageState {
       curve: Curves.easeOutCubic,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
-        color: theme.colorScheme.surface,
+        color: _keywordFocused
+            ? theme.colorScheme.surface
+            : theme.colorScheme.surfaceContainerLowest,
         border: Border.all(
           color: _keywordFocused
-              ? theme.colorScheme.primary.withValues(alpha: 0.55)
-              : theme.colorScheme.outlineVariant.withValues(alpha: 0.55),
+              ? theme.colorScheme.primary.withValues(alpha: 0.48)
+              : theme.colorScheme.outlineVariant.withValues(alpha: 0.52),
+          width: 1,
         ),
         boxShadow: [
           BoxShadow(
             color: theme.colorScheme.shadow.withValues(
-              alpha: _keywordFocused ? 0.12 : 0.06,
+              alpha: _keywordFocused ? 0.10 : 0.05,
             ),
-            blurRadius: _keywordFocused ? 14 : 8,
-            offset: const Offset(0, 4),
+            blurRadius: _keywordFocused ? 12 : 7,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
@@ -129,7 +132,14 @@ extension _SearchPageView on _SearchPageState {
         onSubmitted: (_) => _runSearch(reset: true),
         decoration: InputDecoration(
           hintText: _SearchPageState._labelSearchHint,
+          filled: false,
+          fillColor: Colors.transparent,
           border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          disabledBorder: InputBorder.none,
+          errorBorder: InputBorder.none,
+          focusedErrorBorder: InputBorder.none,
           isDense: true,
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 14,

@@ -677,6 +677,7 @@ extension _CommentDetailPageActions on _CommentDetailPageState {
         return RiverMarkdownEditor(
           title: _CommentDetailPageState._labelEditCommentTitle,
           submitLabel: _CommentDetailPageState._labelSave,
+          closeOnSubmitSuccess: false,
           initialText: originalRaw,
           emojiUrls: _emojiUrls,
           emojiGroups: _emojiGroups,
@@ -691,12 +692,16 @@ extension _CommentDetailPageActions on _CommentDetailPageState {
                 draft.action == 'edit' || draft.draftKey == draftKey,
           ),
           onDeleteDraft: _deleteCommentDetailDraftForEditor,
-          onSubmit: (markdown) {
-            return _submitEditComment(
+          onSubmit: (markdown) async {
+            final ok = await _submitEditComment(
               sourcePost: original,
               originalRaw: originalRaw,
               nextRaw: markdown,
             );
+            if (ok && sheetContext.mounted) {
+              Navigator.of(sheetContext).pop(true);
+            }
+            return ok;
           },
         );
       },

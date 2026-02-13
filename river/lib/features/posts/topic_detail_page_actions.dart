@@ -535,6 +535,7 @@ extension _TopicDetailPageCommentActions on _TopicDetailPageState {
         return RiverMarkdownEditor(
           title: _TopicDetailPageState._labelEditCommentTitle,
           submitLabel: _TopicDetailPageState._labelSave,
+          closeOnSubmitSuccess: false,
           initialText: originalRaw,
           emojiUrls: _emojiUrls,
           emojiGroups: _emojiGroups,
@@ -549,12 +550,16 @@ extension _TopicDetailPageCommentActions on _TopicDetailPageState {
                 draft.action == 'edit' || draft.draftKey == draftKey,
           ),
           onDeleteDraft: _deleteTopicDraftForEditor,
-          onSubmit: (markdown) {
-            return _submitEditComment(
+          onSubmit: (markdown) async {
+            final ok = await _submitEditComment(
               sourcePost: original,
               originalRaw: originalRaw,
               nextRaw: markdown,
             );
+            if (ok && sheetContext.mounted) {
+              Navigator.of(sheetContext).pop(true);
+            }
+            return ok;
           },
         );
       },
@@ -626,6 +631,73 @@ extension _TopicDetailPageCommentActions on _TopicDetailPageState {
       }
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('\u5220\u9664\u8bc4\u8bba\u5931\u8d25')),
+      );
+    }
+  }
+
+  Future<void> _deleteMainPost(RiverSideTopicPostDetail post) async {
+    final cookieHeader = _activeCookieHeader();
+    if (cookieHeader == null || cookieHeader.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(_TopicDetailPageState._labelReplyNeedLogin),
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text(_TopicDetailPageState._labelDeleteMainPostTitle),
+          content: const Text(_TopicDetailPageState._labelDeleteMainPostHint),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text(_TopicDetailPageState._labelCancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text(_TopicDetailPageState._labelDelete),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true) {
+      return;
+    }
+
+    try {
+      await widget.dependencies.accountStore.riverSideApiClient.deletePost(
+        postId: post.id,
+        topicId: post.topicId,
+        postNumber: post.postNumber,
+        cookieHeader: cookieHeader,
+      );
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(_TopicDetailPageState._labelDeleteMainPostSuccess),
+        ),
+      );
+      Navigator.of(context).pop(true);
+    } on RiverSideApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('\u5220\u9664\u4e3b\u8d34\u5931\u8d25')),
       );
     }
   }

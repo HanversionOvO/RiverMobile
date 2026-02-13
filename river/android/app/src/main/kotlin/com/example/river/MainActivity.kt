@@ -166,7 +166,6 @@ class MainActivity : FlutterActivity() {
         }
 
         return try {
-            val debugMode = (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
             val aliases = listOf(
                 ".MainActivityAliasClassic",
                 ".MainActivityAliasRiver",
@@ -175,13 +174,10 @@ class MainActivity : FlutterActivity() {
             val packageManager = packageManager
 
             for (alias in aliases) {
-                val state = when {
-                    debugMode && alias == ".MainActivityAliasClassic" ->
-                        PackageManager.COMPONENT_ENABLED_STATE_ENABLED
-                    alias == targetAlias ->
-                        PackageManager.COMPONENT_ENABLED_STATE_ENABLED
-                    else ->
-                        PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                val state = if (alias == targetAlias) {
+                    PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                } else {
+                    PackageManager.COMPONENT_ENABLED_STATE_DISABLED
                 }
                 val component = ComponentName(packageName, "$packageName$alias")
                 packageManager.setComponentEnabledSetting(

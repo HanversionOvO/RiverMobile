@@ -73,6 +73,68 @@ extension _ChatDetailPageView on _ChatDetailPageState {
     return '$riverSideBaseUrl/$value';
   }
 
+  String _cookChatHtmlToMarkdown(String source) {
+    if (source.trim().isEmpty) {
+      return '';
+    }
+    try {
+      final markdown = html2md.convert(source).trim();
+      if (markdown.isNotEmpty) {
+        return markdown.replaceAll(RegExp(r'\n{3,}'), '\n\n').trim();
+      }
+    } catch (_) {
+      // Fallback to plain-text stripping when html2md parsing fails.
+    }
+    return _stripHtml(source);
+  }
+
+  String _normalizeChatMessageMarkdown(RiverSideChatMessageItem item) {
+    var markdown = item.raw.trim();
+    final cooked = item.cooked.trim();
+
+    if (markdown.isEmpty && cooked.isNotEmpty) {
+      markdown = _cookChatHtmlToMarkdown(cooked);
+    }
+
+    if (markdown.contains('upload://')) {
+      markdown = markdown.replaceAllMapped(
+        RegExp(r'upload://([^\s)>\]]+)', caseSensitive: false),
+        (match) =>
+            '$riverSideBaseUrl/uploads/short-url/${match.group(1) ?? ''}',
+      );
+    }
+
+    // Promote plain standalone image links to markdown image syntax.
+    markdown = markdown.replaceAllMapped(
+      RegExp(
+        r'^(https?://\S+\.(?:png|jpe?g|gif|webp|bmp|heic|heif|avif))(?:\?\S+)?$',
+        caseSensitive: false,
+        multiLine: true,
+      ),
+      (match) => '![](${match.group(0) ?? ''})',
+    );
+
+    final resolvedUploadUrls = item.uploadUrls
+        .map(_resolveForumUrl)
+        .where((url) => url.trim().isNotEmpty)
+        .toList(growable: false);
+    if (resolvedUploadUrls.isNotEmpty) {
+      final lower = markdown.toLowerCase();
+      final missing = resolvedUploadUrls
+          .where((url) => !lower.contains(url.toLowerCase()))
+          .toList(growable: false);
+      if (markdown.trim().isEmpty) {
+        markdown = resolvedUploadUrls.map((url) => '![]($url)').join('\n\n');
+      } else if (missing.isNotEmpty) {
+        markdown =
+            '${markdown.trim()}\n\n'
+            '${missing.map((url) => '![]($url)').join('\n\n')}';
+      }
+    }
+
+    return markdown.trim();
+  }
+
   String _formatDateTime(DateTime? value) {
     if (value == null) {
       return '--';

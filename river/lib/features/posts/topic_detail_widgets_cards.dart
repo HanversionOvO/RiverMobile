@@ -41,6 +41,9 @@ class _MainPostCard extends StatefulWidget {
     required this.onReplyPressed,
     required this.onReactionStatusPressed,
     required this.onAuthorTap,
+    required this.showOwnerActions,
+    this.onEditPressed,
+    this.onDeletePressed,
     this.authorAvatarHeroTag,
     this.authorNameHeroTag,
     this.bodyRevealAnimation,
@@ -66,6 +69,9 @@ class _MainPostCard extends StatefulWidget {
   final void Function(RiverSideTopicPostDetail post, String reactionId)
   onReactionStatusPressed;
   final ValueChanged<RiverSideTopicPostDetail> onAuthorTap;
+  final bool showOwnerActions;
+  final VoidCallback? onEditPressed;
+  final VoidCallback? onDeletePressed;
   final String? authorAvatarHeroTag;
   final String? authorNameHeroTag;
   final Animation<double>? bodyRevealAnimation;
@@ -206,6 +212,12 @@ class _MainPostCardState extends State<_MainPostCard>
                       heroTagName:
                           widget.authorNameHeroTag ??
                           _topicPostAuthorNameHeroTag(post),
+                      trailing: widget.showOwnerActions
+                          ? _MainPostInlineActions(
+                              onEditPressed: widget.onEditPressed,
+                              onDeletePressed: widget.onDeletePressed,
+                            )
+                          : null,
                     ),
                     const SizedBox(height: 10),
                     revealedBody,
@@ -1082,6 +1094,45 @@ class _CommentInlineActions extends StatelessWidget {
               : bg,
           borderColor: reacting ? theme.colorScheme.primary : border,
           foregroundColor: reacting ? theme.colorScheme.primary : fg,
+        ),
+      ],
+    );
+  }
+}
+
+class _MainPostInlineActions extends StatelessWidget {
+  const _MainPostInlineActions({this.onEditPressed, this.onDeletePressed});
+
+  final VoidCallback? onEditPressed;
+  final VoidCallback? onDeletePressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final bg = theme.colorScheme.surfaceContainerHighest.withValues(
+      alpha: 0.68,
+    );
+    final border = theme.colorScheme.outlineVariant.withValues(alpha: 0.5);
+    final fg = theme.colorScheme.onSurfaceVariant;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _CommentInlineActionButton(
+          tooltip: _TopicDetailPageState._labelActionEditMainPost,
+          icon: const Icon(Icons.edit_outlined, size: 17),
+          onPressed: onEditPressed,
+          backgroundColor: bg,
+          borderColor: border,
+          foregroundColor: fg,
+        ),
+        const SizedBox(width: 6),
+        _CommentInlineActionButton(
+          tooltip: _TopicDetailPageState._labelActionDeleteMainPost,
+          icon: const Icon(Icons.delete_outline_rounded, size: 17),
+          onPressed: onDeletePressed,
+          backgroundColor: bg,
+          borderColor: border,
+          foregroundColor: fg,
         ),
       ],
     );

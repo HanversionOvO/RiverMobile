@@ -248,12 +248,30 @@ extension _ChatDetailPageActions on _ChatDetailPageState {
       if (!mounted) {
         return false;
       }
+      final normalizedMessage = message.createdAt != null
+          ? message
+          : RiverSideChatMessageItem(
+              id: message.id,
+              channelId: message.channelId,
+              userId: message.userId,
+              username: message.username,
+              displayName: message.displayName,
+              avatarUrl: message.avatarUrl,
+              raw: message.raw,
+              cooked: message.cooked,
+              createdAt: DateTime.now(),
+              deleted: message.deleted,
+              uploadUrls: message.uploadUrls,
+              inReplyTo: message.inReplyTo,
+              reactions: message.reactions,
+            );
       _mutateState(() {
         _messages = _mergeMessages(_messages, <RiverSideChatMessageItem>[
-          message,
+          normalizedMessage,
         ]);
       });
       _jumpToBottom();
+      _scheduleRealtimeSync();
       return true;
     } on RiverSideApiException catch (error) {
       if (!mounted) {

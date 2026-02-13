@@ -558,9 +558,7 @@ extension _ChatDetailPageUi on _ChatDetailPageState {
         ? theme.colorScheme.onPrimaryContainer
         : theme.colorScheme.onSurface;
     final replyRef = item.inReplyTo;
-    final content = item.raw.trim().isNotEmpty
-        ? item.raw
-        : _stripHtml(item.cooked);
+    final content = _normalizeChatMessageMarkdown(item);
 
     Offset? tapPosition;
     final bubble = Material(
@@ -691,6 +689,89 @@ extension _ChatDetailPageUi on _ChatDetailPageState {
                     if (href != null && href.isNotEmpty) {
                       _openLink(href);
                     }
+                  },
+                  sizedImageBuilder: (config) {
+                    final resolved = _resolveForumUrl('${config.uri}');
+                    final headers = _headersForUrl(resolved);
+                    final heroTag =
+                        'chat-image-${widget.channel.id}-${item.id}-${resolved.hashCode}';
+                    final imageProvider = CachedNetworkImageProvider(
+                      resolved,
+                      headers: headers,
+                    );
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 2, bottom: 4),
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () {
+                          RiverImageViewerPage.open(
+                            context,
+                            items: <RiverImageViewerItem>[
+                              RiverImageViewerItem(
+                                url: resolved,
+                                headers: headers,
+                                heroTag: heroTag,
+                                imageProvider: imageProvider,
+                              ),
+                            ],
+                          );
+                        },
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxHeight: 260),
+                            child: Hero(
+                              tag: heroTag,
+                              child: CachedNetworkImage(
+                                imageUrl: resolved,
+                                httpHeaders: headers,
+                                fit: BoxFit.contain,
+                                fadeInDuration: Duration.zero,
+                                fadeOutDuration: Duration.zero,
+                                placeholder: (context, url) => ColoredBox(
+                                  color:
+                                      theme.colorScheme.surfaceContainerLowest,
+                                  child: const AspectRatio(
+                                    aspectRatio: 4 / 3,
+                                    child: Center(
+                                      child: SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                errorWidget: (context, url, error) => Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color:
+                                        theme.colorScheme.surfaceContainerLow,
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(
+                                      color: theme.colorScheme.outlineVariant,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    config.alt?.trim().isNotEmpty == true
+                                        ? (config.alt ?? '')
+                                        : '图片加载失败',
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
                   },
                 ),
               if (item.reactions.isNotEmpty) ...[

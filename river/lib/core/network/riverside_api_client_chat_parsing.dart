@@ -323,12 +323,19 @@ extension RiverSideApiClientChatParsingMethods on RiverSideApiClient {
     );
 
     final cooked = (message['cooked'] ?? '').toString();
-    final raw = _firstNonEmpty(<dynamic>[
+    final preferredRaw = _firstNonEmpty(<dynamic>[
       message['message'],
       message['raw'],
       message['excerpt'],
-      _sanitizeExcerpt(cooked),
     ]);
+    final rawSeed = preferredRaw.trim().isNotEmpty
+        ? preferredRaw
+        : _cookHtmlToMarkdown(cooked);
+    final raw = _resolveUploadMarkdown(
+      rawMarkdown: rawSeed,
+      cookedHtml: cooked,
+      uploadsRaw: message['uploads'],
+    );
 
     final uploadUrls = <String>[];
     final uploadsRaw = message['uploads'];
@@ -360,7 +367,14 @@ extension RiverSideApiClientChatParsingMethods on RiverSideApiClient {
       avatarUrl: avatarUrl,
       raw: raw,
       cooked: cooked,
-      createdAt: DateTime.tryParse((message['created_at'] ?? '').toString()),
+      createdAt: DateTime.tryParse(
+        _firstNonEmpty(<dynamic>[
+          message['created_at'],
+          message['createdAt'],
+          message['sent_at'],
+          message['updated_at'],
+        ]),
+      ),
       deleted: _asBool(message['deleted']) || message['deleted_at'] != null,
       uploadUrls: uploadUrls,
       inReplyTo: inReplyTo,

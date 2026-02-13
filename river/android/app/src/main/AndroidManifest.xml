@@ -43,7 +43,7 @@
             android:name=".MainActivityAliasRiver"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher"
+            android:icon="@mipmap/ic_launcher_river"
             android:label="聚河畔"
             android:targetActivity=".MainActivity">
             <intent-filter>
@@ -56,7 +56,7 @@
             android:name=".MainActivityAliasHp"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher"
+            android:icon="@mipmap/ic_launcher_hp"
             android:label="聚河畔"
             android:targetActivity=".MainActivity">
             <intent-filter>
