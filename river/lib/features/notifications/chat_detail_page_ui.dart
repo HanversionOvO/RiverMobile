@@ -7,13 +7,68 @@ extension _ChatDetailPageUi on _ChatDetailPageState {
             ?.toLowerCase() ??
         '';
 
-    final body = _loadingInitial && _messages.isEmpty
+    final isLoadingBody = _loadingInitial && _messages.isEmpty;
+    final isErrorBody = _error != null && _messages.isEmpty;
+    final body = isLoadingBody
         ? _buildLoadingBody(context)
-        : _error != null && _messages.isEmpty
+        : isErrorBody
         ? _buildErrorBody(context)
         : _buildChatBody(context, active);
 
-    return Scaffold(appBar: _buildTopBar(context), body: body);
+    final bodyKey = isLoadingBody
+        ? const ValueKey<String>('chat_body_loading')
+        : isErrorBody
+        ? const ValueKey<String>('chat_body_error')
+        : const ValueKey<String>('chat_body_content');
+
+    return PopScope<void>(
+      canPop: !_selectionMode,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) {
+          return;
+        }
+        if (_selectionMode) {
+          _exitSelectionMode();
+        }
+      },
+      child: Scaffold(
+        resizeToAvoidBottomInset: false,
+        appBar: _buildTopBar(context),
+        body: ClipRect(
+          child: AnimatedSize(
+            duration: const Duration(milliseconds: 280),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 260),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              layoutBuilder: (currentChild, previousChildren) {
+                return Stack(
+                  alignment: Alignment.topCenter,
+                  children: <Widget>[...previousChildren, ?currentChild],
+                );
+              },
+              transitionBuilder: (child, animation) {
+                final fade = CurvedAnimation(
+                  parent: animation,
+                  curve: Curves.easeOutCubic,
+                );
+                final slide = Tween<Offset>(
+                  begin: const Offset(0, 0.015),
+                  end: Offset.zero,
+                ).animate(fade);
+                return FadeTransition(
+                  opacity: fade,
+                  child: SlideTransition(position: slide, child: child),
+                );
+              },
+              child: KeyedSubtree(key: bodyKey, child: body),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   PreferredSizeWidget _buildTopBar(BuildContext context) {
@@ -205,11 +260,14 @@ extension _ChatDetailPageUi on _ChatDetailPageState {
 
   Widget _buildChatBody(BuildContext context, String activeUsername) {
     final theme = Theme.of(context);
+    final keyboardInset = _selectionMode
+        ? 0.0
+        : MediaQuery.viewInsetsOf(context).bottom;
     final dockInset = _selectionMode
         ? 74.0
         : (_composerDockHeight > 0 ? _composerDockHeight : 112.0);
-    final listBottomPadding = (dockInset + 16).toDouble();
-    final floatingBottom = (dockInset + 14).toDouble();
+    final listBottomPadding = (dockInset + keyboardInset + 16).toDouble();
+    final floatingBottom = (dockInset + keyboardInset + 14).toDouble();
     return Stack(
       children: [
         DecoratedBox(
@@ -218,10 +276,10 @@ extension _ChatDetailPageUi on _ChatDetailPageState {
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [
-                theme.colorScheme.surfaceContainerLowest.withValues(
-                  alpha: 0.95,
-                ),
                 theme.colorScheme.surface.withValues(alpha: 0.98),
+                theme.colorScheme.surfaceContainerLowest.withValues(
+                  alpha: 0.96,
+                ),
               ],
             ),
           ),
@@ -334,9 +392,47 @@ extension _ChatDetailPageUi on _ChatDetailPageState {
           ),
         Align(
           alignment: Alignment.bottomCenter,
-          child: _selectionMode
-              ? _buildSelectionActionBar(context)
-              : _buildComposerDock(context),
+          child: AnimatedPadding(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            padding: EdgeInsets.only(bottom: keyboardInset),
+            child: AnimatedSize(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.bottomCenter,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                layoutBuilder: (currentChild, previousChildren) {
+                  return Stack(
+                    alignment: Alignment.bottomCenter,
+                    children: <Widget>[...previousChildren, ?currentChild],
+                  );
+                },
+                transitionBuilder: (child, animation) {
+                  final fade = CurvedAnimation(
+                    parent: animation,
+                    curve: Curves.easeOutCubic,
+                  );
+                  final slide = Tween<Offset>(
+                    begin: const Offset(0, 0.08),
+                    end: Offset.zero,
+                  ).animate(fade);
+                  return FadeTransition(
+                    opacity: fade,
+                    child: SlideTransition(position: slide, child: child),
+                  );
+                },
+                child: KeyedSubtree(
+                  key: ValueKey<bool>(_selectionMode),
+                  child: _selectionMode
+                      ? _buildSelectionActionBar(context)
+                      : _buildComposerDock(context),
+                ),
+              ),
+            ),
+          ),
         ),
       ],
     );
@@ -789,9 +885,6 @@ extension _ChatDetailPageUi on _ChatDetailPageState {
           decoration: BoxDecoration(
             color: theme.colorScheme.surface.withValues(alpha: 0.9),
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
-            ),
             boxShadow: [
               BoxShadow(
                 color: theme.colorScheme.shadow.withValues(alpha: 0.08),
@@ -878,6 +971,11 @@ extension _ChatDetailPageUi on _ChatDetailPageState {
                             hintStyle: theme.textTheme.bodyMedium?.copyWith(
                               color: theme.colorScheme.onSurfaceVariant,
                             ),
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            disabledBorder: InputBorder.none,
+                            errorBorder: InputBorder.none,
+                            focusedErrorBorder: InputBorder.none,
                             border: InputBorder.none,
                             contentPadding: const EdgeInsets.symmetric(
                               horizontal: 2,
@@ -887,16 +985,82 @@ extension _ChatDetailPageUi on _ChatDetailPageState {
                         ),
                       ),
                     ),
-                    IconButton.filled(
-                      visualDensity: VisualDensity.compact,
-                      onPressed: _sending ? null : _submitComposerMessage,
-                      icon: _sending
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.send_rounded),
+                    AnimatedSize(
+                      duration: const Duration(milliseconds: 220),
+                      curve: Curves.easeOutCubic,
+                      alignment: Alignment.centerRight,
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 200),
+                        switchInCurve: Curves.easeOutCubic,
+                        switchOutCurve: Curves.easeInCubic,
+                        transitionBuilder: (child, animation) {
+                          return FadeTransition(
+                            opacity: animation,
+                            child: ScaleTransition(
+                              scale: animation,
+                              child: child,
+                            ),
+                          );
+                        },
+                        child: (_composerHasText || _sending)
+                            ? Container(
+                                key: const ValueKey<String>(
+                                  'composer_send_visible',
+                                ),
+                                margin: const EdgeInsets.only(left: 4),
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: theme.colorScheme.primary,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: theme.colorScheme.primary
+                                          .withValues(alpha: 0.30),
+                                      blurRadius: 12,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                child: Material(
+                                  color: Colors.transparent,
+                                  shape: const CircleBorder(),
+                                  clipBehavior: Clip.antiAlias,
+                                  child: InkResponse(
+                                    customBorder: const CircleBorder(),
+                                    onTap: _sending
+                                        ? null
+                                        : _submitComposerMessage,
+                                    radius: 22,
+                                    child: SizedBox(
+                                      width: 40,
+                                      height: 40,
+                                      child: Center(
+                                        child: _sending
+                                            ? SizedBox(
+                                                width: 16,
+                                                height: 16,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                      color: theme
+                                                          .colorScheme
+                                                          .onPrimary,
+                                                    ),
+                                              )
+                                            : Icon(
+                                                Icons.send_rounded,
+                                                size: 19,
+                                                color:
+                                                    theme.colorScheme.onPrimary,
+                                              ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              )
+                            : const SizedBox(
+                                key: ValueKey<String>('composer_send_hidden'),
+                              ),
+                      ),
                     ),
                   ],
                 ),

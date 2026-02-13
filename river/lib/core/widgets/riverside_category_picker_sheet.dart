@@ -65,153 +65,157 @@ class _RiverSideCategoryPickerSheetState
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final groups = buildRiverSideCategoryGroups(_categories);
+    final maxSheetHeight = MediaQuery.sizeOf(context).height * 0.5;
 
     return SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Hero(
-            tag: 'board_picker_hero',
-            child: Material(
-              color: Colors.transparent,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(24, 0, 16, 16),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.dashboard_rounded,
-                      color: theme.colorScheme.primary,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        '选择板块',
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxSheetHeight),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Hero(
+              tag: 'board_picker_hero',
+              child: Material(
+                color: Colors.transparent,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 0, 16, 16),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.dashboard_rounded,
+                        color: theme.colorScheme.primary,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          '选择板块',
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
-                    ),
-                    if (widget.onRefreshCategories != null)
-                      IconButton.filledTonal(
-                        onPressed: _refreshing ? null : _refresh,
-                        tooltip: '刷新板块',
-                        icon: _refreshing
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.refresh_rounded),
-                      ),
-                  ],
+                      if (widget.onRefreshCategories != null)
+                        IconButton.filledTonal(
+                          onPressed: _refreshing ? null : _refresh,
+                          tooltip: '刷新板块',
+                          icon: _refreshing
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.refresh_rounded),
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-          Flexible(
-            child: ListView(
-              shrinkWrap: true,
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-              children: [
-                if (widget.allowSelectAll)
-                  InkWell(
-                    onTap: () => widget.onSelected(null),
-                    borderRadius: BorderRadius.circular(16),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 14,
-                      ),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            theme.colorScheme.primaryContainer,
-                            theme.colorScheme.surface,
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                children: [
+                  if (widget.allowSelectAll)
+                    InkWell(
+                      onTap: () => widget.onSelected(null),
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
                         ),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: theme.colorScheme.primary.withValues(
-                            alpha: 0.12,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              theme.colorScheme.primaryContainer,
+                              theme.colorScheme.surface,
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
                           ),
-                        ),
-                        boxShadow: [
-                          if (widget.selectedCategoryId == null)
-                            BoxShadow(
-                              color: theme.colorScheme.primary.withValues(
-                                alpha: 0.15,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: theme.colorScheme.primary.withValues(
+                              alpha: 0.12,
+                            ),
+                          ),
+                          boxShadow: [
+                            if (widget.selectedCategoryId == null)
+                              BoxShadow(
+                                color: theme.colorScheme.primary.withValues(
+                                  alpha: 0.15,
+                                ),
+                                blurRadius: 8,
+                                offset: const Offset(0, 4),
                               ),
-                              blurRadius: 8,
-                              offset: const Offset(0, 4),
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.primary,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.apps_rounded,
+                                size: 20,
+                                color: theme.colorScheme.onPrimary,
+                              ),
                             ),
-                        ],
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.primary,
-                              shape: BoxShape.circle,
+                            const SizedBox(width: 16),
+                            Text(
+                              '全部板块',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: theme.colorScheme.onSurface,
+                              ),
                             ),
-                            child: Icon(
-                              Icons.apps_rounded,
-                              size: 20,
-                              color: theme.colorScheme.onPrimary,
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Text(
-                            '全部板块',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: theme.colorScheme.onSurface,
-                            ),
-                          ),
-                          const Spacer(),
-                          if (widget.selectedCategoryId == null)
-                            Icon(
-                              Icons.check_circle_rounded,
-                              color: theme.colorScheme.primary,
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                if (widget.allowSelectAll) const SizedBox(height: 20),
-                if (groups.isEmpty)
-                  Center(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 36),
-                      child: Text(
-                        '暂无可选板块',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
+                            const Spacer(),
+                            if (widget.selectedCategoryId == null)
+                              Icon(
+                                Icons.check_circle_rounded,
+                                color: theme.colorScheme.primary,
+                              ),
+                          ],
                         ),
                       ),
                     ),
-                  )
-                else
-                  ...groups.map(
-                    (group) => Padding(
-                      padding: const EdgeInsets.only(bottom: 16),
-                      child: _BoardGroupCard(
-                        group: group,
-                        selectedId: widget.selectedCategoryId,
-                        onSelected: (category) => widget.onSelected(category),
+                  if (widget.allowSelectAll) const SizedBox(height: 20),
+                  if (groups.isEmpty)
+                    Center(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 36),
+                        child: Text(
+                          '暂无可选板块',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    ...groups.map(
+                      (group) => Padding(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: _BoardGroupCard(
+                          group: group,
+                          selectedId: widget.selectedCategoryId,
+                          onSelected: (category) => widget.onSelected(category),
+                        ),
                       ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -2,6 +2,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -184,9 +185,6 @@ class _TopicDetailPageState extends State<TopicDetailPage>
   static const String _labelInvalidQuoteFloor = '无法识别被回复楼层';
   static const String _labelCrossTopicQuote = '跨帖引用暂不支持跳转';
   static const String _labelUnknownUser = '未知用户';
-  static const String _labelUnknownState = '状态未知';
-  static const String _labelOnline = '在线';
-  static const String _labelOffline = '离线';
   static const String _labelEmpty = '暂无内容';
   static const String _labelReact = '点赞';
   static const String _labelReactionNotReady = '请先登录 RiverSide 账号';
@@ -207,6 +205,9 @@ class _TopicDetailPageState extends State<TopicDetailPage>
   bool _loadingInitial = true;
   bool _loadingMore = false;
   bool _hasRealtimeCommentUpdate = false;
+  int? _jumpHighlightPostNumber;
+  int _jumpHighlightToken = 0;
+  Timer? _jumpHighlightClearTimer;
   bool _skipNextEntranceAnimation = false;
   RiverSideMessageBusPoller? _messageBusPoller;
   int _pollingBootstrapSerial = 0;
@@ -237,6 +238,9 @@ class _TopicDetailPageState extends State<TopicDetailPage>
       value: 1,
     );
 
+    widget.dependencies.settingsController.addListener(
+      _onRefreshBannerSettingsChanged,
+    );
     _scrollController.addListener(_onScroll);
     _restartRealtimePolling();
     _loadInitial();
@@ -244,13 +248,37 @@ class _TopicDetailPageState extends State<TopicDetailPage>
 
   @override
   void dispose() {
+    _jumpHighlightClearTimer?.cancel();
     _entranceController.dispose();
     _contentRevealController.dispose();
     _messageBusPoller?.stop();
+    widget.dependencies.settingsController.removeListener(
+      _onRefreshBannerSettingsChanged,
+    );
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _showBackToTopButtonNotifier.dispose();
     super.dispose();
+  }
+
+  bool get _showTopicCommentsRealtimeRefreshBanner {
+    return widget
+        .dependencies
+        .settingsController
+        .showTopicCommentsRealtimeRefreshBanner;
+  }
+
+  void _onRefreshBannerSettingsChanged() {
+    if (!mounted) {
+      return;
+    }
+    if (!_showTopicCommentsRealtimeRefreshBanner && _hasRealtimeCommentUpdate) {
+      _mutateState(() {
+        _hasRealtimeCommentUpdate = false;
+      });
+      return;
+    }
+    _mutateState(() {});
   }
 
   void _onScroll() {
@@ -601,6 +629,26 @@ class _TopicDetailPageState extends State<TopicDetailPage>
     });
   }
 
+  void _triggerJumpHighlight(int postNumber) {
+    _jumpHighlightClearTimer?.cancel();
+    _mutateState(() {
+      _jumpHighlightPostNumber = postNumber;
+      _jumpHighlightToken++;
+    });
+    _jumpHighlightClearTimer = Timer(const Duration(milliseconds: 2600), () {
+      if (!mounted || _jumpHighlightPostNumber != postNumber) {
+        return;
+      }
+      _mutateState(() {
+        _jumpHighlightPostNumber = null;
+      });
+    });
+  }
+
+  Future<void> _onRealtimeCommentHintTap() async {
+    await _consumeRealtimeCommentUpdate();
+  }
+
   Animation<double> _mainContentRevealAnimation() {
     return CurvedAnimation(
       parent: _contentRevealController,
@@ -686,7 +734,9 @@ class _TopicDetailPageState extends State<TopicDetailPage>
               icon: const Icon(Icons.arrow_back_rounded),
               onPressed: () => Navigator.pop(context),
               style: IconButton.styleFrom(
-                backgroundColor: theme.colorScheme.surface.withOpacity(0.88),
+                backgroundColor: theme.colorScheme.surface.withValues(
+                  alpha: 0.88,
+                ),
                 foregroundColor: theme.colorScheme.onSurface,
               ),
             ),
@@ -721,7 +771,7 @@ class _TopicDetailPageState extends State<TopicDetailPage>
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      theme.colorScheme.primary.withOpacity(0.10),
+                      theme.colorScheme.primary.withValues(alpha: 0.10),
                       theme.colorScheme.surface,
                     ],
                   ),
@@ -935,8 +985,8 @@ class _TopicDetailPageState extends State<TopicDetailPage>
                     icon: const Icon(Icons.arrow_back_rounded),
                     onPressed: () => Navigator.pop(context),
                     style: IconButton.styleFrom(
-                      backgroundColor: theme.colorScheme.surface.withOpacity(
-                        0.88,
+                      backgroundColor: theme.colorScheme.surface.withValues(
+                        alpha: 0.88,
                       ),
                       foregroundColor: theme.colorScheme.onSurface,
                     ),
@@ -1004,7 +1054,7 @@ class _TopicDetailPageState extends State<TopicDetailPage>
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
                           colors: [
-                            theme.colorScheme.primary.withOpacity(0.10),
+                            theme.colorScheme.primary.withValues(alpha: 0.10),
                             theme.colorScheme.surface,
                           ],
                         ),
@@ -1040,15 +1090,13 @@ class _TopicDetailPageState extends State<TopicDetailPage>
                   ),
                 ),
 
-                // 2. 濞戞挻妲掔敮鍐潰閿濆棙鐎?(闁告ê顭烽崳鎼佹晬濮樺灈鍋撳▎鎺炵磼濞戞挸绉撮崯鈧悘鐐存礈閵囨艾螣濞嗘搩鏀介柛婊冪焸閻楃娀宕?
+                // Main post section.
                 SliverToBoxAdapter(
                   child: _SlideFadeTransition(
                     animation: _entranceController,
                     delay: 0,
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 0,
-                      ), // 闁稿繈鍔岄锟犳晬鐏炶棄寮鹃梺顔哄妽鐢爼宕氱粋顦嘾ding
+                      padding: const EdgeInsets.symmetric(horizontal: 0),
                       child: ValueListenableBuilder<bool>(
                         valueListenable: _showBackToTopButtonNotifier,
                         builder: (context, showFloatingReply, _) {
@@ -1083,6 +1131,10 @@ class _TopicDetailPageState extends State<TopicDetailPage>
                                     .id] ??
                                 0,
                             showReplyAction: !showFloatingReply,
+                            isJumpHighlighted: _jumpHighlightPostNumber == 1,
+                            jumpHighlightToken: _jumpHighlightPostNumber == 1
+                                ? _jumpHighlightToken
+                                : 0,
                           );
                         },
                       ),
@@ -1097,6 +1149,11 @@ class _TopicDetailPageState extends State<TopicDetailPage>
                     title: _labelReplies,
                     count: detail.replyCount,
                     theme: theme,
+                    showRealtimeHint:
+                        _showTopicCommentsRealtimeRefreshBanner &&
+                        _hasRealtimeCommentUpdate,
+                    onRealtimeHintTap: _onRealtimeCommentHintTap,
+                    onRealtimeHintClose: _dismissRealtimeCommentHint,
                   ),
                 ),
 
@@ -1177,6 +1234,14 @@ class _TopicDetailPageState extends State<TopicDetailPage>
                                       _pendingReactionHeroByPostId[post.id],
                                   reactionPulseToken:
                                       _reactionPulseTokenByPostId[post.id] ?? 0,
+                                  isJumpHighlighted:
+                                      _jumpHighlightPostNumber ==
+                                      post.postNumber,
+                                  jumpHighlightToken:
+                                      _jumpHighlightPostNumber ==
+                                          post.postNumber
+                                      ? _jumpHighlightToken
+                                      : 0,
                                 ),
                                 // 闁告帒妫楁竟濠勬?
                                 if (index != _comments.length - 1)
@@ -1188,7 +1253,7 @@ class _TopicDetailPageState extends State<TopicDetailPage>
                                       height: 1,
                                       thickness: 0.5,
                                       color: theme.colorScheme.outlineVariant
-                                          .withOpacity(0.4),
+                                          .withValues(alpha: 0.4),
                                     ),
                                   ),
                               ],
@@ -1199,27 +1264,28 @@ class _TopicDetailPageState extends State<TopicDetailPage>
                     }, childCount: _comments.length),
                   ),
 
-                // 5. 閹煎瓨娲熼崕?Loader
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.all(32),
-                    child: Center(
-                      child: _loadingMore
-                          ? const CircularProgressIndicator.adaptive()
-                          : Text(
-                              _hasMoreComments ? '' : _labelNoMoreReplies,
-                              style: TextStyle(
-                                color: theme.colorScheme.outline,
+                // 5. 底部加载/结束提示（空评论时不重复显示“没有更多评论了”）
+                if (_comments.isNotEmpty || _loadingMore)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Center(
+                        child: _loadingMore
+                            ? const CircularProgressIndicator.adaptive()
+                            : Text(
+                                _hasMoreComments ? '' : _labelNoMoreReplies,
+                                style: TextStyle(
+                                  color: theme.colorScheme.outline,
+                                ),
                               ),
-                            ),
+                      ),
                     ),
                   ),
-                ),
               ],
             ),
           ),
 
-          // 鏉╂柨娲栨い鍫曞劥閹稿鎸?
+          // Floating actions.
           ValueListenableBuilder<bool>(
             valueListenable: _showBackToTopButtonNotifier,
             builder: (context, visible, _) {
@@ -1264,110 +1330,6 @@ class _TopicDetailPageState extends State<TopicDetailPage>
               );
             },
           ),
-
-          // 閺傛媽鐦庣拋鐑樺絹缁€鐑樿癁缁?
-          Positioned(
-            left: 16,
-            right: 16,
-            top: MediaQuery.paddingOf(context).top + kToolbarHeight + 8,
-            child: SafeArea(
-              bottom: false,
-              child: IgnorePointer(
-                ignoring: !_hasRealtimeCommentUpdate,
-                child: AnimatedOpacity(
-                  duration: const Duration(milliseconds: 180),
-                  opacity: _hasRealtimeCommentUpdate ? 1 : 0,
-                  child: AnimatedSlide(
-                    duration: const Duration(milliseconds: 280),
-                    curve: Curves.easeOutCubic,
-                    offset: _hasRealtimeCommentUpdate
-                        ? Offset.zero
-                        : const Offset(0, -0.24),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 460),
-                        child: Material(
-                          color: Colors.transparent,
-                          child: Ink(
-                            decoration: ShapeDecoration(
-                              color: theme.colorScheme.surface.withOpacity(
-                                0.78,
-                              ),
-                              shape: StadiumBorder(
-                                side: BorderSide(
-                                  color: theme.colorScheme.outlineVariant
-                                      .withOpacity(0.45),
-                                ),
-                              ),
-                              shadows: [
-                                BoxShadow(
-                                  color: theme.colorScheme.shadow.withOpacity(
-                                    0.08,
-                                  ),
-                                  blurRadius: 14,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ],
-                            ),
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(999),
-                              onTap: () async {
-                                await _scrollToTop();
-                                await _consumeRealtimeCommentUpdate();
-                              },
-                              child: Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                  14,
-                                  10,
-                                  6,
-                                  10,
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.mark_chat_unread_rounded,
-                                      size: 18,
-                                      color: theme.colorScheme.primary,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      '有新评论',
-                                      style: theme.textTheme.labelLarge
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Text(
-                                      '点击刷新',
-                                      style: theme.textTheme.labelMedium
-                                          ?.copyWith(
-                                            color: theme
-                                                .colorScheme
-                                                .onSurfaceVariant,
-                                          ),
-                                    ),
-                                    const SizedBox(width: 2),
-                                    IconButton(
-                                      tooltip: '关闭',
-                                      onPressed: _dismissRealtimeCommentHint,
-                                      icon: const Icon(Icons.close, size: 17),
-                                      visualDensity: VisualDensity.compact,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
         ],
       ),
     );
@@ -1385,10 +1347,10 @@ class _TopicMetaPill extends StatelessWidget {
     final theme = Theme.of(context);
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface.withOpacity(0.68),
+        color: theme.colorScheme.surface.withValues(alpha: 0.68),
         borderRadius: BorderRadius.circular(999),
         border: Border.all(
-          color: theme.colorScheme.outlineVariant.withOpacity(0.38),
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.38),
         ),
       ),
       child: Padding(
@@ -1429,7 +1391,9 @@ class _SkeletonBox extends StatelessWidget {
       width: width,
       height: height,
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.42),
+        color: theme.colorScheme.surfaceContainerHighest.withValues(
+          alpha: 0.42,
+        ),
         borderRadius: BorderRadius.circular(radius),
       ),
     );
@@ -1437,7 +1401,7 @@ class _SkeletonBox extends StatelessWidget {
 }
 
 // -----------------------------------------------------------------------------
-// 闁稿寒浜滅€垫彃顕ュ畝鈧▓鎴炵▔閺勫繐绔风紒鎻掑濞?(婵炲苯顦伴煫鍫濐嚕韫囥儳绀夐柣鎺嗗墲椤寧銇勫畝鍕閻?
+// Simple slide + fade transition wrapper.
 // -----------------------------------------------------------------------------
 class _SlideFadeTransition extends StatelessWidget {
   final AnimationController animation;
@@ -1455,9 +1419,7 @@ class _SlideFadeTransition extends StatelessWidget {
     return AnimatedBuilder(
       animation: animation,
       builder: (context, child) {
-        // 閻熷嘲鐗忛悾濠氭偩鐠哄搫顤呴柛蹇撳暟缁€宀勬儍閸曨偄鐝氶柣锝庡亰閳ь剚褰冪€?
-        // 闁告洘娲滈弳娆戠紦閼恒儲顎夐梻鈧?800ms闁挎稑鏈崹婊堝磹閹存繄娈婚柛蹇氬煐濡惭呬焊閸曨偄鐓?0.0 - 1.0
-        // 婵絽绻愰埀顒€顑呴崢鎾舵閻樿櫕绠掗柛銉ユ惈閻ｉ箖鎯冮崟顐ｎ偨闂?(delay ms)
+        // Delay-aware normalized progress for staggered animations.
         final double delayInSeconds = delay / 1000.0;
         final double animationDurationInSeconds =
             animation.duration!.inMilliseconds / 1000.0;
@@ -1490,11 +1452,17 @@ class _SectionHeaderDelegate extends SliverPersistentHeaderDelegate {
   final String title;
   final int count;
   final ThemeData theme;
+  final bool showRealtimeHint;
+  final VoidCallback? onRealtimeHintTap;
+  final VoidCallback? onRealtimeHintClose;
 
   _SectionHeaderDelegate({
     required this.title,
     required this.count,
     required this.theme,
+    this.showRealtimeHint = false,
+    this.onRealtimeHintTap,
+    this.onRealtimeHintClose,
   });
 
   @override
@@ -1509,7 +1477,7 @@ class _SectionHeaderDelegate extends SliverPersistentHeaderDelegate {
       margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface.withOpacity(opacity),
+        color: theme.colorScheme.surface.withValues(alpha: opacity),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: theme.colorScheme.outlineVariant),
       ),
@@ -1535,7 +1503,9 @@ class _SectionHeaderDelegate extends SliverPersistentHeaderDelegate {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
-              color: theme.colorScheme.secondaryContainer.withOpacity(0.5),
+              color: theme.colorScheme.secondaryContainer.withValues(
+                alpha: 0.5,
+              ),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
@@ -1545,6 +1515,94 @@ class _SectionHeaderDelegate extends SliverPersistentHeaderDelegate {
                 fontWeight: FontWeight.bold,
               ),
             ),
+          ),
+          const Spacer(),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 220),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            transitionBuilder: (child, animation) {
+              return FadeTransition(
+                opacity: animation,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0.08, 0),
+                    end: Offset.zero,
+                  ).animate(animation),
+                  child: child,
+                ),
+              );
+            },
+            child: showRealtimeHint
+                ? Container(
+                    key: const ValueKey<String>('realtime-comment-hint'),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerHighest
+                          .withValues(alpha: 0.56),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: theme.colorScheme.outlineVariant.withValues(
+                          alpha: 0.6,
+                        ),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        InkWell(
+                          borderRadius: BorderRadius.circular(999),
+                          onTap: onRealtimeHintTap,
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(9, 5, 6, 5),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.fiber_new_rounded,
+                                  size: 13,
+                                  color: theme.colorScheme.primary,
+                                ),
+                                const SizedBox(width: 5),
+                                Text(
+                                  '有新评论',
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.only(right: 4),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(999),
+                            onTap: onRealtimeHintClose,
+                            child: Container(
+                              width: 20,
+                              height: 20,
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.surface.withValues(
+                                  alpha: 0.7,
+                                ),
+                                shape: BoxShape.circle,
+                              ),
+                              alignment: Alignment.center,
+                              child: Icon(
+                                Icons.close_rounded,
+                                size: 13,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : const SizedBox.shrink(
+                    key: ValueKey<String>('realtime-comment-hint-empty'),
+                  ),
           ),
         ],
       ),
@@ -1561,6 +1619,7 @@ class _SectionHeaderDelegate extends SliverPersistentHeaderDelegate {
   bool shouldRebuild(covariant _SectionHeaderDelegate oldDelegate) {
     return oldDelegate.count != count ||
         oldDelegate.title != title ||
-        oldDelegate.theme != theme;
+        oldDelegate.theme != theme ||
+        oldDelegate.showRealtimeHint != showRealtimeHint;
   }
 }

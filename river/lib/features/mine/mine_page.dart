@@ -11,9 +11,15 @@ import 'package:river/features/login/riverside_login_flow_mode.dart';
 import 'package:river/features/login/riverside_login_webview_page.dart';
 import 'package:river/features/mine/about_page.dart';
 import 'package:river/features/mine/appearance_settings_page.dart';
+import 'package:river/features/mine/feedback_webview_page.dart';
+import 'package:river/features/mine/notifications_push_settings_page.dart';
+import 'package:river/features/mine/riverside_account_settings_page.dart';
 import 'package:river/features/mine/riverside_profile_page.dart';
+import 'package:river/features/mine/server_settings_page.dart';
 import 'package:river/features/mine/storage_settings_page.dart'; // 引入新页面
 import 'package:river/core/navigation/river_page_route.dart';
+
+part 'mine_page_widgets.dart';
 
 class MinePage extends StatefulWidget {
   const MinePage({super.key, required this.dependencies});
@@ -30,6 +36,7 @@ class _MinePageState extends State<MinePage> {
   // ---------------------------------------------------------------------------
   bool _isBusy = false;
   bool _isCheckingVersion = false;
+  bool _avatarAsCardBackground = false;
   final ScrollController _scrollController = ScrollController();
   double _headerScrollFactor = 0;
 
@@ -55,13 +62,10 @@ class _MinePageState extends State<MinePage> {
 
   Future<void> _openCredentialAddFlow({String? detectedWebViewVersion}) async {
     _setBusy(true);
-    final profile = await Navigator.of(context).push<UserAccount>(
-      riverPageRoute<UserAccount>(
-        builder: (_) => RiverSideExternalFallbackPage(
-          dependencies: widget.dependencies,
-          detectedWebViewVersion: detectedWebViewVersion,
-        ),
-      ),
+    final profile = await showRiverSideCredentialLoginSheet(
+      context: context,
+      dependencies: widget.dependencies,
+      detectedWebViewVersion: detectedWebViewVersion,
     );
     _setBusy(false);
     if (profile != null) _showMessage('已添加账号: ${profile.displayName}');
@@ -138,7 +142,7 @@ class _MinePageState extends State<MinePage> {
     );
   }
 
-  Future<void> _onDeleteAccount(UserAccount account) async {
+  Future<bool> _onDeleteAccount(UserAccount account) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -158,12 +162,15 @@ class _MinePageState extends State<MinePage> {
       ),
     );
 
-    if (confirmed == true) {
-      await widget.dependencies.accountStore.removeRiverSideAccounts([
-        account.username,
-      ]);
-      _showMessage('账号已移除');
+    if (confirmed != true) {
+      return false;
     }
+
+    await widget.dependencies.accountStore.removeRiverSideAccounts([
+      account.username,
+    ]);
+    _showMessage('账号已移除');
+    return true;
   }
 
   void _showAccountManagerSheet() {
@@ -198,10 +205,46 @@ class _MinePageState extends State<MinePage> {
     ).push(riverPageRoute<void>(builder: (_) => const StorageSettingsPage()));
   }
 
+  void _openServerSettings() {
+    Navigator.of(context).push(
+      riverPageRoute<void>(
+        builder: (_) => ServerSettingsPage(
+          settingsController: widget.dependencies.settingsController,
+          updateChecker: widget.dependencies.updateChecker,
+        ),
+      ),
+    );
+  }
+
+  void _openNotificationsPushSettings() {
+    Navigator.of(context).push(
+      riverPageRoute<void>(
+        builder: (_) => NotificationsPushSettingsPage(
+          settingsController: widget.dependencies.settingsController,
+        ),
+      ),
+    );
+  }
+
+  void _openRiverSideAccountSettings() {
+    Navigator.of(context).push(
+      riverPageRoute<void>(
+        builder: (_) =>
+            RiverSideAccountSettingsPage(dependencies: widget.dependencies),
+      ),
+    );
+  }
+
   void _openAboutPage() {
     Navigator.of(
       context,
     ).push(riverPageRoute<void>(builder: (_) => const AboutPage()));
+  }
+
+  void _openFeedbackPage() {
+    Navigator.of(
+      context,
+    ).push(riverPageRoute<void>(builder: (_) => const FeedbackWebViewPage()));
   }
 
   Future<void> _openVersionDialog() async {
@@ -255,6 +298,17 @@ class _MinePageState extends State<MinePage> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
+  void _toggleAvatarCardVisual() {
+    HapticFeedback.selectionClick();
+    setState(() {
+      _avatarAsCardBackground = !_avatarAsCardBackground;
+    });
+  }
+
+  void _onEditAvatarPressed() {
+    _showMessage('修改头像功能开发中...');
+  }
+
   void _onScroll() {
     final offset = _scrollController.hasClients ? _scrollController.offset : 0;
     final next = (offset / 96).clamp(0.0, 1.0);
@@ -264,6 +318,107 @@ class _MinePageState extends State<MinePage> {
     setState(() {
       _headerScrollFactor = next;
     });
+  }
+
+  Widget _buildProfileActionChip({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    required bool emphasized,
+    required bool overImage,
+    bool compact = false,
+  }) {
+    final theme = Theme.of(context);
+    final radius = BorderRadius.circular(999);
+    final bgColor = emphasized
+        ? (overImage
+              ? Colors.white.withValues(alpha: 0.92)
+              : theme.colorScheme.primary)
+        : (overImage
+              ? Colors.white.withValues(alpha: 0.16)
+              : theme.colorScheme.surface.withValues(alpha: 0.88));
+    final fgColor = emphasized
+        ? (overImage ? theme.colorScheme.primary : theme.colorScheme.onPrimary)
+        : (overImage
+              ? Colors.white
+              : theme.colorScheme.onSurface.withValues(alpha: 0.88));
+    final borderColor = emphasized
+        ? Colors.transparent
+        : (overImage
+              ? Colors.white.withValues(alpha: 0.40)
+              : theme.colorScheme.outlineVariant.withValues(alpha: 0.55));
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: radius,
+        onTap: onTap,
+        child: Ink(
+          height: compact ? 34 : 38,
+          padding: EdgeInsets.symmetric(horizontal: compact ? 11 : 13),
+          decoration: BoxDecoration(
+            color: bgColor,
+            borderRadius: radius,
+            border: Border.all(color: borderColor),
+            boxShadow: (!compact && overImage)
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.15),
+                      blurRadius: 12,
+                      offset: const Offset(0, 5),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: compact ? 15.5 : 16.5, color: fgColor),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: fgColor,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.1,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProfileIconActionButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onTap,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.transparent,
+        shape: const CircleBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: InkResponse(
+          customBorder: const CircleBorder(),
+          highlightShape: BoxShape.circle,
+          onTap: onTap,
+          radius: 22,
+          child: Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.20),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white.withValues(alpha: 0.42)),
+            ),
+            child: Icon(icon, size: 18, color: Colors.white),
+          ),
+        ),
+      ),
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -308,15 +463,48 @@ class _MinePageState extends State<MinePage> {
                               _SettingsTile(
                                 icon: Icons.palette_outlined,
                                 title: '外观',
-                                subtitle: '主题色、深色模式、字体大小',
+                                subtitle: '应用基础外观自定义设置',
+                                heroTagPrefix: 'mine_settings_appearance',
                                 onTap: _openAppearanceSettings,
                               ),
                               const _SettingsDivider(),
                               _SettingsTile(
                                 icon: Icons.sd_storage_outlined,
                                 title: '存储空间',
-                                subtitle: '缓存清理',
+                                subtitle: '应用缓存空间管理与清理',
+                                heroTagPrefix: 'mine_settings_storage',
                                 onTap: _openStorageSettings,
+                              ),
+                              const _SettingsDivider(),
+                              _SettingsTile(
+                                icon: Icons.notifications_active_outlined,
+                                title: '通知与推送',
+                                subtitle: '实时横幅提醒开关',
+                                heroTagPrefix:
+                                    'mine_settings_notifications_push',
+                                onTap: _openNotificationsPushSettings,
+                              ),
+                              const _SettingsDivider(),
+                              _SettingsTile(
+                                icon: Icons.dns_outlined,
+                                title: '服务器设置',
+                                subtitle: '主域名与更新源',
+                                heroTagPrefix: 'mine_settings_server',
+                                onTap: _openServerSettings,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 24),
+                          _SectionTitle(title: '账号设置'),
+                          _SettingsCard(
+                            children: [
+                              _SettingsTile(
+                                icon: Icons.manage_accounts_outlined,
+                                title: 'RiverSide账号设置',
+                                subtitle: '账号基础信息设置',
+                                heroTagPrefix:
+                                    'mine_settings_riverside_account',
+                                onTap: _openRiverSideAccountSettings,
                               ),
                             ],
                           ),
@@ -372,7 +560,9 @@ class _MinePageState extends State<MinePage> {
                                             const SizedBox(width: 6),
                                           Icon(
                                             Icons.chevron_right_rounded,
-                                            color: Colors.grey.withOpacity(0.5),
+                                            color: Colors.grey.withValues(
+                                              alpha: 0.5,
+                                            ),
                                             size: 20,
                                           ),
                                         ],
@@ -380,9 +570,18 @@ class _MinePageState extends State<MinePage> {
                               ),
                               const _SettingsDivider(),
                               _SettingsTile(
+                                icon: Icons.feedback_outlined,
+                                title: '反馈',
+                                subtitle: '问题反馈与建议',
+                                heroTagPrefix: 'mine_settings_feedback',
+                                onTap: _openFeedbackPage,
+                              ),
+                              const _SettingsDivider(),
+                              _SettingsTile(
                                 icon: Icons.info_outline_rounded,
                                 title: '关于 River',
                                 subtitle: '应用信息与项目说明',
+                                heroTagPrefix: 'mine_settings_about',
                                 onTap: _openAboutPage,
                               ),
                             ],
@@ -525,85 +724,236 @@ class _MinePageState extends State<MinePage> {
       child: Column(
         children: [
           if (account != null) ...[
-            // 已登录状态
-            GestureDetector(
-              onTap: _openProfilePage,
-              child: Hero(
-                tag: 'profile_avatar',
-                child: Container(
-                  width: 88,
-                  height: 88,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: theme.colorScheme.surface,
-                      width: 4,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 380),
+              curve: Curves.easeOutCubic,
+              height: _avatarAsCardBackground ? 292 : 244,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface.withValues(
+                  alpha: _avatarAsCardBackground ? 0.14 : 0.58,
+                ),
+                borderRadius: BorderRadius.circular(28),
+                border: Border.all(
+                  color: theme.colorScheme.outlineVariant.withValues(
+                    alpha: 0.26,
+                  ),
+                ),
+              ),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final width = constraints.maxWidth;
+                  const collapsedAvatarSize = 88.0;
+                  final collapsedLeft = (width - collapsedAvatarSize) / 2;
+                  final expandedHeight = constraints.maxHeight;
+                  final expandedInfoTop = constraints.maxHeight - 124;
+                  final expandedActionsTop = constraints.maxHeight - 70;
+
+                  return Stack(
+                    children: [
+                      AnimatedPositioned(
+                        duration: const Duration(milliseconds: 380),
+                        curve: Curves.easeOutCubic,
+                        top: _avatarAsCardBackground ? 0 : 16,
+                        left: _avatarAsCardBackground ? 0 : collapsedLeft,
+                        width: _avatarAsCardBackground
+                            ? width
+                            : collapsedAvatarSize,
+                        height: _avatarAsCardBackground
+                            ? expandedHeight
+                            : collapsedAvatarSize,
+                        child: GestureDetector(
+                          onTap: _toggleAvatarCardVisual,
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 360),
+                            curve: Curves.easeOutCubic,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(
+                                _avatarAsCardBackground ? 28 : 44,
+                              ),
+                              border: Border.all(
+                                color: theme.colorScheme.surface,
+                                width: _avatarAsCardBackground ? 0 : 4,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.14),
+                                  blurRadius: 16,
+                                  offset: const Offset(0, 6),
+                                ),
+                              ],
+                              image: account.avatarUrl.isNotEmpty
+                                  ? DecorationImage(
+                                      image: NetworkImage(account.avatarUrl),
+                                      fit: BoxFit.cover,
+                                    )
+                                  : null,
+                              color: account.avatarUrl.isEmpty
+                                  ? theme.colorScheme.surfaceContainerHighest
+                                  : null,
+                            ),
+                            alignment: Alignment.center,
+                            child: account.avatarUrl.isEmpty
+                                ? Icon(
+                                    Icons.person_rounded,
+                                    size: _avatarAsCardBackground ? 44 : 48,
+                                    color: theme.colorScheme.primary,
+                                  )
+                                : null,
+                          ),
+                        ),
+                      ),
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: AnimatedOpacity(
+                            duration: const Duration(milliseconds: 280),
+                            curve: Curves.easeOutCubic,
+                            opacity: _avatarAsCardBackground ? 1 : 0,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(28),
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Colors.black.withValues(alpha: 0.12),
+                                    Colors.black.withValues(alpha: 0.22),
+                                    Colors.black.withValues(alpha: 0.40),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      AnimatedPositioned(
+                        duration: const Duration(milliseconds: 360),
+                        curve: Curves.easeOutCubic,
+                        top: _avatarAsCardBackground ? expandedInfoTop : 118,
+                        left: 16,
+                        right: 16,
+                        child: AnimatedAlign(
+                          duration: const Duration(milliseconds: 360),
+                          curve: Curves.easeOutCubic,
+                          alignment: _avatarAsCardBackground
+                              ? Alignment.centerLeft
+                              : Alignment.center,
+                          child: Column(
+                            crossAxisAlignment: _avatarAsCardBackground
+                                ? CrossAxisAlignment.start
+                                : CrossAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                account.displayName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.headlineSmall?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: _avatarAsCardBackground
+                                      ? Colors.white
+                                      : null,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '@${account.username}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: _avatarAsCardBackground
+                                      ? Colors.white.withValues(alpha: 0.92)
+                                      : theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      AnimatedPositioned(
+                        duration: const Duration(milliseconds: 360),
+                        curve: Curves.easeOutCubic,
+                        left: 14,
+                        right: 14,
+                        top: _avatarAsCardBackground ? expandedActionsTop : 190,
+                        child: AnimatedAlign(
+                          duration: const Duration(milliseconds: 360),
+                          curve: Curves.easeOutCubic,
+                          alignment: Alignment.center,
+                          child: AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 220),
+                            switchInCurve: Curves.easeOutCubic,
+                            switchOutCurve: Curves.easeInCubic,
+                            child: _avatarAsCardBackground
+                                ? Container(
+                                    key: const ValueKey('icon_actions'),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 8,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.16,
+                                      ),
+                                      borderRadius: BorderRadius.circular(999),
+                                      border: Border.all(
+                                        color: Colors.white.withValues(
+                                          alpha: 0.30,
+                                        ),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        _buildProfileIconActionButton(
+                                          icon: Icons.person_rounded,
+                                          tooltip: '个人主页',
+                                          onTap: _openProfilePage,
+                                        ),
+                                        const SizedBox(width: 10),
+                                        _buildProfileIconActionButton(
+                                          icon: Icons.switch_account_rounded,
+                                          tooltip: '切换账号',
+                                          onTap: _showAccountManagerSheet,
+                                        ),
+                                        const SizedBox(width: 10),
+                                        _buildProfileIconActionButton(
+                                          icon: Icons.camera_alt_rounded,
+                                          tooltip: '修改头像',
+                                          onTap: _onEditAvatarPressed,
+                                        ),
+                                      ],
+                                    ),
+                                  )
+                                : Wrap(
+                                    key: const ValueKey('text_actions'),
+                                    spacing: 10,
+                                    runSpacing: 8,
+                                    alignment: WrapAlignment.center,
+                                    children: [
+                                      _buildProfileActionChip(
+                                        icon: Icons.person_rounded,
+                                        label: '个人主页',
+                                        onTap: _openProfilePage,
+                                        emphasized: true,
+                                        overImage: false,
+                                      ),
+                                      _buildProfileActionChip(
+                                        icon: Icons.switch_account_rounded,
+                                        label: '切换账号',
+                                        onTap: _showAccountManagerSheet,
+                                        emphasized: false,
+                                        overImage: false,
+                                      ),
+                                    ],
+                                  ),
+                          ),
+                        ),
                       ),
                     ],
-                    image: account.avatarUrl.isNotEmpty
-                        ? DecorationImage(
-                            image: NetworkImage(account.avatarUrl),
-                            fit: BoxFit.cover,
-                          )
-                        : null,
-                  ),
-                  child: account.avatarUrl.isEmpty
-                      ? Icon(
-                          Icons.person,
-                          size: 48,
-                          color: theme.colorScheme.primary,
-                        )
-                      : null,
-                ),
+                  );
+                },
               ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              account.displayName,
-              style: theme.textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '@${account.username}',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.textTheme.bodyMedium?.color?.withOpacity(0.6),
-              ),
-            ),
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                FilledButton.icon(
-                  onPressed: _openProfilePage,
-                  icon: const Icon(Icons.person_rounded, size: 18),
-                  label: const Text('个人主页'),
-                  style: FilledButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    shape: const StadiumBorder(),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                OutlinedButton.icon(
-                  onPressed: _showAccountManagerSheet,
-                  icon: const Icon(Icons.switch_account_rounded, size: 18),
-                  label: const Text('切换账号'),
-                  style: OutlinedButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    shape: const StadiumBorder(),
-                    side: BorderSide(
-                      color: theme.colorScheme.outline.withOpacity(0.5),
-                    ),
-                  ),
-                ),
-              ],
             ),
           ] else ...[
             // 未登录状态
@@ -611,7 +961,7 @@ class _MinePageState extends State<MinePage> {
               width: 80,
               height: 80,
               decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceVariant,
+                color: theme.colorScheme.surfaceContainerHighest,
                 shape: BoxShape.circle,
               ),
               child: Icon(
@@ -654,289 +1004,3 @@ class _MinePageState extends State<MinePage> {
 // -----------------------------------------------------------------------------
 // 组件
 // -----------------------------------------------------------------------------
-class _SettingsCard extends StatelessWidget {
-  const _SettingsCard({required this.children});
-
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      elevation: 0,
-      color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      margin: EdgeInsets.zero,
-      child: Column(children: children),
-    );
-  }
-}
-
-class _SettingsDivider extends StatelessWidget {
-  const _SettingsDivider();
-
-  @override
-  Widget build(BuildContext context) {
-    return Divider(
-      height: 1,
-      thickness: 1,
-      indent: 56,
-      endIndent: 0,
-      color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.2),
-    );
-  }
-}
-
-class _SettingsTile extends StatelessWidget {
-  const _SettingsTile({
-    required this.icon,
-    required this.title,
-    this.subtitle,
-    required this.onTap,
-    this.isDestructive = false,
-    this.trailing,
-  });
-
-  final IconData icon;
-  final String title;
-  final String? subtitle;
-  final VoidCallback onTap;
-  final bool isDestructive;
-  final Widget? trailing;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final color = isDestructive
-        ? theme.colorScheme.error
-        : theme.colorScheme.onSurface;
-
-    return ListTile(
-      onTap: onTap,
-      leading: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: isDestructive
-              ? theme.colorScheme.errorContainer
-              : theme.colorScheme.primaryContainer.withOpacity(0.4),
-          shape: BoxShape.circle,
-        ),
-        child: Icon(
-          icon,
-          size: 20,
-          color: isDestructive
-              ? theme.colorScheme.error
-              : theme.colorScheme.primary,
-        ),
-      ),
-      title: Text(
-        title,
-        style: TextStyle(color: color, fontWeight: FontWeight.w500),
-      ),
-      subtitle: subtitle != null
-          ? Text(
-              subtitle!,
-              style: TextStyle(
-                color: theme.colorScheme.onSurfaceVariant,
-                fontSize: 12,
-              ),
-            )
-          : null,
-      trailing:
-          trailing ??
-          Icon(
-            Icons.chevron_right_rounded,
-            color: Colors.grey.withOpacity(0.5),
-            size: 20,
-          ),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-    );
-  }
-}
-
-class _SectionTitle extends StatelessWidget {
-  const _SectionTitle({required this.title});
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 12, bottom: 8),
-      child: Text(
-        title,
-        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-          color: Theme.of(context).colorScheme.primary,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    );
-  }
-}
-
-// -----------------------------------------------------------------------------
-// 组件：账号管理底部弹窗
-// -----------------------------------------------------------------------------
-class _AccountManagerSheet extends StatefulWidget {
-  const _AccountManagerSheet({
-    required this.accounts,
-    required this.activeAccount,
-    required this.onSwitch,
-    required this.onAdd,
-    required this.onDelete,
-  });
-
-  final List<UserAccount> accounts;
-  final UserAccount? activeAccount;
-  final ValueChanged<UserAccount> onSwitch;
-  final VoidCallback onAdd;
-  final ValueChanged<UserAccount> onDelete;
-
-  @override
-  State<_AccountManagerSheet> createState() => _AccountManagerSheetState();
-}
-
-class _AccountManagerSheetState extends State<_AccountManagerSheet> {
-  bool _isEditing = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      padding: const EdgeInsets.symmetric(vertical: 24),
-      child: SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    '账号管理',
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  if (widget.accounts.isNotEmpty)
-                    TextButton(
-                      onPressed: () {
-                        setState(() {
-                          _isEditing = !_isEditing;
-                        });
-                      },
-                      child: Text(_isEditing ? '完成' : '编辑'),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            if (widget.accounts.isEmpty)
-              Padding(
-                padding: const EdgeInsets.all(24.0),
-                child: Center(
-                  child: Text('暂无登录账号', style: TextStyle(color: Colors.grey)),
-                ),
-              )
-            else
-              Flexible(
-                child: ListView.separated(
-                  shrinkWrap: true,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: widget.accounts.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
-                  itemBuilder: (context, index) {
-                    final account = widget.accounts[index];
-                    final isActive =
-                        account.username == widget.activeAccount?.username;
-
-                    return ListTile(
-                      onTap: _isEditing ? null : () => widget.onSwitch(account),
-                      leading: CircleAvatar(
-                        backgroundColor: theme.colorScheme.surfaceVariant,
-                        backgroundImage: account.avatarUrl.isNotEmpty
-                            ? NetworkImage(account.avatarUrl)
-                            : null,
-                        child: account.avatarUrl.isEmpty
-                            ? const Icon(Icons.person, size: 20)
-                            : null,
-                      ),
-                      title: Text(
-                        account.displayName,
-                        style: TextStyle(
-                          fontWeight: isActive
-                              ? FontWeight.bold
-                              : FontWeight.normal,
-                          color: isActive ? theme.colorScheme.primary : null,
-                        ),
-                      ),
-                      subtitle: Text('@${account.username}'),
-                      trailing: _isEditing
-                          ? IconButton(
-                              icon: const Icon(
-                                Icons.remove_circle_outline,
-                                color: Colors.red,
-                              ),
-                              onPressed: () => widget.onDelete(account),
-                            )
-                          : isActive
-                          ? Icon(
-                              Icons.check_circle_rounded,
-                              color: theme.colorScheme.primary,
-                            )
-                          : null,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: isActive && !_isEditing
-                            ? BorderSide(
-                                color: theme.colorScheme.primary,
-                                width: 1,
-                              )
-                            : BorderSide.none,
-                      ),
-                      tileColor: isActive
-                          ? theme.colorScheme.primaryContainer.withOpacity(0.1)
-                          : null,
-                    );
-                  },
-                ),
-              ),
-            const Divider(height: 32),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Column(
-                children: [
-                  ListTile(
-                    leading: const Icon(Icons.add_circle_outline_rounded),
-                    title: const Text('添加 RiverSide 账号'),
-                    onTap: widget.onAdd,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.school_outlined),
-                    title: const Text('添加 清水河畔 账号'),
-                    subtitle: const Text(
-                      '即将上线',
-                      style: TextStyle(fontSize: 10),
-                    ),
-                    enabled: false,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}

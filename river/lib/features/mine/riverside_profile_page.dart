@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:river/app/app_dependencies.dart';
@@ -12,6 +11,8 @@ import 'package:river/features/mine/riverside_profile_webview_page.dart';
 import 'package:river/features/notifications/chat_detail_page.dart';
 import 'package:river/features/posts/topic_detail_page.dart';
 import 'package:river/core/navigation/river_page_route.dart';
+
+part 'riverside_profile_page_widgets.dart';
 
 class RiverSideProfilePage extends StatefulWidget {
   const RiverSideProfilePage({
@@ -483,12 +484,10 @@ class _RiverSideProfilePageState extends State<RiverSideProfilePage>
       future: _overviewFuture,
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
-          return Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Center(
-              child: CircularProgressIndicator(
-                color: theme.colorScheme.primary.withValues(alpha: 0.5),
-              ),
+          return _ProfileSectionAnimatedSwitcher(
+            child: KeyedSubtree(
+              key: const ValueKey<String>('profile_header_loading'),
+              child: const _ProfileHeaderSkeleton(),
             ),
           );
         }
@@ -532,140 +531,161 @@ class _RiverSideProfilePageState extends State<RiverSideProfilePage>
           avatarWidget = Hero(tag: widget.heroTag!, child: avatarWidget);
         }
 
-        return Container(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
+        return _ProfileSectionAnimatedSwitcher(
+          child: KeyedSubtree(
+            key: const ValueKey<String>('profile_header_content'),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  avatarWidget,
-                  const SizedBox(width: 20),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SizedBox(height: 8),
-                        Builder(
-                          builder: (context) {
-                            final nameWidget = Text(
-                              displayName,
-                              style: theme.textTheme.headlineSmall?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                height: 1.1,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            );
-                            final nameHeroTag = widget.heroTagName;
-                            if (nameHeroTag == null || nameHeroTag.isEmpty) {
-                              return nameWidget;
-                            }
-                            return Hero(
-                              tag: nameHeroTag,
-                              child: Material(
-                                color: Colors.transparent,
-                                child: nameWidget,
-                              ),
-                            );
-                          },
-                        ),
-                        Text(
-                          '@${account.username}',
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                        if (overview.location.isNotEmpty) ...[
-                          const SizedBox(height: 4),
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.location_on_outlined,
-                                size: 14,
-                                color: theme.colorScheme.secondary,
-                              ),
-                              const SizedBox(width: 4),
-                              Expanded(
-                                child: Text(
-                                  overview.location,
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: theme.colorScheme.secondary,
-                                  ),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      avatarWidget,
+                      const SizedBox(width: 20),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SizedBox(height: 8),
+                            Builder(
+                              builder: (context) {
+                                final nameWidget = Text(
+                                  displayName,
+                                  style: theme.textTheme.headlineSmall
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                        height: 1.1,
+                                      ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                ),
+                                );
+                                final nameHeroTag = widget.heroTagName;
+                                if (nameHeroTag == null ||
+                                    nameHeroTag.isEmpty) {
+                                  return nameWidget;
+                                }
+                                return Hero(
+                                  tag: nameHeroTag,
+                                  child: Material(
+                                    color: Colors.transparent,
+                                    child: nameWidget,
+                                  ),
+                                );
+                              },
+                            ),
+                            Text(
+                              '@${account.username}',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                            if (overview.location.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.location_on_outlined,
+                                    size: 14,
+                                    color: theme.colorScheme.secondary,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: Text(
+                                      overview.location,
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                            color: theme.colorScheme.secondary,
+                                          ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
-                          ),
-                        ],
-                      ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (showFollowButton || showMessageButton) ...[
+                    const SizedBox(height: 16),
+                    RiverSideProfileActionBar(
+                      showFollowButton: showFollowButton,
+                      showMessageButton: showMessageButton,
+                      isFollowing: _followStateResolved
+                          ? _isFollowing
+                          : overview.isFollowing,
+                      followLoading: _followBusy,
+                      messageLoading: _messageBusy,
+                      onToggleFollow: _toggleFollow,
+                      onStartMessage: _startPrivateMessage,
                     ),
+                  ],
+
+                  const SizedBox(height: 24),
+
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      _buildStatItem(context, '${overview.topicCount}', '帖子'),
+                      _buildStatItem(
+                        context,
+                        '${overview.followingCount}',
+                        '关注',
+                      ),
+                      _buildStatItem(
+                        context,
+                        '${overview.followersCount}',
+                        '粉丝',
+                      ),
+                      _buildStatItem(
+                        context,
+                        '${overview.likesReceived}',
+                        '获赞',
+                      ),
+                    ],
+                  ),
+
+                  if (overview.bio.isNotEmpty) ...[
+                    const SizedBox(height: 24),
+                    Text(
+                      overview.bio,
+                      style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
+                      maxLines: 6,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+
+                  const SizedBox(height: 16),
+
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 8,
+                    children: [
+                      _MetaChip(
+                        label: '信任等级 ${overview.trustLevel}',
+                        icon: Icons.verified_user_outlined,
+                        color: Colors.green,
+                      ),
+                      if (overview.lastSeenAt != null)
+                        _MetaChip(
+                          label:
+                              '最近活跃 ${_formatDateShort(overview.lastSeenAt!)}',
+                          icon: Icons.access_time,
+                        ),
+                      if (overview.createdAt != null)
+                        _MetaChip(
+                          label: '加入于 ${_formatDateShort(overview.createdAt!)}',
+                          icon: Icons.calendar_today_outlined,
+                        ),
+                    ],
                   ),
                 ],
               ),
-              if (showFollowButton || showMessageButton) ...[
-                const SizedBox(height: 16),
-                RiverSideProfileActionBar(
-                  showFollowButton: showFollowButton,
-                  showMessageButton: showMessageButton,
-                  isFollowing: _followStateResolved
-                      ? _isFollowing
-                      : overview.isFollowing,
-                  followLoading: _followBusy,
-                  messageLoading: _messageBusy,
-                  onToggleFollow: _toggleFollow,
-                  onStartMessage: _startPrivateMessage,
-                ),
-              ],
-
-              const SizedBox(height: 24),
-
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _buildStatItem(context, '${overview.postCount}', '帖子'),
-                  _buildStatItem(context, '${overview.followingCount}', '关注'),
-                  _buildStatItem(context, '${overview.followersCount}', '粉丝'),
-                  _buildStatItem(context, '${overview.likesReceived}', '获赞'),
-                ],
-              ),
-
-              if (overview.bio.isNotEmpty) ...[
-                const SizedBox(height: 24),
-                Text(
-                  overview.bio,
-                  style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
-                  maxLines: 6,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-
-              const SizedBox(height: 16),
-
-              Wrap(
-                spacing: 12,
-                runSpacing: 8,
-                children: [
-                  _MetaChip(
-                    label: '信任等级 ${overview.trustLevel}',
-                    icon: Icons.verified_user_outlined,
-                    color: Colors.green,
-                  ),
-                  if (overview.lastSeenAt != null)
-                    _MetaChip(
-                      label: '最近活跃 ${_formatDateShort(overview.lastSeenAt!)}',
-                      icon: Icons.access_time,
-                    ),
-                  if (overview.createdAt != null)
-                    _MetaChip(
-                      label: '加入于 ${_formatDateShort(overview.createdAt!)}',
-                      icon: Icons.calendar_today_outlined,
-                    ),
-                ],
-              ),
-            ],
+            ),
           ),
         );
       },
@@ -718,6 +738,22 @@ class _ActivityTab extends StatefulWidget {
 
 class _ActivityTabState extends State<_ActivityTab>
     with AutomaticKeepAliveClientMixin {
+  bool _refreshing = false;
+
+  Future<void> _handleRefresh() async {
+    if (_refreshing) {
+      return;
+    }
+    setState(() => _refreshing = true);
+    try {
+      await widget.onRefresh();
+    } finally {
+      if (mounted) {
+        setState(() => _refreshing = false);
+      }
+    }
+  }
+
   @override
   bool get wantKeepAlive => true;
 
@@ -735,43 +771,60 @@ class _ActivityTabState extends State<_ActivityTab>
         return FutureBuilder<List<RiverSideProfileActivityItem>>(
           future: widget.activityFuture,
           builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (snapshot.hasError) {
-              return _ErrorRetryView(
-                message: '加载失败',
-                onRetry: widget.onRefresh,
+            late final Widget content;
+            if (_refreshing ||
+                snapshot.connectionState == ConnectionState.waiting) {
+              content = KeyedSubtree(
+                key: ValueKey<String>('activity_loading_${widget.kind.name}'),
+                child: _ActivityTabSkeleton(onRefresh: _handleRefresh),
               );
-            }
-
-            final items = snapshot.data ?? [];
-            if (items.isEmpty) {
-              return _EmptyView(
-                message: '暂无${widget.kind.label}动态',
-                onRefresh: widget.onRefresh,
-              );
-            }
-
-            return RefreshIndicator(
-              onRefresh: widget.onRefresh,
-              edgeOffset: 0,
-              child: ListView.separated(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
+            } else if (snapshot.hasError) {
+              content = KeyedSubtree(
+                key: ValueKey<String>('activity_error_${widget.kind.name}'),
+                child: _ErrorRetryView(
+                  message: '加载失败',
+                  onRetry: _handleRefresh,
                 ),
-                itemCount: items.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 12),
-                itemBuilder: (context, index) {
-                  final item = items[index];
-                  return _ActivityCard(
-                    item: item,
-                    onTap: () => widget.onItemTap(item),
-                  );
-                },
-              ),
-            );
+              );
+            } else {
+              final items = snapshot.data ?? [];
+              if (items.isEmpty) {
+                content = KeyedSubtree(
+                  key: ValueKey<String>('activity_empty_${widget.kind.name}'),
+                  child: _EmptyView(
+                    message: '暂无${widget.kind.label}动态',
+                    onRefresh: _handleRefresh,
+                  ),
+                );
+              } else {
+                content = KeyedSubtree(
+                  key: ValueKey<String>(
+                    'activity_list_${widget.kind.name}_${items.length}',
+                  ),
+                  child: RefreshIndicator(
+                    onRefresh: _handleRefresh,
+                    edgeOffset: 0,
+                    child: ListView.separated(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      itemCount: items.length,
+                      separatorBuilder: (_, index) =>
+                          const SizedBox(height: 12),
+                      itemBuilder: (context, index) {
+                        final item = items[index];
+                        return _ActivityCard(
+                          item: item,
+                          onTap: () => widget.onItemTap(item),
+                        );
+                      },
+                    ),
+                  ),
+                );
+              }
+            }
+            return _ProfileSectionAnimatedSwitcher(child: content);
           },
         );
       },
@@ -904,7 +957,7 @@ class _IconStat extends StatelessWidget {
   }
 }
 
-class _BadgesTab extends StatelessWidget {
+class _BadgesTab extends StatefulWidget {
   final Future<RiverSideProfileOverview> overviewFuture;
   final Future<List<RiverSideProfileBadge>> badgesFuture;
   final Future<void> Function() onRefresh;
@@ -916,50 +969,92 @@ class _BadgesTab extends StatelessWidget {
   });
 
   @override
+  State<_BadgesTab> createState() => _BadgesTabState();
+}
+
+class _BadgesTabState extends State<_BadgesTab>
+    with AutomaticKeepAliveClientMixin {
+  bool _refreshing = false;
+
+  Future<void> _handleRefresh() async {
+    if (_refreshing) {
+      return;
+    }
+    setState(() => _refreshing = true);
+    try {
+      await widget.onRefresh();
+    } finally {
+      if (mounted) {
+        setState(() => _refreshing = false);
+      }
+    }
+  }
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
   Widget build(BuildContext context) {
+    super.build(context);
     return FutureBuilder<RiverSideProfileOverview>(
-      future: overviewFuture,
+      future: widget.overviewFuture,
       builder: (context, overviewSnap) {
         if (overviewSnap.hasData && overviewSnap.data!.isProfileHidden) {
           return const _ProfileHiddenView();
         }
         return FutureBuilder<List<RiverSideProfileBadge>>(
-          future: badgesFuture,
+          future: widget.badgesFuture,
           builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting)
-              return const Center(child: CircularProgressIndicator());
-            final items = snapshot.data ?? [];
-            if (items.isEmpty)
-              return _EmptyView(message: '暂无徽章', onRefresh: onRefresh);
-
-            return RefreshIndicator(
-              onRefresh: onRefresh,
-              child: ListView.separated(
-                padding: const EdgeInsets.all(16),
-                itemCount: items.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 12),
-                itemBuilder: (context, index) {
-                  final badge = items[index];
-                  return ListTile(
-                    tileColor: Theme.of(
-                      context,
-                    ).colorScheme.surfaceContainerLow,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+            late final Widget content;
+            if (_refreshing ||
+                snapshot.connectionState == ConnectionState.waiting) {
+              content = KeyedSubtree(
+                key: const ValueKey<String>('badges_loading'),
+                child: _BadgesTabSkeleton(onRefresh: _handleRefresh),
+              );
+            } else {
+              final items = snapshot.data ?? [];
+              if (items.isEmpty) {
+                content = KeyedSubtree(
+                  key: const ValueKey<String>('badges_empty'),
+                  child: _EmptyView(message: '暂无徽章', onRefresh: _handleRefresh),
+                );
+              } else {
+                content = KeyedSubtree(
+                  key: ValueKey<String>('badges_list_${items.length}'),
+                  child: RefreshIndicator(
+                    onRefresh: _handleRefresh,
+                    child: ListView.separated(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: items.length,
+                      separatorBuilder: (_, index) =>
+                          const SizedBox(height: 12),
+                      itemBuilder: (context, index) {
+                        final badge = items[index];
+                        return ListTile(
+                          tileColor: Theme.of(
+                            context,
+                          ).colorScheme.surfaceContainerLow,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          leading: badge.imageUrl.isNotEmpty
+                              ? Image.network(badge.imageUrl, width: 40)
+                              : const Icon(Icons.shield_outlined, size: 40),
+                          title: Text(badge.name),
+                          subtitle: Text(
+                            badge.description.isNotEmpty
+                                ? badge.description
+                                : badge.badgeTypeName,
+                          ),
+                        );
+                      },
                     ),
-                    leading: badge.imageUrl.isNotEmpty
-                        ? Image.network(badge.imageUrl, width: 40)
-                        : const Icon(Icons.shield_outlined, size: 40),
-                    title: Text(badge.name),
-                    subtitle: Text(
-                      badge.description.isNotEmpty
-                          ? badge.description
-                          : badge.badgeTypeName,
-                    ),
-                  );
-                },
-              ),
-            );
+                  ),
+                );
+              }
+            }
+            return _ProfileSectionAnimatedSwitcher(child: content);
           },
         );
       },
@@ -967,7 +1062,7 @@ class _BadgesTab extends StatelessWidget {
   }
 }
 
-class _UsersTab extends StatelessWidget {
+class _UsersTab extends StatefulWidget {
   final Future<RiverSideProfileOverview> overviewFuture;
   final Future<List<RiverSideProfileFollowUser>> usersFuture;
   final Future<void> Function() onRefresh;
@@ -983,176 +1078,92 @@ class _UsersTab extends StatelessWidget {
   });
 
   @override
+  State<_UsersTab> createState() => _UsersTabState();
+}
+
+class _UsersTabState extends State<_UsersTab>
+    with AutomaticKeepAliveClientMixin {
+  bool _refreshing = false;
+
+  Future<void> _handleRefresh() async {
+    if (_refreshing) {
+      return;
+    }
+    setState(() => _refreshing = true);
+    try {
+      await widget.onRefresh();
+    } finally {
+      if (mounted) {
+        setState(() => _refreshing = false);
+      }
+    }
+  }
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
   Widget build(BuildContext context) {
+    super.build(context);
     return FutureBuilder<RiverSideProfileOverview>(
-      future: overviewFuture,
+      future: widget.overviewFuture,
       builder: (context, overviewSnap) {
         if (overviewSnap.hasData && overviewSnap.data!.isProfileHidden) {
           return const _ProfileHiddenView();
         }
         return FutureBuilder<List<RiverSideProfileFollowUser>>(
-          future: usersFuture,
+          future: widget.usersFuture,
           builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting)
-              return const Center(child: CircularProgressIndicator());
-            final items = snapshot.data ?? [];
-            if (items.isEmpty)
-              return _EmptyView(message: emptyText, onRefresh: onRefresh);
-
-            return RefreshIndicator(
-              onRefresh: onRefresh,
-              child: ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                itemCount: items.length,
-                itemBuilder: (context, index) {
-                  final user = items[index];
-                  return ListTile(
-                    leading: CircleAvatar(
-                      backgroundImage: user.avatarUrl.isNotEmpty
-                          ? NetworkImage(user.avatarUrl)
-                          : null,
-                      child: user.avatarUrl.isEmpty
-                          ? const Icon(Icons.person)
-                          : null,
+            late final Widget content;
+            if (_refreshing ||
+                snapshot.connectionState == ConnectionState.waiting) {
+              content = KeyedSubtree(
+                key: const ValueKey<String>('users_loading'),
+                child: _UsersTabSkeleton(onRefresh: _handleRefresh),
+              );
+            } else {
+              final items = snapshot.data ?? [];
+              if (items.isEmpty) {
+                content = KeyedSubtree(
+                  key: const ValueKey<String>('users_empty'),
+                  child: _EmptyView(
+                    message: widget.emptyText,
+                    onRefresh: _handleRefresh,
+                  ),
+                );
+              } else {
+                content = KeyedSubtree(
+                  key: ValueKey<String>('users_list_${items.length}'),
+                  child: RefreshIndicator(
+                    onRefresh: _handleRefresh,
+                    child: ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      itemCount: items.length,
+                      itemBuilder: (context, index) {
+                        final user = items[index];
+                        return ListTile(
+                          leading: CircleAvatar(
+                            backgroundImage: user.avatarUrl.isNotEmpty
+                                ? NetworkImage(user.avatarUrl)
+                                : null,
+                            child: user.avatarUrl.isEmpty
+                                ? const Icon(Icons.person)
+                                : null,
+                          ),
+                          title: Text(user.displayName),
+                          subtitle: Text('@${user.username}'),
+                          onTap: () => widget.onUserTap(user),
+                        );
+                      },
                     ),
-                    title: Text(user.displayName),
-                    subtitle: Text('@${user.username}'),
-                    onTap: () => onUserTap(user),
-                  );
-                },
-              ),
-            );
+                  ),
+                );
+              }
+            }
+            return _ProfileSectionAnimatedSwitcher(child: content);
           },
         );
       },
     );
   }
-}
-
-class _ProfileHiddenView extends StatelessWidget {
-  const _ProfileHiddenView();
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.visibility_off_outlined,
-            size: 48,
-            color: Colors.grey.shade400,
-          ),
-          const SizedBox(height: 16),
-          const Text('用户已隐藏资料', style: TextStyle(color: Colors.grey)),
-        ],
-      ),
-    );
-  }
-}
-
-class _MetaChip extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final Color? color;
-
-  const _MetaChip({required this.label, required this.icon, this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final finalColor = color ?? theme.colorScheme.onSurfaceVariant;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: finalColor),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              color: finalColor,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _EmptyView extends StatelessWidget {
-  final String message;
-  final VoidCallback onRefresh;
-  const _EmptyView({required this.message, required this.onRefresh});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(message, style: const TextStyle(color: Colors.grey)),
-          TextButton(onPressed: onRefresh, child: const Text('刷新')),
-        ],
-      ),
-    );
-  }
-}
-
-class _ErrorRetryView extends StatelessWidget {
-  final String message;
-  final VoidCallback onRetry;
-  const _ErrorRetryView({required this.message, required this.onRetry});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(message, style: const TextStyle(color: Colors.red)),
-          const SizedBox(height: 8),
-          FilledButton.tonal(onPressed: onRetry, child: const Text('重试')),
-        ],
-      ),
-    );
-  }
-}
-
-class _StickyTabBarDelegate extends SliverPersistentHeaderDelegate {
-  final TabBar _tabBar;
-  final Color color;
-
-  _StickyTabBarDelegate(this._tabBar, {required this.color});
-
-  @override
-  double get minExtent => _tabBar.preferredSize.height;
-  @override
-  double get maxExtent => _tabBar.preferredSize.height;
-
-  @override
-  Widget build(
-    BuildContext context,
-    double shrinkOffset,
-    bool overlapsContent,
-  ) {
-    return Container(color: color, child: _tabBar);
-  }
-
-  @override
-  bool shouldRebuild(_StickyTabBarDelegate oldDelegate) {
-    return _tabBar != oldDelegate._tabBar;
-  }
-}
-
-class _ProfileTabDef {
-  final String title;
-  final RiverSideProfileActivityKind? kind;
-  const _ProfileTabDef({required this.title, this.kind});
 }

@@ -1,3 +1,13 @@
-const riverSideLoginUrl = 'https://river-side.cc/login';
-const riverSideBaseUrl = 'https://river-side.cc';
-const riverSideSessionCurrentUrl = '$riverSideBaseUrl/session/current.json';
+import 'package:river/core/config/server_config.dart';
+
+String get riverSideBaseUrl => RiverServerConfig.instance.baseUrl;
+String get riverSideLoginUrl => '$riverSideBaseUrl/login';
+String get riverSideSessionCurrentUrl =>
+    '$riverSideBaseUrl/session/current.json';
+String get riverUpdateManifestUrl =>
+    RiverServerConfig.instance.updateManifestUrl;
+String get riverSideHost => RiverServerConfig.instance.host;
+
+bool isRiverSideHost(String? host) {
+  return RiverServerConfig.instance.isForumHost(host);
+}

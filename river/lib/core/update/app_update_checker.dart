@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:river/core/constants.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class AppUpdateInfo {
@@ -41,9 +42,6 @@ class AppUpdateChecker extends ChangeNotifier {
   AppUpdateChecker({http.Client? httpClient})
     : _httpClient = httpClient ?? http.Client();
 
-  static const String manifestUrl =
-      'https://gitee.com/hanversion/river-mobile-update/raw/master/updater.json';
-
   final http.Client _httpClient;
 
   String _currentVersion = '';
@@ -52,6 +50,7 @@ class AppUpdateChecker extends ChangeNotifier {
   DateTime? _checkedAt;
   AppUpdateInfo? _latestInfo;
   String? _errorMessage;
+  String _lastManifestUrl = '';
 
   String get currentVersion => _currentVersion;
   String get latestVersion => _latestInfo?.version ?? '';
@@ -84,6 +83,14 @@ class AppUpdateChecker extends ChangeNotifier {
   Future<AppUpdateCheckResult> checkForUpdates({bool force = false}) async {
     if (!_initialized) {
       await initialize();
+    }
+
+    final manifestUrl = riverUpdateManifestUrl;
+    if (_lastManifestUrl != manifestUrl) {
+      _lastManifestUrl = manifestUrl;
+      _checkedAt = null;
+      _latestInfo = null;
+      _errorMessage = null;
     }
 
     if (_isChecking) {

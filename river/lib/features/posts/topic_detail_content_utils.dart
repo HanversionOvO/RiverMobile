@@ -1,4 +1,4 @@
-﻿part of 'topic_detail_page.dart';
+part of 'topic_detail_page.dart';
 
 abstract class _PostContentBlock {
   const _PostContentBlock();
@@ -196,7 +196,7 @@ class _EmojiBuilder extends MarkdownElementBuilder {
 Map<String, String>? _buildImageHeaders(String? cookieHeader) {
   final cookie = cookieHeader?.trim();
   if (cookie == null || cookie.isEmpty) {
-    return const <String, String>{'Referer': riverSideBaseUrl};
+    return <String, String>{'Referer': riverSideBaseUrl};
   }
   return <String, String>{'Cookie': cookie, 'Referer': riverSideBaseUrl};
 }
@@ -210,9 +210,7 @@ Map<String, String>? _headersForImageUrl(
   }
   final uri = Uri.tryParse(url);
   final host = (uri?.host ?? '').trim().toLowerCase();
-  if (host.isEmpty ||
-      host == 'river-side.cc' ||
-      host.endsWith('.river-side.cc')) {
+  if (host.isEmpty || isRiverSideHost(host)) {
     return headers;
   }
   return null;
@@ -377,15 +375,6 @@ String _resolveForumUrl(String source) {
     return '$riverSideBaseUrl$raw';
   }
   return '$riverSideBaseUrl/$raw';
-}
-
-String _onlineStateText(bool? isOnline) {
-  if (isOnline == null) {
-    return _TopicDetailPageState._labelUnknownState;
-  }
-  return isOnline
-      ? _TopicDetailPageState._labelOnline
-      : _TopicDetailPageState._labelOffline;
 }
 
 Color _onlineStateColor(bool? isOnline, BuildContext context) {

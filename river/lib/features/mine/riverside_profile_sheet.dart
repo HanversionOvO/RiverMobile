@@ -531,7 +531,7 @@ class _RiverSideUserProfileSheetState
               runSpacing: 8,
               children: [
                 _StatChip(label: '主题', value: overview.topicCount),
-                _StatChip(label: '帖子', value: overview.postCount),
+                _StatChip(label: '帖子', value: overview.topicCount),
                 _StatChip(label: '获赞', value: overview.likesReceived),
                 _StatChip(label: '关注', value: overview.followingCount),
                 _StatChip(label: '粉丝', value: overview.followersCount),

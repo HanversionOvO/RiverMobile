@@ -8,11 +8,10 @@ extension _ComposeTopicPageView on _ComposeTopicPageState {
 
     return Scaffold(
       backgroundColor: colorScheme.surface,
-      // 浣跨敤 resizeToAvoidBottomInset: true 璁?body 闅忛敭鐩樹笂椤讹紝浣嗘垜浠渶瑕佹洿绮剧粏鐨勬帶鍒?      // 杩欓噷璁句负 false锛岄€氳繃 MediaQuery 鎵嬪姩澶勭悊搴曢儴 padding锛屾垨鑰呬娇鐢?true 閰嶅悎 Column
       resizeToAvoidBottomInset: true,
       body: Stack(
         children: [
-          // 1. 姘涘洿鎰熻儗鏅?(Subtle Gradient Background)
+          // Subtle gradient background.
           Positioned.fill(
             child: Container(
               decoration: BoxDecoration(
@@ -23,8 +22,8 @@ extension _ComposeTopicPageView on _ComposeTopicPageState {
                       ? [const Color(0xFF121212), const Color(0xFF1E1E1E)]
                       : [
                           colorScheme.surface,
-                          colorScheme.surfaceContainer.withOpacity(0.5),
-                          colorScheme.primaryContainer.withOpacity(0.1),
+                          colorScheme.surfaceContainer.withValues(alpha: 0.5),
+                          colorScheme.primaryContainer.withValues(alpha: 0.1),
                         ],
                   stops: const [0.0, 0.6, 1.0],
                 ),
@@ -32,14 +31,12 @@ extension _ComposeTopicPageView on _ComposeTopicPageState {
             ),
           ),
 
-          // 2. 涓讳綋鍐呭
+          // Main content.
           SafeArea(
             child: Column(
               children: [
-                // === 椤堕儴瀵艰埅鏍?(鑷畾涔? ===
                 _buildTopBar(context),
 
-                // === 婊氬姩缂栬緫鍖?===
                 Expanded(
                   child: FadeTransition(
                     opacity: _fadeAnim,
@@ -52,12 +49,10 @@ extension _ComposeTopicPageView on _ComposeTopicPageState {
                         children: [
                           const SizedBox(height: 10),
 
-                          // 鏉垮潡閫夋嫨鍣?(鑳跺泭鏍峰紡)
                           _buildCategoryCapsule(theme),
 
                           const SizedBox(height: 20),
 
-                          // 鏍囬杈撳叆 (瓒呭ぇ瀛椾綋锛屾棤杈规)
                           TextField(
                             controller: _titleController,
                             focusNode: _titleFocusNode,
@@ -70,10 +65,15 @@ extension _ComposeTopicPageView on _ComposeTopicPageState {
                             decoration: InputDecoration(
                               hintText: '标题...',
                               hintStyle: TextStyle(
-                                color: theme.hintColor.withOpacity(0.3),
+                                color: theme.hintColor.withValues(alpha: 0.3),
                                 fontSize: 28,
                                 fontWeight: FontWeight.bold,
                               ),
+                              enabledBorder: InputBorder.none,
+                              focusedBorder: InputBorder.none,
+                              disabledBorder: InputBorder.none,
+                              errorBorder: InputBorder.none,
+                              focusedErrorBorder: InputBorder.none,
                               border: InputBorder.none,
                               isDense: true,
                               contentPadding: EdgeInsets.zero,
@@ -84,10 +84,8 @@ extension _ComposeTopicPageView on _ComposeTopicPageState {
 
                           const SizedBox(height: 24),
 
-                          // 姝ｆ枃棰勮/鐐瑰嚮鍖哄煙 (绫讳技 Medium)
                           _buildEditorArea(theme),
 
-                          // 搴曢儴鐣欑櫧锛岄槻姝㈠唴瀹硅閬尅
                           SizedBox(
                             height:
                                 MediaQuery.viewInsetsOf(context).bottom + 80,
@@ -101,7 +99,7 @@ extension _ComposeTopicPageView on _ComposeTopicPageState {
             ),
           ),
 
-          // 3. 搴曢儴宸ュ叿鏍?(閿洏涓婃柟)
+          // Bottom toolbar.
           Positioned(
             left: 0,
             right: 0,
@@ -220,8 +218,8 @@ extension _ComposeTopicPageView on _ComposeTopicPageState {
                                   ? []
                                   : [
                                       BoxShadow(
-                                        color: colorScheme.primary.withOpacity(
-                                          0.3,
+                                        color: colorScheme.primary.withValues(
+                                          alpha: 0.3,
                                         ),
                                         blurRadius: 12,
                                         offset: const Offset(0, 4),
@@ -276,10 +274,10 @@ extension _ComposeTopicPageView on _ComposeTopicPageState {
           decoration: BoxDecoration(
             color: hasSelection
                 ? colorScheme.primaryContainer
-                : colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                : colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
             borderRadius: BorderRadius.circular(20),
             border: hasSelection
-                ? Border.all(color: colorScheme.primary.withOpacity(0.2))
+                ? Border.all(color: colorScheme.primary.withValues(alpha: 0.2))
                 : null,
           ),
           child: Row(
@@ -329,7 +327,7 @@ extension _ComposeTopicPageView on _ComposeTopicPageState {
               Icon(
                 Icons.arrow_drop_down_rounded,
                 size: 18,
-                color: colorScheme.onSurfaceVariant.withOpacity(0.6),
+                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
               ),
             ],
           ),
@@ -352,7 +350,9 @@ extension _ComposeTopicPageView on _ComposeTopicPageState {
                 style: theme.textTheme.bodyLarge?.copyWith(
                   height: 1.6,
                   fontSize: 17,
-                  color: theme.textTheme.bodyLarge?.color?.withOpacity(0.9),
+                  color: theme.textTheme.bodyLarge?.color?.withValues(
+                    alpha: 0.9,
+                  ),
                 ),
                 maxLines: null,
               )
@@ -364,7 +364,7 @@ extension _ComposeTopicPageView on _ComposeTopicPageState {
                     style: TextStyle(
                       fontSize: 17,
                       height: 1.6,
-                      color: theme.hintColor.withOpacity(0.4),
+                      color: theme.hintColor.withValues(alpha: 0.4),
                     ),
                   ),
                 ],
@@ -374,9 +374,6 @@ extension _ComposeTopicPageView on _ComposeTopicPageState {
   }
 
   Widget _buildBottomToolbar(BuildContext context) {
-    // 浠呭綋閿洏鏀惰捣鏃舵樉绀哄伐鍏锋爮锛屾垨鑰呬綘鎯宠浠栬创鍦ㄩ敭鐩樹笂锛?    // 杩欓噷璁捐涓猴細濮嬬粓鍦ㄥ簳閮紝閿洏寮瑰嚭鏃惰椤惰捣 (閫氳繃 Scaffold resizeToAvoidBottomInset)
-    // 浣嗕负浜嗙編瑙傦紝鎴戜滑鍦?buildPage 閲岀鐢ㄤ簡 resize锛屾墍浠ョ敤 ViewInsets 鍒ゆ柇
-
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
@@ -386,11 +383,13 @@ extension _ComposeTopicPageView on _ComposeTopicPageState {
       decoration: BoxDecoration(
         color: colorScheme.surface,
         border: Border(
-          top: BorderSide(color: colorScheme.outlineVariant.withOpacity(0.2)),
+          top: BorderSide(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.2),
+          ),
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, -2),
           ),
@@ -425,7 +424,9 @@ extension _ComposeTopicPageView on _ComposeTopicPageState {
               onPressed: _openEditor,
               style: TextButton.styleFrom(
                 foregroundColor: colorScheme.primary,
-                backgroundColor: colorScheme.primaryContainer.withOpacity(0.3),
+                backgroundColor: colorScheme.primaryContainer.withValues(
+                  alpha: 0.3,
+                ),
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
                   vertical: 8,

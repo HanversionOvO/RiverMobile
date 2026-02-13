@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:river/features/mine/widgets/mine_settings_app_bar.dart';
 
 class AboutPage extends StatefulWidget {
   const AboutPage({super.key});
@@ -30,10 +31,11 @@ class _AboutPageState extends State<AboutPage> {
 
     return Scaffold(
       backgroundColor: theme.colorScheme.surface,
-      appBar: AppBar(
-        title: const Text('关于'),
-        centerTitle: true,
-        backgroundColor: Colors.transparent,
+      appBar: const MineSettingsAppBar(
+        title: '关于 River',
+        subtitle: '应用信息与项目说明',
+        icon: Icons.info_outline_rounded,
+        heroTagPrefix: 'mine_settings_about',
       ),
       body: Center(
         child: Column(
@@ -48,7 +50,7 @@ class _AboutPageState extends State<AboutPage> {
                 borderRadius: BorderRadius.circular(24),
                 boxShadow: [
                   BoxShadow(
-                    color: theme.colorScheme.primary.withOpacity(0.2),
+                    color: theme.colorScheme.primary.withValues(alpha: 0.2),
                     blurRadius: 20,
                     offset: const Offset(0, 10),
                   ),

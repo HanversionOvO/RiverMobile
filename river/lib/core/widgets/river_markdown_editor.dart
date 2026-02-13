@@ -706,6 +706,11 @@ class _RiverMarkdownEditorState extends State<RiverMarkdownEditor> {
                                 alpha: 0.62,
                               ),
                             ),
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            disabledBorder: InputBorder.none,
+                            errorBorder: InputBorder.none,
+                            focusedErrorBorder: InputBorder.none,
                             border: InputBorder.none,
                             contentPadding: const EdgeInsets.fromLTRB(
                               18,

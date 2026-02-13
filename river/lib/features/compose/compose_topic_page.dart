@@ -6,6 +6,7 @@ import 'package:river/app/app_dependencies.dart';
 import 'package:river/core/account/account_models.dart';
 import 'package:river/core/categories/riverside_category_utils.dart';
 import 'package:river/core/categories/riverside_category_store.dart';
+import 'package:river/core/constants.dart';
 import 'package:river/core/network/riverside_api_client.dart';
 import 'package:river/core/network/riverside_topic_models.dart';
 import 'package:river/core/widgets/riverside_category_picker_sheet.dart';
@@ -132,11 +133,11 @@ class _ComposeTopicPageState extends State<ComposeTopicPage>
     final raw = source.trim();
     if (raw.isEmpty) return raw;
     if (raw.startsWith('upload://')) {
-      return 'https://river-side.cc/uploads/short-url/${raw.substring('upload://'.length)}';
+      return '$riverSideBaseUrl/uploads/short-url/${raw.substring('upload://'.length)}';
     }
     if (raw.startsWith('https://') || raw.startsWith('http://')) return raw;
     if (raw.startsWith('//')) return 'https:$raw';
-    if (raw.startsWith('/')) return 'https://river-side.cc$raw';
-    return 'https://river-side.cc/$raw';
+    if (raw.startsWith('/')) return '$riverSideBaseUrl$raw';
+    return '$riverSideBaseUrl/$raw';
   }
 }

@@ -8,6 +8,7 @@ class _PostContent extends StatelessWidget {
     required this.emojiUrls,
     required this.onQuoteTap,
     this.enableImageHero = true,
+    this.enableTextSelection = true,
   });
 
   final String markdown;
@@ -16,6 +17,7 @@ class _PostContent extends StatelessWidget {
   final Map<String, String> emojiUrls;
   final ValueChanged<_QuoteBlock> onQuoteTap;
   final bool enableImageHero;
+  final bool enableTextSelection;
 
   @override
   Widget build(BuildContext context) {
@@ -36,6 +38,7 @@ class _PostContent extends StatelessWidget {
               cookieHeader: cookieHeader,
               emojiUrls: emojiUrls,
               enableImageHero: enableImageHero,
+              enableTextSelection: enableTextSelection,
             )
           else
             _QuotePreviewCard(
@@ -112,12 +115,14 @@ class _MarkdownContent extends StatelessWidget {
     this.cookieHeader,
     this.emojiUrls = const <String, String>{},
     this.enableImageHero = true,
+    this.enableTextSelection = true,
   });
 
   final String markdown;
   final String? cookieHeader;
   final Map<String, String> emojiUrls;
   final bool enableImageHero;
+  final bool enableTextSelection;
 
   @override
   Widget build(BuildContext context) {
@@ -134,7 +139,7 @@ class _MarkdownContent extends StatelessWidget {
     final baseStyle = textTheme.bodyMedium;
     return MarkdownBody(
       data: data,
-      selectable: true,
+      selectable: enableTextSelection,
       inlineSyntaxes: emojiUrls.isEmpty
           ? null
           : <md.InlineSyntax>[_EmojiInlineSyntax(emojiUrls)],

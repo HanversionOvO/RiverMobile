@@ -7,11 +7,13 @@ import 'package:river/core/account/account_models.dart';
 import 'package:river/core/constants.dart';
 import 'package:river/core/network/riverside_message_bus_models.dart';
 import 'package:river/core/network/riverside_notification_models.dart';
+import 'package:river/core/network/riverside_account_settings_models.dart';
 import 'package:river/core/network/riverside_profile_models.dart';
 import 'package:river/core/network/riverside_search_models.dart';
 import 'package:river/core/network/riverside_topic_models.dart';
 
 part 'riverside_api_client_profile.dart';
+part 'riverside_api_client_account_settings.dart';
 part 'riverside_api_client_topics.dart';
 part 'riverside_api_client_posts.dart';
 part 'riverside_api_client_reactions.dart';

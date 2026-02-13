@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'dart:ui';
 
@@ -7,6 +8,7 @@ import 'package:river/app/app_dependencies.dart';
 import 'package:river/core/categories/riverside_category_utils.dart';
 import 'package:river/core/categories/riverside_category_store.dart';
 import 'package:river/core/network/riverside_api_client.dart';
+import 'package:river/core/network/riverside_message_bus_models.dart';
 import 'package:river/core/network/riverside_topic_models.dart';
 import 'package:river/core/realtime/riverside_message_bus_poller.dart';
 import 'package:river/features/mine/riverside_profile_sheet.dart';
@@ -16,6 +18,8 @@ import 'package:river/features/posts/topic_detail_page.dart';
 import 'package:river/core/navigation/river_page_route.dart';
 
 // -----------------------------------------------------------------------------
+
+part 'posts_page_widgets.dart';
 
 // -----------------------------------------------------------------------------
 class PostsPageController {
@@ -51,6 +55,9 @@ class PostsPage extends StatefulWidget {
 
 class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
   static const String _latestTopicChannel = '/latest';
+  static const String _presenceMessageBusChannel =
+      '/presence/whos-online/online';
+  static const String _presenceStateChannelName = '/whos-online/online';
 
   List<RiverSideCategoryOption> _categories = [];
   bool _loadingCategories = false;
@@ -68,6 +75,15 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
   RiverSideMessageBusPoller? _messageBusPoller;
   bool _hasRealtimeTopicUpdate = false;
   double _headerScrollFactor = 0;
+  int _pollingBootstrapSerial = 0;
+
+  final Map<String, _OnlineUserPreview> _knownUserPreviewsByUsername =
+      <String, _OnlineUserPreview>{};
+  final Map<int, String> _knownOnlineUsernameById = <int, String>{};
+  final Set<int> _onlineUserIds = <int>{};
+  final Set<String> _onlineUsernames = <String>{};
+  int _onlineUsersCount = 0;
+  final GlobalKey _onlineUsersPillKey = GlobalKey();
 
   @override
   void initState() {
@@ -76,6 +92,9 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
     _lastActiveUsername =
         widget.dependencies.accountStore.activeRiverSideUsername;
     widget.dependencies.accountStore.addListener(_onAccountStoreChanged);
+    widget.dependencies.settingsController.addListener(
+      _onRefreshBannerSettingsChanged,
+    );
     _tabController = TabController(length: _feeds.length, vsync: this);
     _tabController.addListener(_onTabChanged);
     _loadCategories();
@@ -90,10 +109,33 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
   void dispose() {
     _messageBusPoller?.stop();
     widget.dependencies.accountStore.removeListener(_onAccountStoreChanged);
+    widget.dependencies.settingsController.removeListener(
+      _onRefreshBannerSettingsChanged,
+    );
     widget.controller?._detach(this);
     _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     super.dispose();
+  }
+
+  bool get _showPostsRealtimeRefreshBanner {
+    return widget
+        .dependencies
+        .settingsController
+        .showPostsRealtimeRefreshBanner;
+  }
+
+  void _onRefreshBannerSettingsChanged() {
+    if (!mounted) {
+      return;
+    }
+    if (!_showPostsRealtimeRefreshBanner && _hasRealtimeTopicUpdate) {
+      setState(() {
+        _hasRealtimeTopicUpdate = false;
+      });
+      return;
+    }
+    setState(() {});
   }
 
   void _onAccountStoreChanged() {
@@ -110,6 +152,11 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
     setState(() {
       _hasRealtimeTopicUpdate = false;
       _filterVersion++;
+      _onlineUserIds.clear();
+      _onlineUsernames.clear();
+      _knownOnlineUsernameById.clear();
+      _onlineUsersCount = 0;
+      _knownUserPreviewsByUsername.clear();
     });
     _loadCategories();
     unawaited(_scrollToTopAndRefresh());
@@ -132,21 +179,74 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
     if (cookie == null || cookie.trim().isEmpty) {
       return;
     }
-
-    final poller = RiverSideMessageBusPoller(
-      apiClient: widget.dependencies.accountStore.riverSideApiClient,
-      cookieHeader: cookie,
-      channelLastIds: RiverSideMessageBusPoller.buildInitialChannels(
-        const <String>[_latestTopicChannel],
+    final bootstrapSerial = ++_pollingBootstrapSerial;
+    unawaited(
+      _bootstrapRealtimePolling(
+        bootstrapSerial: bootstrapSerial,
+        cookieHeader: cookie,
       ),
+    );
+  }
+
+  Future<void> _bootstrapRealtimePolling({
+    required int bootstrapSerial,
+    required String cookieHeader,
+  }) async {
+    final apiClient = widget.dependencies.accountStore.riverSideApiClient;
+    var presenceLastMessageId = -1;
+
+    try {
+      final presenceState = await apiClient.fetchPresenceChannelState(
+        channelName: _presenceStateChannelName,
+        cookieHeader: cookieHeader,
+      );
+      if (!mounted || bootstrapSerial != _pollingBootstrapSerial) {
+        return;
+      }
+      if (presenceState != null) {
+        presenceLastMessageId = presenceState.lastMessageId;
+        if (!presenceState.countOnly) {
+          _applyPresenceSnapshot(
+            presenceState.users,
+            count: presenceState.count,
+          );
+        } else {
+          _applyPresenceCountOnly(presenceState.count);
+        }
+      }
+    } catch (_) {
+      // Keep poller resilient even if presence bootstrap fails.
+    }
+    if (!mounted || bootstrapSerial != _pollingBootstrapSerial) {
+      return;
+    }
+
+    final channelLastIds = <String, int>{
+      _latestTopicChannel: -1,
+      _presenceMessageBusChannel: presenceLastMessageId,
+    };
+    final poller = RiverSideMessageBusPoller(
+      apiClient: apiClient,
+      cookieHeader: cookieHeader,
+      channelLastIds: channelLastIds,
       onEvents: (events) {
         if (!mounted || events.isEmpty) {
           return;
         }
-        final hasLatestEvent = events.any(
-          (event) => event.channel == _latestTopicChannel,
-        );
+        var hasLatestEvent = false;
+        for (final event in events) {
+          if (event.channel == _latestTopicChannel) {
+            hasLatestEvent = true;
+            continue;
+          }
+          if (event.channel == _presenceMessageBusChannel) {
+            _consumePresenceEventData(event.data);
+          }
+        }
         if (!hasLatestEvent || _hasRealtimeTopicUpdate) {
+          return;
+        }
+        if (!_showPostsRealtimeRefreshBanner) {
           return;
         }
         setState(() {
@@ -154,8 +254,285 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
         });
       },
     );
+    if (bootstrapSerial != _pollingBootstrapSerial) {
+      poller.stop();
+      return;
+    }
     _messageBusPoller = poller;
     poller.start();
+  }
+
+  void _applyPresenceCountOnly(int count) {
+    final nextCount = count < 0 ? 0 : count;
+    if (!mounted) {
+      return;
+    }
+    if (_onlineUsersCount == nextCount &&
+        _onlineUserIds.isEmpty &&
+        _onlineUsernames.isEmpty) {
+      return;
+    }
+    setState(() {
+      _onlineUsersCount = nextCount;
+      _onlineUserIds.clear();
+      _onlineUsernames.clear();
+      _knownOnlineUsernameById.clear();
+    });
+  }
+
+  void _applyPresenceSnapshot(
+    Iterable<RiverSidePresenceUser> users, {
+    int? count,
+  }) {
+    final nextOnlineIds = <int>{};
+    final nextOnlineUsernames = <String>{};
+    for (final user in users) {
+      if (user.id > 0) {
+        nextOnlineIds.add(user.id);
+      }
+      final normalizedUsername = _normalizePresenceUsername(user.username);
+      if (normalizedUsername.isNotEmpty) {
+        nextOnlineUsernames.add(normalizedUsername);
+      }
+      if (user.id > 0 && normalizedUsername.isNotEmpty) {
+        _knownOnlineUsernameById[user.id] = normalizedUsername;
+      }
+    }
+
+    final nextCount = _resolvePresenceCount(
+      explicitCount: count,
+      usernamesCount: nextOnlineUsernames.length,
+      idsCount: nextOnlineIds.length,
+    );
+    if (!mounted) {
+      return;
+    }
+    if (_onlineUsersCount == nextCount &&
+        _setEquals(_onlineUserIds, nextOnlineIds) &&
+        _setEquals(_onlineUsernames, nextOnlineUsernames)) {
+      return;
+    }
+    setState(() {
+      _onlineUserIds
+        ..clear()
+        ..addAll(nextOnlineIds);
+      _onlineUsernames
+        ..clear()
+        ..addAll(nextOnlineUsernames);
+      _onlineUsersCount = nextCount;
+    });
+  }
+
+  bool _consumePresenceEventData(dynamic rawData) {
+    final payload = _decodePresencePayload(rawData);
+    if (payload is List) {
+      final users = _parsePresenceUsers(payload);
+      _applyPresenceSnapshot(users);
+      return true;
+    }
+
+    if (payload is! Map) {
+      return false;
+    }
+    final data = _toStringDynamicMap(payload);
+    if (data.isEmpty) {
+      return false;
+    }
+
+    final usersRaw = _readListField(data, const <String>['users']);
+    if (usersRaw != null) {
+      _applyPresenceSnapshot(
+        _parsePresenceUsers(usersRaw),
+        count: _parseInt(data['count']),
+      );
+      return true;
+    }
+
+    final enteringUsersRaw = _readListField(data, const <String>[
+      'entering_users',
+      'online_users',
+    ]);
+    final leavingUserIdsRaw = _readListField(data, const <String>[
+      'leaving_user_ids',
+    ]);
+    final explicitCount = _parseInt(data['count']);
+
+    final nextIds = <int>{..._onlineUserIds};
+    final nextUsernames = <String>{..._onlineUsernames};
+    var changed = false;
+
+    if (enteringUsersRaw != null) {
+      for (final user in _parsePresenceUsers(enteringUsersRaw)) {
+        if (user.id > 0) {
+          changed = nextIds.add(user.id) || changed;
+        }
+        final normalized = _normalizePresenceUsername(user.username);
+        if (normalized.isNotEmpty) {
+          changed = nextUsernames.add(normalized) || changed;
+        }
+        if (user.id > 0 && normalized.isNotEmpty) {
+          _knownOnlineUsernameById[user.id] = normalized;
+        }
+      }
+    }
+
+    if (leavingUserIdsRaw != null) {
+      for (final userId in _parsePresenceUserIds(leavingUserIdsRaw)) {
+        final removed = nextIds.remove(userId);
+        if (!removed) {
+          continue;
+        }
+        changed = true;
+        final username = _knownOnlineUsernameById[userId];
+        if (username != null) {
+          nextUsernames.remove(username);
+        }
+      }
+    }
+
+    final nextCount = _resolvePresenceCount(
+      explicitCount: explicitCount,
+      usernamesCount: nextUsernames.length,
+      idsCount: nextIds.length,
+    );
+    if (!mounted) {
+      return false;
+    }
+    if (!changed &&
+        _onlineUsersCount == nextCount &&
+        _setEquals(_onlineUserIds, nextIds) &&
+        _setEquals(_onlineUsernames, nextUsernames)) {
+      return false;
+    }
+    setState(() {
+      _onlineUserIds
+        ..clear()
+        ..addAll(nextIds);
+      _onlineUsernames
+        ..clear()
+        ..addAll(nextUsernames);
+      _onlineUsersCount = nextCount;
+    });
+    return true;
+  }
+
+  dynamic _decodePresencePayload(dynamic rawData) {
+    if (rawData is String) {
+      final source = rawData.trim();
+      if (source.isEmpty) {
+        return null;
+      }
+      if ((source.startsWith('{') && source.endsWith('}')) ||
+          (source.startsWith('[') && source.endsWith(']'))) {
+        try {
+          return jsonDecode(source);
+        } catch (_) {
+          return null;
+        }
+      }
+      return null;
+    }
+    return rawData;
+  }
+
+  Map<String, dynamic> _toStringDynamicMap(dynamic raw) {
+    if (raw is! Map) {
+      return const <String, dynamic>{};
+    }
+    final result = <String, dynamic>{};
+    for (final entry in raw.entries) {
+      result['${entry.key}'] = entry.value;
+    }
+    return result;
+  }
+
+  List<dynamic>? _readListField(
+    Map<String, dynamic> source,
+    List<String> keys,
+  ) {
+    for (final key in keys) {
+      final value = source[key];
+      if (value is List) {
+        return value;
+      }
+    }
+    return null;
+  }
+
+  List<RiverSidePresenceUser> _parsePresenceUsers(List<dynamic> rawUsers) {
+    final users = <RiverSidePresenceUser>[];
+    for (final rawUser in rawUsers) {
+      final map = _toStringDynamicMap(rawUser);
+      if (map.isNotEmpty) {
+        final id = _parseInt(map['id']) ?? 0;
+        final username = (map['username'] ?? '').toString().trim();
+        if (id > 0 || username.isNotEmpty) {
+          users.add(RiverSidePresenceUser(id: id, username: username));
+        }
+        continue;
+      }
+
+      final id = _parseInt(rawUser);
+      if (id != null && id > 0) {
+        users.add(RiverSidePresenceUser(id: id, username: ''));
+        continue;
+      }
+
+      final username = '$rawUser'.trim();
+      if (username.isNotEmpty) {
+        users.add(RiverSidePresenceUser(id: 0, username: username));
+      }
+    }
+    return users;
+  }
+
+  List<int> _parsePresenceUserIds(List<dynamic> rawIds) {
+    final ids = <int>[];
+    for (final raw in rawIds) {
+      final id = _parseInt(raw);
+      if (id != null && id > 0) {
+        ids.add(id);
+      }
+    }
+    return ids;
+  }
+
+  int _resolvePresenceCount({
+    required int? explicitCount,
+    required int usernamesCount,
+    required int idsCount,
+  }) {
+    if (explicitCount != null && explicitCount >= 0) {
+      return explicitCount;
+    }
+    final fallback = usernamesCount > idsCount ? usernamesCount : idsCount;
+    return fallback < 0 ? 0 : fallback;
+  }
+
+  int? _parseInt(dynamic raw) {
+    if (raw is int) {
+      return raw;
+    }
+    if (raw is String) {
+      return int.tryParse(raw.trim());
+    }
+    return null;
+  }
+
+  String _normalizePresenceUsername(String source) {
+    return source.trim().toLowerCase();
+  }
+
+  bool _setEquals<T>(Set<T> left, Set<T> right) {
+    if (left.length != right.length) {
+      return false;
+    }
+    for (final item in left) {
+      if (!right.contains(item)) {
+        return false;
+      }
+    }
+    return true;
   }
 
   Future<void> _consumeRealtimeTopicUpdate() async {
@@ -301,6 +678,360 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
     };
   }
 
+  void _onTabTopicsSnapshotChanged(List<RiverSideTopicSummary> topics) {
+    var changed = false;
+    for (final topic in topics) {
+      final username = topic.authorUsername.trim();
+      final normalized = _normalizePresenceUsername(username);
+      if (normalized.isEmpty) {
+        continue;
+      }
+      final preview = _OnlineUserPreview(
+        username: username,
+        displayName: topic.authorDisplayName.trim().isEmpty
+            ? username
+            : topic.authorDisplayName.trim(),
+        avatarUrl: topic.authorAvatarUrl.trim(),
+      );
+      final previous = _knownUserPreviewsByUsername[normalized];
+      if (previous == preview) {
+        continue;
+      }
+      _knownUserPreviewsByUsername[normalized] = preview;
+      changed = true;
+    }
+    if (changed &&
+        mounted &&
+        _onlineUsernames.any(_knownUserPreviewsByUsername.containsKey)) {
+      setState(() {});
+    }
+  }
+
+  int get _resolvedOnlineUsersCount {
+    if (_onlineUsersCount > 0) {
+      return _onlineUsersCount;
+    }
+    final byName = _onlineUsernames.length;
+    final byId = _onlineUserIds.length;
+    return byName > byId ? byName : byId;
+  }
+
+  List<_OnlineUserPreview> _buildOnlineUsersForDisplay() {
+    final usernames = _onlineUsernames.toList(growable: false)..sort();
+    final users = <_OnlineUserPreview>[];
+    for (final normalized in usernames) {
+      final known = _knownUserPreviewsByUsername[normalized];
+      if (known != null) {
+        users.add(known);
+      } else {
+        users.add(
+          _OnlineUserPreview(
+            username: normalized,
+            displayName: normalized,
+            avatarUrl: '',
+          ),
+        );
+      }
+    }
+    return users;
+  }
+
+  Rect _resolveOnlineUsersPillRect(BuildContext context) {
+    final pillContext = _onlineUsersPillKey.currentContext;
+    final screenSize = MediaQuery.sizeOf(context);
+    final topInset = MediaQuery.paddingOf(context).top;
+    if (pillContext == null) {
+      return Rect.fromLTWH(screenSize.width - 176, topInset + 14, 164, 34);
+    }
+    final renderObject = pillContext.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.attached) {
+      return Rect.fromLTWH(screenSize.width - 176, topInset + 14, 164, 34);
+    }
+    final globalOffset = renderObject.localToGlobal(Offset.zero);
+    return globalOffset & renderObject.size;
+  }
+
+  Future<void> _openOnlineUsersPopup() async {
+    final users = _buildOnlineUsersForDisplay();
+    final onlineCount = _resolvedOnlineUsersCount;
+    final anchorRect = _resolveOnlineUsersPillRect(context);
+    final selected = await showGeneralDialog<_OnlineUserPreview>(
+      context: context,
+      barrierLabel: 'online_users',
+      barrierDismissible: true,
+      barrierColor: Colors.black.withValues(alpha: 0.04),
+      transitionDuration: const Duration(milliseconds: 180),
+      pageBuilder: (dialogContext, animation, secondaryAnimation) {
+        final theme = Theme.of(dialogContext);
+        final shownUsers = users.take(120).toList(growable: false);
+        final screenSize = MediaQuery.sizeOf(dialogContext);
+        final topInset = MediaQuery.paddingOf(dialogContext).top;
+        final bottomInset = MediaQuery.paddingOf(dialogContext).bottom;
+        final popupWidth = (screenSize.width * 0.72).clamp(244.0, 328.0);
+        final popupLeft = (anchorRect.right - popupWidth).clamp(
+          12.0,
+          screenSize.width - popupWidth - 12.0,
+        );
+        final popupTop = (anchorRect.bottom + 8).clamp(
+          topInset + 6,
+          screenSize.height - 210,
+        );
+        final maxHeight = (screenSize.height - popupTop - bottomInset - 12)
+            .clamp(156.0, 360.0);
+        final arrowLeft = (anchorRect.center.dx - popupLeft - 6).clamp(
+          14.0,
+          popupWidth - 22,
+        );
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => Navigator.of(dialogContext).maybePop(),
+              ),
+            ),
+            Positioned(
+              top: popupTop,
+              left: popupLeft,
+              width: popupWidth,
+              child: Material(
+                color: Colors.transparent,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: maxHeight),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Positioned(
+                        top: -6,
+                        left: arrowLeft,
+                        child: Transform.rotate(
+                          angle: 0.785398,
+                          child: Container(
+                            width: 12,
+                            height: 12,
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.surface,
+                              borderRadius: BorderRadius.circular(2),
+                              border: Border.all(
+                                color: theme.colorScheme.outlineVariant
+                                    .withValues(alpha: 0.32),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surface,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: theme.colorScheme.outlineVariant.withValues(
+                              alpha: 0.32,
+                            ),
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: theme.colorScheme.shadow.withValues(
+                                alpha: 0.18,
+                              ),
+                              blurRadius: 22,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(12, 8, 6, 6),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.tips_and_updates_outlined,
+                                    size: 16,
+                                    color: theme.colorScheme.primary,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    '当前在线',
+                                    style: theme.textTheme.titleSmall?.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 7,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: theme.colorScheme.primaryContainer,
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      '$onlineCount',
+                                      style: theme.textTheme.labelSmall
+                                          ?.copyWith(
+                                            color: theme
+                                                .colorScheme
+                                                .onPrimaryContainer,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  IconButton(
+                                    tooltip: '关闭',
+                                    visualDensity: VisualDensity.compact,
+                                    splashRadius: 16,
+                                    onPressed: () =>
+                                        Navigator.of(dialogContext).maybePop(),
+                                    icon: const Icon(Icons.close_rounded),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (shownUsers.isEmpty)
+                              const Padding(
+                                padding: EdgeInsets.fromLTRB(12, 6, 12, 12),
+                                child: Text('暂无在线用户详情'),
+                              )
+                            else
+                              Flexible(
+                                child: ListView.separated(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    8,
+                                    2,
+                                    8,
+                                    12,
+                                  ),
+                                  shrinkWrap: true,
+                                  itemBuilder: (context, index) {
+                                    final user = shownUsers[index];
+                                    return Material(
+                                      color: Colors.transparent,
+                                      child: InkWell(
+                                        borderRadius: BorderRadius.circular(12),
+                                        onTap: () => Navigator.of(
+                                          dialogContext,
+                                        ).pop(user),
+                                        child: Ink(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 9,
+                                            vertical: 7,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: theme
+                                                .colorScheme
+                                                .surfaceContainerLow,
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              _buildOnlineUserAvatar(
+                                                user: user,
+                                                radius: 15,
+                                              ),
+                                              const SizedBox(width: 9),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    Text(
+                                                      user.displayName,
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: theme
+                                                          .textTheme
+                                                          .bodyMedium
+                                                          ?.copyWith(
+                                                            fontWeight:
+                                                                FontWeight.w700,
+                                                          ),
+                                                    ),
+                                                    Text(
+                                                      '@${user.username}',
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: theme
+                                                          .textTheme
+                                                          .labelSmall
+                                                          ?.copyWith(
+                                                            color: theme
+                                                                .colorScheme
+                                                                .onSurfaceVariant,
+                                                          ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              Container(
+                                                width: 7,
+                                                height: 7,
+                                                decoration: BoxDecoration(
+                                                  color:
+                                                      theme.colorScheme.primary,
+                                                  shape: BoxShape.circle,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                  separatorBuilder: (context, index) =>
+                                      const SizedBox(height: 6),
+                                  itemCount: shownUsers.length,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutQuad,
+          reverseCurve: Curves.easeInQuad,
+        );
+        return FadeTransition(
+          opacity: curved,
+          child: ScaleTransition(
+            alignment: Alignment.topRight,
+            scale: Tween<double>(begin: 0.96, end: 1).animate(curved),
+            child: child,
+          ),
+        );
+      },
+    );
+
+    if (!mounted || selected == null) {
+      return;
+    }
+    await showRiverSideUserProfileSheet(
+      context: context,
+      dependencies: widget.dependencies,
+      username: selected.username,
+      displayName: selected.displayName,
+      avatarUrl: selected.avatarUrl,
+    );
+  }
+
   Future<void> _openSearchPage() async {
     await Navigator.of(context).push(
       riverPageRoute<void>(
@@ -316,148 +1047,157 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
       _headerScrollFactor,
     );
     final categoryNameMap = _buildCategoryNameMap();
-    final topHintOffset =
-        MediaQuery.paddingOf(context).top +
-        lerpDouble(72, 66, easedHeaderFactor)!;
 
     return Scaffold(
-      body: Stack(
+      body: Column(
         children: [
-          Column(
-            children: [
-              _buildTopHeader(theme, easedHeaderFactor),
-              Expanded(
-                child: TabBarView(
-                  controller: _tabController,
-                  children: _feeds.asMap().entries.map((entry) {
-                    final index = entry.key;
-                    final feed = entry.value;
+          _buildTopHeader(theme, easedHeaderFactor),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: _feeds.asMap().entries.map((entry) {
+                final index = entry.key;
+                final feed = entry.value;
 
-                    _tabKeys[index] ??= GlobalKey<_TopicListTabState>();
+                _tabKeys[index] ??= GlobalKey<_TopicListTabState>();
 
-                    return _TopicListTab(
-                      key: _tabKeys[index],
-                      dependencies: widget.dependencies,
-                      feed: feed,
-                      boardId: _selectedBoardId,
-                      categoryNameMap: categoryNameMap,
-                      filterVersion: _filterVersion,
-                      onScrollOffsetChanged: (offset) {
-                        if (_tabController.index != index) {
-                          return;
-                        }
-                        _onActiveTabScrollOffsetChanged(offset);
-                      },
-                    );
-                  }).toList(),
-                ),
-              ),
-            ],
-          ),
-          Positioned(
-            left: 20,
-            right: 20,
-            top: topHintOffset,
-            child: SafeArea(
-              bottom: false,
-              child: IgnorePointer(
-                ignoring: !_hasRealtimeTopicUpdate,
-                child: AnimatedSlide(
-                  duration: const Duration(milliseconds: 220),
-                  curve: Curves.easeOutBack,
-                  offset: _hasRealtimeTopicUpdate
-                      ? Offset.zero
-                      : const Offset(0, -0.3),
-                  child: AnimatedOpacity(
-                    duration: const Duration(milliseconds: 180),
-                    opacity: _hasRealtimeTopicUpdate ? 1 : 0,
-                    child: AnimatedScale(
-                      duration: const Duration(milliseconds: 220),
-                      curve: Curves.easeOutBack,
-                      scale: _hasRealtimeTopicUpdate ? 1 : 0.97,
-                      child: Align(
-                        alignment: Alignment.topCenter,
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 520),
-                          child: Material(
-                            child: Container(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(999),
-                                color: Colors.transparent,
-                                border: Border.all(
-                                  color: theme.colorScheme.outlineVariant
-                                      .withValues(alpha: 0.7),
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: theme.colorScheme.shadow.withValues(
-                                      alpha: 0.08,
-                                    ),
-                                    blurRadius: 14,
-                                    offset: const Offset(0, 4),
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: InkWell(
-                                      borderRadius: BorderRadius.circular(999),
-                                      onTap: _consumeRealtimeTopicUpdate,
-                                      child: Padding(
-                                        padding: const EdgeInsets.fromLTRB(
-                                          12,
-                                          8,
-                                          8,
-                                          8,
-                                        ),
-                                        child: Row(
-                                          children: [
-                                            Icon(
-                                              Icons.fiber_new_rounded,
-                                              size: 16,
-                                              color: theme.colorScheme.primary,
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Flexible(
-                                              child: Text(
-                                                '有新帖子，点击刷新',
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: theme
-                                                    .textTheme
-                                                    .labelMedium
-                                                    ?.copyWith(
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                    ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  IconButton(
-                                    tooltip: '关闭',
-                                    visualDensity: VisualDensity.compact,
-                                    onPressed: _dismissRealtimeTopicUpdateHint,
-                                    icon: const Icon(Icons.close_rounded),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+                return _TopicListTab(
+                  key: _tabKeys[index],
+                  dependencies: widget.dependencies,
+                  feed: feed,
+                  boardId: _selectedBoardId,
+                  categoryNameMap: categoryNameMap,
+                  filterVersion: _filterVersion,
+                  showInlineRealtimeHint:
+                      _showPostsRealtimeRefreshBanner &&
+                      _hasRealtimeTopicUpdate,
+                  onConsumeRealtimeUpdate: _consumeRealtimeTopicUpdate,
+                  onDismissRealtimeUpdate: _dismissRealtimeTopicUpdateHint,
+                  onTopicsSnapshotChanged: _onTabTopicsSnapshotChanged,
+                  onScrollOffsetChanged: (offset) {
+                    if (_tabController.index != index) {
+                      return;
+                    }
+                    _onActiveTabScrollOffsetChanged(offset);
+                  },
+                );
+              }).toList(),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildOnlineUsersPill(ThemeData theme) {
+    final users = _buildOnlineUsersForDisplay();
+    final onlineCount = _resolvedOnlineUsersCount;
+    final previewUsers = users.take(3).toList(growable: false);
+    final enabled = onlineCount > 0;
+
+    return KeyedSubtree(
+      key: _onlineUsersPillKey,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(999),
+          onTap: enabled ? _openOnlineUsersPopup : null,
+          child: Ink(
+            padding: const EdgeInsets.fromLTRB(8, 5, 10, 5),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHigh.withValues(
+                alpha: 0.7,
+              ),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.38),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 44,
+                  height: 24,
+                  child: previewUsers.isEmpty
+                      ? Align(
+                          alignment: Alignment.centerLeft,
+                          child: Icon(
+                            Icons.group_outlined,
+                            size: 16,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        )
+                      : Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            for (
+                              var index = 0;
+                              index < previewUsers.length;
+                              index++
+                            )
+                              Positioned(
+                                left: index * 12,
+                                child: _buildOnlineUserAvatar(
+                                  user: previewUsers[index],
+                                  radius: 11,
+                                ),
+                              ),
+                          ],
+                        ),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '$onlineCount用户在线',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: enabled
+                        ? theme.colorScheme.onSurface
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOnlineUserAvatar({
+    required _OnlineUserPreview user,
+    required double radius,
+  }) {
+    final theme = Theme.of(context);
+    final displayText = user.displayName.trim().isNotEmpty
+        ? user.displayName.trim()
+        : user.username.trim();
+    final initials = displayText.isEmpty ? '?' : displayText.substring(0, 1);
+    final avatarUrl = user.avatarUrl.trim();
+    return Container(
+      width: radius * 2,
+      height: radius * 2,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: theme.colorScheme.surfaceContainerHighest,
+        border: Border.all(color: theme.colorScheme.surface, width: 1.4),
+        image: avatarUrl.isEmpty
+            ? null
+            : DecorationImage(
+                image: NetworkImage(avatarUrl),
+                fit: BoxFit.cover,
+              ),
+      ),
+      alignment: Alignment.center,
+      child: avatarUrl.isEmpty
+          ? Text(
+              initials,
+              style: theme.textTheme.labelSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            )
+          : null,
     );
   }
 
@@ -510,7 +1250,7 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
                     child: Stack(
                       children: [
                         Padding(
-                          padding: const EdgeInsets.only(right: 64),
+                          padding: const EdgeInsets.only(right: 188),
                           child: Align(
                             alignment: Alignment.centerLeft,
                             child: Column(
@@ -550,13 +1290,20 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
                         ),
                         Align(
                           alignment: Alignment.centerRight,
-                          child: IconButton.filledTonal(
-                            onPressed: _openSearchPage,
-                            tooltip: '搜索',
-                            icon: Hero(
-                              tag: postsSearchHeroTag,
-                              child: const Icon(Icons.search_rounded),
-                            ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _buildOnlineUsersPill(theme),
+                              const SizedBox(width: 8),
+                              IconButton.filledTonal(
+                                onPressed: _openSearchPage,
+                                tooltip: '搜索',
+                                icon: Hero(
+                                  tag: postsSearchHeroTag,
+                                  child: const Icon(Icons.search_rounded),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
@@ -631,11 +1378,13 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
             decoration: BoxDecoration(
               color: hasSelection
                   ? theme.colorScheme.primaryContainer
-                  : theme.colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                  : theme.colorScheme.surfaceContainerHighest.withValues(
+                      alpha: 0.3,
+                    ),
               borderRadius: BorderRadius.circular(20),
               border: hasSelection
                   ? Border.all(
-                      color: theme.colorScheme.primary.withOpacity(0.2),
+                      color: theme.colorScheme.primary.withValues(alpha: 0.2),
                     )
                   : null,
             ),
@@ -673,7 +1422,9 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
                 Icon(
                   Icons.arrow_drop_down_rounded,
                   size: 18,
-                  color: theme.colorScheme.onSurfaceVariant.withOpacity(0.6),
+                  color: theme.colorScheme.onSurfaceVariant.withValues(
+                    alpha: 0.6,
+                  ),
                 ),
               ],
             ),
@@ -685,639 +1436,3 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
 }
 
 // -----------------------------------------------------------------------------
-
-// -----------------------------------------------------------------------------
-class _TopicListTab extends StatefulWidget {
-  const _TopicListTab({
-    super.key,
-    required this.dependencies,
-    required this.feed,
-    this.boardId,
-    required this.categoryNameMap,
-    required this.filterVersion,
-    this.onScrollOffsetChanged,
-  });
-
-  final AppDependencies dependencies;
-  final RiverSideTopicFeed feed;
-  final int? boardId;
-  final Map<int, String> categoryNameMap;
-  final int filterVersion;
-  final ValueChanged<double>? onScrollOffsetChanged;
-
-  @override
-  State<_TopicListTab> createState() => _TopicListTabState();
-}
-
-class _TopicListTabState extends State<_TopicListTab>
-    with AutomaticKeepAliveClientMixin {
-  final ScrollController _scrollController = ScrollController();
-  final ValueNotifier<bool> _showBackToTopNotifier = ValueNotifier<bool>(false);
-  List<RiverSideTopicSummary> _topics = [];
-  bool _isLoading = true;
-  bool _isLoadingMore = false;
-  bool _hasMore = true;
-  String? _error;
-  int _page = 0;
-  int _requestSerial = 0;
-
-  @override
-  bool get wantKeepAlive => true;
-
-  double get currentScrollOffset =>
-      _scrollController.hasClients ? _scrollController.offset : 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadFirstPage();
-    _scrollController.addListener(_onScroll);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      widget.onScrollOffsetChanged?.call(currentScrollOffset);
-    });
-  }
-
-  @override
-  void didUpdateWidget(covariant _TopicListTab oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.boardId != widget.boardId ||
-        oldWidget.filterVersion != widget.filterVersion) {
-      _scrollToTopAndRefresh();
-    }
-  }
-
-  @override
-  void dispose() {
-    _showBackToTopNotifier.dispose();
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  void _onScroll() {
-    if (!_scrollController.hasClients) return;
-    final maxScroll = _scrollController.position.maxScrollExtent;
-    final currentScroll = _scrollController.offset;
-    widget.onScrollOffsetChanged?.call(currentScroll);
-    final shouldShowBackToTop = currentScroll >= 420;
-    if (_showBackToTopNotifier.value != shouldShowBackToTop) {
-      _showBackToTopNotifier.value = shouldShowBackToTop;
-    }
-    if (currentScroll >= maxScroll - 200 && !_isLoadingMore && _hasMore) {
-      _loadMore();
-    }
-  }
-
-  String _displayCategoryName(RiverSideTopicSummary topic) {
-    final categoryId = topic.categoryId;
-    if (categoryId != null) {
-      final mapped = widget.categoryNameMap[categoryId];
-      if (mapped != null && mapped.trim().isNotEmpty) {
-        return mapped;
-      }
-    }
-    return topic.categoryName;
-  }
-
-  Future<void> _scrollToTopAndRefresh() async {
-    if (_scrollController.hasClients) {
-      _scrollController.jumpTo(0);
-    }
-    widget.onScrollOffsetChanged?.call(0);
-    _showBackToTopNotifier.value = false;
-    await _loadFirstPage();
-  }
-
-  Future<void> scrollToTopAndRefresh() {
-    return _scrollToTopAndRefresh();
-  }
-
-  Future<void> _scrollToTop() async {
-    if (!_scrollController.hasClients) {
-      return;
-    }
-    await _scrollController.animateTo(
-      0,
-      duration: const Duration(milliseconds: 260),
-      curve: Curves.easeOutCubic,
-    );
-  }
-
-  Future<void> _loadFirstPage() async {
-    final serial = ++_requestSerial;
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
-
-    try {
-      final topics = await _fetchTopics(page: 0);
-      if (!mounted || serial != _requestSerial) return;
-
-      setState(() {
-        _topics = topics;
-        _isLoading = false;
-        _hasMore = topics.isNotEmpty;
-        _page = 0;
-      });
-    } catch (e) {
-      if (!mounted || serial != _requestSerial) return;
-      setState(() {
-        _isLoading = false;
-        _error = e is RiverSideApiException
-            ? e.message
-            : '\u52a0\u8f7d\u5931\u8d25';
-      });
-    }
-  }
-
-  Future<void> _loadMore() async {
-    if (_isLoadingMore) return;
-    final serial = _requestSerial;
-    setState(() => _isLoadingMore = true);
-
-    try {
-      final nextPage = _page + 1;
-      final newTopics = await _fetchTopics(page: nextPage);
-      if (!mounted || serial != _requestSerial) return;
-
-      setState(() {
-        if (newTopics.isEmpty) {
-          _hasMore = false;
-        } else {
-          final existingIds = _topics.map((e) => e.id).toSet();
-          _topics.addAll(newTopics.where((e) => !existingIds.contains(e.id)));
-          _page = nextPage;
-        }
-        _isLoadingMore = false;
-      });
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isLoadingMore = false);
-      }
-    }
-  }
-
-  Future<List<RiverSideTopicSummary>> _fetchTopics({required int page}) {
-    final cookie = widget.dependencies.accountStore.riverSideCookieHeaderFor(
-      widget.dependencies.accountStore.activeRiverSideUsername ?? '',
-    );
-    return widget.dependencies.accountStore.riverSideApiClient
-        .fetchTopicSummaries(
-          feed: widget.feed,
-          categoryId: widget.boardId,
-          page: page,
-          cookieHeader: cookie,
-        );
-  }
-
-  void _openDetail(RiverSideTopicSummary topic) {
-    final avatarHeroTag = _buildAuthorAvatarHeroTag(topic);
-    final nameHeroTag = _buildAuthorNameHeroTag(topic);
-    final titleHeroTag = 'title_${topic.id}';
-    Navigator.of(context).push(
-      riverPageRoute(
-        builder: (_) => TopicDetailPage(
-          dependencies: widget.dependencies,
-          topicId: topic.id,
-          preview: TopicDetailPreview(
-            title: topic.title,
-            authorDisplayName: topic.authorDisplayName,
-            authorUsername: topic.authorUsername,
-            authorAvatarUrl: topic.authorAvatarUrl,
-            titleHeroTag: titleHeroTag,
-            authorAvatarHeroTag: avatarHeroTag,
-            authorNameHeroTag: nameHeroTag,
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _openAuthor(RiverSideTopicSummary topic) {
-    final avatarHeroTag = _buildAuthorAvatarHeroTag(topic);
-    final nameHeroTag = _buildAuthorNameHeroTag(topic);
-
-    showRiverSideUserProfileSheet(
-      context: context,
-      dependencies: widget.dependencies,
-      username: topic.authorUsername,
-      displayName: topic.authorDisplayName,
-      avatarUrl: topic.authorAvatarUrl,
-      heroTagAvatar: avatarHeroTag,
-      heroTagName: nameHeroTag,
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    super.build(context);
-
-    if (_isLoading && _topics.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (_error != null && _topics.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.error_outline, size: 48, color: Colors.grey),
-            const SizedBox(height: 16),
-            Text(_error!),
-            const SizedBox(height: 16),
-            FilledButton.tonal(
-              onPressed: _loadFirstPage,
-              child: const Text('\u91cd\u8bd5'),
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (_topics.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.inbox_outlined,
-              size: 64,
-              color: Colors.grey.withOpacity(0.3),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              '\u6682\u65e0\u5e16\u5b50',
-              style: TextStyle(color: Colors.grey),
-            ),
-            TextButton(
-              onPressed: _loadFirstPage,
-              child: const Text('\u5237\u65b0'),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return Stack(
-      children: [
-        RefreshIndicator(
-          onRefresh: _loadFirstPage,
-          edgeOffset: 0,
-          child: ListView.separated(
-            controller: _scrollController,
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 92),
-            physics: const AlwaysScrollableScrollPhysics(),
-            itemCount: _topics.length + (_hasMore ? 1 : 0),
-            separatorBuilder: (_, __) => const SizedBox(height: 12),
-            itemBuilder: (context, index) {
-              if (index == _topics.length) {
-                return Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Center(
-                    child: _isLoadingMore
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : Text(
-                            '\u6ca1\u6709\u66f4\u591a\u4e86',
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.outline,
-                            ),
-                          ),
-                  ),
-                );
-              }
-              final topic = _topics[index];
-              return _TopicCard(
-                topic: topic,
-                displayCategoryName: _displayCategoryName(topic),
-                isHotFeed: widget.feed == RiverSideTopicFeed.hot,
-                onTap: () => _openDetail(topic),
-                onAuthorTap: () => _openAuthor(topic),
-              );
-            },
-          ),
-        ),
-        Positioned(
-          right: 16,
-          bottom: 16,
-          child: ValueListenableBuilder<bool>(
-            valueListenable: _showBackToTopNotifier,
-            builder: (context, visible, _) {
-              return IgnorePointer(
-                ignoring: !visible,
-                child: AnimatedOpacity(
-                  duration: const Duration(milliseconds: 180),
-                  opacity: visible ? 1 : 0,
-                  child: AnimatedScale(
-                    duration: const Duration(milliseconds: 220),
-                    curve: Curves.easeOutBack,
-                    scale: visible ? 1 : 0.82,
-                    child: FloatingActionButton.small(
-                      heroTag: 'posts_back_to_top_${widget.feed.name}',
-                      onPressed: visible ? _scrollToTop : null,
-                      elevation: 2,
-                      child: const Icon(Icons.arrow_upward_rounded),
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// -----------------------------------------------------------------------------
-
-// -----------------------------------------------------------------------------
-// -----------------------------------------------------------------------------
-
-// -----------------------------------------------------------------------------
-String _buildAuthorAvatarHeroTag(RiverSideTopicSummary topic) {
-  return 'author_avatar_${topic.id}_${topic.authorUsername}';
-}
-
-String _buildAuthorNameHeroTag(RiverSideTopicSummary topic) {
-  return 'author_name_${topic.id}_${topic.authorUsername}';
-}
-
-class _TopicCard extends StatelessWidget {
-  const _TopicCard({
-    super.key, // 鎺ㄨ崘鍔犱笂 super.key
-    required this.topic,
-    required this.displayCategoryName,
-    required this.isHotFeed,
-    required this.onTap,
-    required this.onAuthorTap,
-  });
-
-  final RiverSideTopicSummary topic;
-  final String displayCategoryName;
-  final bool isHotFeed;
-  final VoidCallback onTap;
-  final VoidCallback onAuthorTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isPinned = topic.isPinned;
-    final isHot = topic.isHot || isHotFeed;
-
-    // 1. 瀹氫箟 Hero Tags (蹇呴』涓庣敤鎴疯祫鏂?Sheet 淇濇寔涓€鑷?
-    final avatarHeroTag = _buildAuthorAvatarHeroTag(topic);
-    final nameHeroTag = _buildAuthorNameHeroTag(topic);
-    final titleHeroTag = 'title_${topic.id}';
-
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          // 优化阴影：更柔和、扩散更平滑
-          BoxShadow(
-            color: theme.shadowColor.withOpacity(0.06),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      clipBehavior: Clip.antiAlias, // 纭繚姘存尝绾逛笉婧㈠嚭鍦嗚
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          splashColor: theme.colorScheme.primary.withOpacity(0.08),
-          highlightColor: theme.colorScheme.primary.withOpacity(0.04),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // --- 椤堕儴淇℃伅鏍?---
-                Row(
-                  children: [
-                    GestureDetector(
-                      onTap: onAuthorTap,
-                      child: Hero(
-                        tag: avatarHeroTag,
-                        child: CircleAvatar(
-                          radius: 14,
-                          backgroundImage: topic.authorAvatarUrl.isNotEmpty
-                              ? NetworkImage(topic.authorAvatarUrl)
-                              : null,
-                          backgroundColor:
-                              theme.colorScheme.surfaceContainerHighest,
-                          child: topic.authorAvatarUrl.isEmpty
-                              ? Icon(
-                                  Icons.person,
-                                  size: 16,
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                )
-                              : null,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Hero(
-                            tag: nameHeroTag,
-                            child: Material(
-                              color: Colors.transparent,
-                              child: Text.rich(
-                                TextSpan(
-                                  children: [
-                                    TextSpan(
-                                      text: topic.authorDisplayName,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                softWrap: false,
-                                style: theme.textTheme.labelLarge,
-                              ),
-                            ),
-                          ),
-                          Text(
-                            _formatTimeRelative(topic.createdAt),
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: theme.colorScheme.outline,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    // 鏍囩鍖哄煙
-                    if (isPinned)
-                      _buildTag(
-                        theme,
-                        '置顶',
-                        theme.colorScheme.primaryContainer,
-                        theme.colorScheme.primary,
-                      ),
-                    if (isPinned && isHot) const SizedBox(width: 6),
-                    if (isHot)
-                      _buildTag(
-                        theme,
-                        '热门',
-                        Colors.orange.shade50,
-                        Colors.orange.shade800,
-                      ),
-                  ],
-                ),
-
-                const SizedBox(height: 12),
-
-                // --- 标题 (Hero 源) ---
-                Hero(
-                  tag: titleHeroTag,
-                  flightShuttleBuilder:
-                      (
-                        flightContext,
-                        animation,
-                        flightDirection,
-                        fromHeroContext,
-                        toHeroContext,
-                      ) {
-                        return DefaultTextStyle.merge(
-                          style:
-                              theme.textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: -0.1,
-                              ) ??
-                              const TextStyle(),
-                          child: (toHeroContext.widget as Hero).child,
-                        );
-                      },
-                  child: Material(
-                    color: Colors.transparent,
-                    child: Text(
-                      topic.title,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.1,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ),
-
-                if (topic.excerpt.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    topic.excerpt.replaceAll('\n', ' '),
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                      height: 1.5,
-                      fontSize: 14,
-                    ),
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-
-                const SizedBox(height: 14),
-
-                // --- 搴曢儴鏁版嵁鏍?---
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.surfaceContainerHighest
-                            .withOpacity(0.5),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        displayCategoryName,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: theme.colorScheme.onSurfaceVariant,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                    const Spacer(),
-                    _IconText(
-                      icon: Icons.chat_bubble_outline_rounded,
-                      text: '${topic.replyCount}',
-                    ),
-                    const SizedBox(width: 16),
-                    _IconText(
-                      icon: Icons.remove_red_eye_outlined,
-                      text: '${topic.viewCount}',
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // 辅助方法：构建标签
-  Widget _buildTag(ThemeData theme, String text, Color bg, Color fg) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(fontSize: 10, color: fg, fontWeight: FontWeight.bold),
-      ),
-    );
-  }
-
-  String _formatTimeRelative(DateTime? time) {
-    if (time == null) return '';
-    final now = DateTime.now();
-    final diff = now.difference(time);
-    if (diff.inMinutes < 1) return '\u521a\u521a';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}\u5206\u949f\u524d';
-    if (diff.inHours < 24) return '${diff.inHours}\u5c0f\u65f6\u524d';
-    if (diff.inDays < 7) return '${diff.inDays}\u5929\u524d';
-    return '${time.month}/${time.day}';
-  }
-}
-
-class _IconText extends StatelessWidget {
-  final IconData icon;
-  final String text;
-
-  const _IconText({required this.icon, required this.text});
-
-  @override
-  Widget build(BuildContext context) {
-    final color = Theme.of(context).colorScheme.outline;
-    return Row(
-      children: [
-        Icon(icon, size: 14, color: color),
-        const SizedBox(width: 4),
-        Text(text, style: TextStyle(fontSize: 12, color: color)),
-      ],
-    );
-  }
-}

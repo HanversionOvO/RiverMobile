@@ -1,24 +1,70 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:river/core/config/server_config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+enum AppFontWeightPreset { regular, medium, bold }
+
+enum AppAppIconPreset { classic, riverBlue, minimal }
+
+enum AppCornerPreset { compact, standard, relaxed }
 
 class AppSettingsController extends ChangeNotifier {
   static const String _themeModeKey = 'app.theme_mode';
   static const String _themeSeedColorKey = 'app.theme_seed_color';
   static const String _fontScaleKey = 'app.font_scale';
+  static const String _fontWeightPresetKey = 'app.font_weight_preset';
+  static const String _fontFamilyNameKey = 'app.font_family_name';
+  static const String _legacyFontFamilyPresetKey = 'app.font_family_preset';
+  static const String _iconPresetKey = 'app.icon_preset';
+  static const String _compactDensityKey = 'app.compact_density';
+  static const String _reduceMotionKey = 'app.reduce_motion';
+  static const String _cornerPresetKey = 'app.corner_preset';
+  static const String _postsRealtimeRefreshBannerKey =
+      'app.posts_realtime_refresh_banner';
+  static const String _notificationsRealtimeRefreshBannerKey =
+      'app.notifications_realtime_refresh_banner';
+  static const String _topicCommentsRealtimeRefreshBannerKey =
+      'app.topic_comments_realtime_refresh_banner';
+  static const String _riverSideBaseUrlKey = 'app.riverside_base_url';
+  static const String _updateManifestUrlKey = 'app.update_manifest_url';
 
   static const Color defaultSeedColor = Color(0xFF12457A);
 
   ThemeMode _themeMode = ThemeMode.system;
   Color _themeSeedColor = defaultSeedColor;
   double _fontScale = 1.0;
+  AppFontWeightPreset _fontWeightPreset = AppFontWeightPreset.medium;
+  String? _fontFamilyName;
+  AppAppIconPreset _iconPreset = AppAppIconPreset.classic;
+  AppCornerPreset _cornerPreset = AppCornerPreset.standard;
+  bool _compactDensity = false;
+  bool _reduceMotion = false;
+  bool _showPostsRealtimeRefreshBanner = true;
+  bool _showNotificationsRealtimeRefreshBanner = true;
+  bool _showTopicCommentsRealtimeRefreshBanner = true;
+  String _riverSideBaseUrl = RiverServerConfig.defaultBaseUrl;
+  String _updateManifestUrl = RiverServerConfig.defaultUpdateManifestUrl;
 
   SharedPreferences? _prefs;
 
   ThemeMode get themeMode => _themeMode;
   Color get themeSeedColor => _themeSeedColor;
   double get fontScale => _fontScale;
+  AppFontWeightPreset get fontWeightPreset => _fontWeightPreset;
+  String? get fontFamilyName => _fontFamilyName;
+  AppAppIconPreset get iconPreset => _iconPreset;
+  AppCornerPreset get cornerPreset => _cornerPreset;
+  bool get compactDensity => _compactDensity;
+  bool get reduceMotion => _reduceMotion;
+  bool get showPostsRealtimeRefreshBanner => _showPostsRealtimeRefreshBanner;
+  bool get showNotificationsRealtimeRefreshBanner =>
+      _showNotificationsRealtimeRefreshBanner;
+  bool get showTopicCommentsRealtimeRefreshBanner =>
+      _showTopicCommentsRealtimeRefreshBanner;
+  String get riverSideBaseUrl => _riverSideBaseUrl;
+  String get updateManifestUrl => _updateManifestUrl;
 
   Future<void> initialize() async {
     _prefs ??= await SharedPreferences.getInstance();
@@ -42,13 +88,83 @@ class AppSettingsController extends ChangeNotifier {
     if (scaleValue != null) {
       _fontScale = _clampFontScale(scaleValue);
     }
+
+    final fontWeightRaw = _prefs?.getString(_fontWeightPresetKey);
+    if (fontWeightRaw != null) {
+      for (final value in AppFontWeightPreset.values) {
+        if (value.name == fontWeightRaw) {
+          _fontWeightPreset = value;
+          break;
+        }
+      }
+    }
+
+    final rawFontFamily = _prefs?.getString(_fontFamilyNameKey);
+    if (rawFontFamily != null) {
+      final trimmed = rawFontFamily.trim();
+      _fontFamilyName = trimmed.isEmpty ? null : trimmed;
+    } else {
+      final legacyPreset = _prefs?.getString(_legacyFontFamilyPresetKey);
+      _fontFamilyName = _mapLegacyFontPresetToFamily(legacyPreset);
+    }
+
+    final iconPresetRaw = _prefs?.getString(_iconPresetKey);
+    if (iconPresetRaw != null) {
+      for (final value in AppAppIconPreset.values) {
+        if (value.name == iconPresetRaw) {
+          _iconPreset = value;
+          break;
+        }
+      }
+    }
+
+    final cornerPresetRaw = _prefs?.getString(_cornerPresetKey);
+    if (cornerPresetRaw != null) {
+      for (final value in AppCornerPreset.values) {
+        if (value.name == cornerPresetRaw) {
+          _cornerPreset = value;
+          break;
+        }
+      }
+    }
+
+    _compactDensity = _prefs?.getBool(_compactDensityKey) ?? false;
+    _reduceMotion = _prefs?.getBool(_reduceMotionKey) ?? false;
+    _showPostsRealtimeRefreshBanner =
+        _prefs?.getBool(_postsRealtimeRefreshBannerKey) ?? true;
+    _showNotificationsRealtimeRefreshBanner =
+        _prefs?.getBool(_notificationsRealtimeRefreshBannerKey) ?? true;
+    _showTopicCommentsRealtimeRefreshBanner =
+        _prefs?.getBool(_topicCommentsRealtimeRefreshBannerKey) ?? true;
+
+    final rawBaseUrl = _prefs?.getString(_riverSideBaseUrlKey);
+    if (rawBaseUrl != null && rawBaseUrl.trim().isNotEmpty) {
+      try {
+        _riverSideBaseUrl = RiverServerConfig.normalizeBaseUrl(rawBaseUrl);
+      } catch (_) {
+        _riverSideBaseUrl = RiverServerConfig.defaultBaseUrl;
+      }
+    }
+
+    final rawUpdateUrl = _prefs?.getString(_updateManifestUrlKey);
+    if (rawUpdateUrl != null && rawUpdateUrl.trim().isNotEmpty) {
+      try {
+        _updateManifestUrl = RiverServerConfig.normalizeUrl(rawUpdateUrl);
+      } catch (_) {
+        _updateManifestUrl = RiverServerConfig.defaultUpdateManifestUrl;
+      }
+    }
+
+    RiverServerConfig.instance.apply(
+      baseUrl: _riverSideBaseUrl,
+      updateManifestUrl: _updateManifestUrl,
+    );
   }
 
   void updateThemeMode(ThemeMode value) {
     if (_themeMode == value) {
       return;
     }
-
     _themeMode = value;
     notifyListeners();
     unawaited(_saveThemeMode());
@@ -58,7 +174,6 @@ class AppSettingsController extends ChangeNotifier {
     if (_themeSeedColor.toARGB32() == value.toARGB32()) {
       return;
     }
-
     _themeSeedColor = value;
     notifyListeners();
     unawaited(_saveThemeSeedColor());
@@ -69,10 +184,145 @@ class AppSettingsController extends ChangeNotifier {
     if ((_fontScale - next).abs() < 0.001) {
       return;
     }
-
     _fontScale = next;
     notifyListeners();
     unawaited(_saveFontScale());
+  }
+
+  void updateFontWeightPreset(AppFontWeightPreset value) {
+    if (_fontWeightPreset == value) {
+      return;
+    }
+    _fontWeightPreset = value;
+    notifyListeners();
+    unawaited(_saveFontWeightPreset());
+  }
+
+  void updateFontFamilyName(String? value) {
+    final next = value?.trim();
+    final normalized = (next == null || next.isEmpty) ? null : next;
+    if (_fontFamilyName == normalized) {
+      return;
+    }
+    _fontFamilyName = normalized;
+    notifyListeners();
+    unawaited(_saveFontFamilyName());
+  }
+
+  void updateIconPreset(AppAppIconPreset value) {
+    if (_iconPreset == value) {
+      return;
+    }
+    _iconPreset = value;
+    notifyListeners();
+    unawaited(_saveIconPreset());
+  }
+
+  void updateCompactDensity(bool value) {
+    if (_compactDensity == value) {
+      return;
+    }
+    _compactDensity = value;
+    notifyListeners();
+    unawaited(_saveCompactDensity());
+  }
+
+  void updateReduceMotion(bool value) {
+    if (_reduceMotion == value) {
+      return;
+    }
+    _reduceMotion = value;
+    notifyListeners();
+    unawaited(_saveReduceMotion());
+  }
+
+  void updateCornerPreset(AppCornerPreset value) {
+    if (_cornerPreset == value) {
+      return;
+    }
+    _cornerPreset = value;
+    notifyListeners();
+    unawaited(_saveCornerPreset());
+  }
+
+  void updateShowPostsRealtimeRefreshBanner(bool value) {
+    if (_showPostsRealtimeRefreshBanner == value) {
+      return;
+    }
+    _showPostsRealtimeRefreshBanner = value;
+    notifyListeners();
+    unawaited(_saveShowPostsRealtimeRefreshBanner());
+  }
+
+  void updateShowNotificationsRealtimeRefreshBanner(bool value) {
+    if (_showNotificationsRealtimeRefreshBanner == value) {
+      return;
+    }
+    _showNotificationsRealtimeRefreshBanner = value;
+    notifyListeners();
+    unawaited(_saveShowNotificationsRealtimeRefreshBanner());
+  }
+
+  void updateShowTopicCommentsRealtimeRefreshBanner(bool value) {
+    if (_showTopicCommentsRealtimeRefreshBanner == value) {
+      return;
+    }
+    _showTopicCommentsRealtimeRefreshBanner = value;
+    notifyListeners();
+    unawaited(_saveShowTopicCommentsRealtimeRefreshBanner());
+  }
+
+  void updateRiverSideBaseUrl(String value) {
+    final normalized = RiverServerConfig.normalizeBaseUrl(value);
+    if (_riverSideBaseUrl == normalized) {
+      return;
+    }
+    _riverSideBaseUrl = normalized;
+    RiverServerConfig.instance.updateBaseUrl(normalized);
+    notifyListeners();
+    unawaited(_saveRiverSideBaseUrl());
+  }
+
+  void updateUpdateManifestUrl(String value) {
+    final normalized = RiverServerConfig.normalizeUrl(value);
+    if (_updateManifestUrl == normalized) {
+      return;
+    }
+    _updateManifestUrl = normalized;
+    RiverServerConfig.instance.setUpdateManifestUrl(normalized);
+    notifyListeners();
+    unawaited(_saveUpdateManifestUrl());
+  }
+
+  String? _mapLegacyFontPresetToFamily(String? presetName) {
+    switch (presetName) {
+      case 'system':
+        return null;
+      case 'sans':
+        return 'sans-serif';
+      case 'sansThin':
+        return 'sans-serif-thin';
+      case 'sansLight':
+        return 'sans-serif-light';
+      case 'sansMedium':
+        return 'sans-serif-medium';
+      case 'sansBlack':
+        return 'sans-serif-black';
+      case 'rounded':
+        return 'sans-serif-rounded';
+      case 'condensed':
+        return 'sans-serif-condensed';
+      case 'condensedMedium':
+        return 'sans-serif-condensed-medium';
+      case 'smallCaps':
+        return 'sans-serif-smallcaps';
+      case 'serif':
+        return 'serif';
+      case 'monospace':
+        return 'monospace';
+      default:
+        return null;
+    }
   }
 
   double _clampFontScale(double value) {
@@ -98,5 +348,69 @@ class AppSettingsController extends ChangeNotifier {
   Future<void> _saveFontScale() async {
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs!.setDouble(_fontScaleKey, _fontScale);
+  }
+
+  Future<void> _saveFontWeightPreset() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_fontWeightPresetKey, _fontWeightPreset.name);
+  }
+
+  Future<void> _saveFontFamilyName() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_fontFamilyNameKey, _fontFamilyName ?? '');
+  }
+
+  Future<void> _saveIconPreset() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_iconPresetKey, _iconPreset.name);
+  }
+
+  Future<void> _saveCompactDensity() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_compactDensityKey, _compactDensity);
+  }
+
+  Future<void> _saveReduceMotion() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_reduceMotionKey, _reduceMotion);
+  }
+
+  Future<void> _saveCornerPreset() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_cornerPresetKey, _cornerPreset.name);
+  }
+
+  Future<void> _saveShowPostsRealtimeRefreshBanner() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(
+      _postsRealtimeRefreshBannerKey,
+      _showPostsRealtimeRefreshBanner,
+    );
+  }
+
+  Future<void> _saveShowNotificationsRealtimeRefreshBanner() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(
+      _notificationsRealtimeRefreshBannerKey,
+      _showNotificationsRealtimeRefreshBanner,
+    );
+  }
+
+  Future<void> _saveShowTopicCommentsRealtimeRefreshBanner() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(
+      _topicCommentsRealtimeRefreshBannerKey,
+      _showTopicCommentsRealtimeRefreshBanner,
+    );
+  }
+
+  Future<void> _saveRiverSideBaseUrl() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_riverSideBaseUrlKey, _riverSideBaseUrl);
+  }
+
+  Future<void> _saveUpdateManifestUrl() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_updateManifestUrlKey, _updateManifestUrl);
   }
 }

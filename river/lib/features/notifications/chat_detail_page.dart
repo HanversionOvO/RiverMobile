@@ -105,6 +105,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
   bool _realtimeSyncing = false;
   bool _realtimeSyncPending = false;
   bool _selectionMode = false;
+  bool _composerHasText = false;
   int _newMessageHintCount = 0;
   RiverSideChatMessageItem? _replyingMessage;
   double _composerDockHeight = 112;
@@ -122,6 +123,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
         widget.dependencies.accountStore.activeRiverSideUsername;
     widget.dependencies.accountStore.addListener(_onAccountStoreChanged);
     _scrollController.addListener(_onScroll);
+    _composerController.addListener(_onComposerTextChanged);
+    _composerFocusNode.addListener(_onComposerFocusChanged);
+    _onComposerTextChanged();
     _loadInitial(clearExisting: true);
     _loadEmojiData();
     _restartRealtimePolling();
@@ -131,6 +135,8 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
   void dispose() {
     _messageBusPoller?.stop();
     _pressedMessageClearTimer?.cancel();
+    _composerController.removeListener(_onComposerTextChanged);
+    _composerFocusNode.removeListener(_onComposerFocusChanged);
     _composerController.dispose();
     _composerFocusNode.dispose();
     widget.dependencies.accountStore.removeListener(_onAccountStoreChanged);
@@ -179,6 +185,28 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
     if (_scrollController.offset <= 120) {
       _loadOlderMessages();
     }
+  }
+
+  void _onComposerTextChanged() {
+    final hasText = _composerController.text.trim().isNotEmpty;
+    if (!mounted || _composerHasText == hasText) {
+      return;
+    }
+    setState(() {
+      _composerHasText = hasText;
+    });
+  }
+
+  void _onComposerFocusChanged() {
+    if (!_composerFocusNode.hasFocus) {
+      return;
+    }
+    unawaited(
+      Future<void>.delayed(
+        const Duration(milliseconds: 60),
+        _scrollToBottomAnimated,
+      ),
+    );
   }
 
   void _markMessagePressed(int messageId) {
@@ -405,17 +433,15 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
   Map<String, String> _baseImageHeaders() {
     final cookie = _activeCookieHeader()?.trim() ?? '';
     if (cookie.isEmpty) {
-      return const <String, String>{'Referer': riverSideBaseUrl};
+      return <String, String>{'Referer': riverSideBaseUrl};
     }
     return <String, String>{'Cookie': cookie, 'Referer': riverSideBaseUrl};
   }
 
   Map<String, String>? _headersForUrl(String resolvedUrl) {
     final headers = _baseImageHeaders();
-    final forumHost = Uri.parse(riverSideBaseUrl).host.toLowerCase();
     final host = (Uri.tryParse(resolvedUrl)?.host ?? '').toLowerCase();
-
-    if (host.isEmpty || host == forumHost || host.endsWith('.$forumHost')) {
+    if (host.isEmpty || isRiverSideHost(host)) {
       return headers;
     }
 

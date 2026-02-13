@@ -45,6 +45,8 @@ class _MainPostCard extends StatefulWidget {
     this.pendingHeroReactionId,
     this.reactionPulseToken = 0,
     this.showReplyAction = true,
+    this.isJumpHighlighted = false,
+    this.jumpHighlightToken = 0,
   });
 
   final RiverSideTopicDetail detail;
@@ -63,6 +65,8 @@ class _MainPostCard extends StatefulWidget {
   final String? pendingHeroReactionId;
   final int reactionPulseToken;
   final bool showReplyAction;
+  final bool isJumpHighlighted;
+  final int jumpHighlightToken;
 
   @override
   State<_MainPostCard> createState() => _MainPostCardState();
@@ -155,30 +159,37 @@ class _MainPostCardState extends State<_MainPostCard>
           child: Transform.scale(scale: value, child: child),
         );
       },
-      child: Card(
-        margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-        elevation: 0,
-        color: theme.colorScheme.surfaceContainerLow,
-        clipBehavior: Clip.antiAlias,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _PostAuthorHeader(
-                post: post,
-                onTap: () => widget.onAuthorTap(post),
-                heroTagAvatar:
-                    widget.authorAvatarHeroTag ??
-                    _topicPostAuthorAvatarHeroTag(post),
-                heroTagName:
-                    widget.authorNameHeroTag ??
-                    _topicPostAuthorNameHeroTag(post),
-              ),
-              const SizedBox(height: 10),
-              revealedBody,
-            ],
+      child: _JumpHighlightWrapper(
+        highlighted: widget.isJumpHighlighted,
+        token: widget.jumpHighlightToken,
+        borderRadius: BorderRadius.circular(20),
+        child: Card(
+          margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+          elevation: 0,
+          color: theme.colorScheme.surfaceContainerLow,
+          clipBehavior: Clip.antiAlias,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _PostAuthorHeader(
+                  post: post,
+                  onTap: () => widget.onAuthorTap(post),
+                  heroTagAvatar:
+                      widget.authorAvatarHeroTag ??
+                      _topicPostAuthorAvatarHeroTag(post),
+                  heroTagName:
+                      widget.authorNameHeroTag ??
+                      _topicPostAuthorNameHeroTag(post),
+                ),
+                const SizedBox(height: 10),
+                revealedBody,
+              ],
+            ),
           ),
         ),
       ),
@@ -203,6 +214,8 @@ class _CommentCard extends StatefulWidget {
     required this.onAuthorTap,
     this.pendingHeroReactionId,
     this.reactionPulseToken = 0,
+    this.isJumpHighlighted = false,
+    this.jumpHighlightToken = 0,
   });
 
   final RiverSideTopicPostDetail post;
@@ -220,6 +233,8 @@ class _CommentCard extends StatefulWidget {
   final ValueChanged<RiverSideTopicPostDetail> onAuthorTap;
   final String? pendingHeroReactionId;
   final int reactionPulseToken;
+  final bool isJumpHighlighted;
+  final int jumpHighlightToken;
 
   @override
   State<_CommentCard> createState() => _CommentCardState();
@@ -244,83 +259,149 @@ class _CommentCardState extends State<_CommentCard>
       transitionOnUserGestures: true,
       child: HeroMode(
         enabled: false,
-        child: Card(
-          margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-          elevation: 0,
-          color: Theme.of(context).colorScheme.surfaceContainerLow,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: widget.onTap,
-            onLongPress: widget.onLongPress,
-            borderRadius: BorderRadius.circular(18),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _PostAuthorHeader(
-                    post: widget.post,
-                    onTap: () => widget.onAuthorTap(widget.post),
-                    heroTagAvatar: _topicPostAuthorAvatarHeroTag(widget.post),
-                    heroTagName: _topicPostAuthorNameHeroTag(widget.post),
-                    enableHero: false,
-                    trailing: _CommentInlineActions(
-                      reacting: widget.isReacting,
-                      onReplyPressed: () => widget.onReplyPressed(widget.post),
-                      onReactPressed: () => widget.onReactPressed(widget.post),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 8,
-                    children: [
-                      _MetaItem(
-                        icon: Icons.schedule_outlined,
-                        text: _formatDateTime(widget.post.createdAt),
-                        color: subtitleColor,
+        child: _JumpHighlightWrapper(
+          highlighted: widget.isJumpHighlighted,
+          token: widget.jumpHighlightToken,
+          borderRadius: BorderRadius.circular(18),
+          child: Card(
+            margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            elevation: 0,
+            color: Theme.of(context).colorScheme.surfaceContainerLow,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: widget.onTap,
+              onLongPress: widget.onLongPress,
+              borderRadius: BorderRadius.circular(18),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _PostAuthorHeader(
+                      post: widget.post,
+                      onTap: () => widget.onAuthorTap(widget.post),
+                      heroTagAvatar: _topicPostAuthorAvatarHeroTag(widget.post),
+                      heroTagName: _topicPostAuthorNameHeroTag(widget.post),
+                      enableHero: false,
+                      trailing: _CommentInlineActions(
+                        reacting: widget.isReacting,
+                        onReplyPressed: () =>
+                            widget.onReplyPressed(widget.post),
+                        onReactPressed: () =>
+                            widget.onReactPressed(widget.post),
                       ),
-                      _MetaItem(
-                        icon: Icons.thumb_up_alt_outlined,
-                        text: '\u70b9\u8d5e ${widget.post.likeCount}',
-                        color: subtitleColor,
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 8,
+                      children: [
+                        _MetaItem(
+                          icon: Icons.schedule_outlined,
+                          text: _formatDateTime(widget.post.createdAt),
+                          color: subtitleColor,
+                        ),
+                        _MetaItem(
+                          icon: Icons.thumb_up_alt_outlined,
+                          text: '\u70b9\u8d5e ${widget.post.likeCount}',
+                          color: subtitleColor,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    _PostContent(
+                      markdown: widget.post.contentMarkdown,
+                      topicId: widget.post.topicId,
+                      cookieHeader: widget.cookieHeader,
+                      emojiUrls: widget.emojiUrls,
+                      onQuoteTap: widget.onQuoteTap,
+                      enableImageHero: false,
+                      enableTextSelection: false,
+                    ),
+                    if (hasReactionStatus) ...[
+                      const SizedBox(height: 10),
+                      _PostReactionBar(
+                        post: widget.post,
+                        reacting: widget.isReacting,
+                        onReactPressed: () =>
+                            widget.onReactPressed(widget.post),
+                        onReplyPressed: () =>
+                            widget.onReplyPressed(widget.post),
+                        onReactionStatusPressed: (reactionId) {
+                          widget.onReactionStatusPressed(
+                            widget.post,
+                            reactionId,
+                          );
+                        },
+                        pendingHeroReactionId: widget.pendingHeroReactionId,
+                        pulseToken: widget.reactionPulseToken,
+                        enableReactionHero: false,
+                        showPrimaryActions: false,
                       ),
                     ],
-                  ),
-                  const SizedBox(height: 10),
-                  _PostContent(
-                    markdown: widget.post.contentMarkdown,
-                    topicId: widget.post.topicId,
-                    cookieHeader: widget.cookieHeader,
-                    emojiUrls: widget.emojiUrls,
-                    onQuoteTap: widget.onQuoteTap,
-                    enableImageHero: false,
-                  ),
-                  if (hasReactionStatus) ...[
-                    const SizedBox(height: 10),
-                    _PostReactionBar(
-                      post: widget.post,
-                      reacting: widget.isReacting,
-                      onReactPressed: () => widget.onReactPressed(widget.post),
-                      onReplyPressed: () => widget.onReplyPressed(widget.post),
-                      onReactionStatusPressed: (reactionId) {
-                        widget.onReactionStatusPressed(widget.post, reactionId);
-                      },
-                      pendingHeroReactionId: widget.pendingHeroReactionId,
-                      pulseToken: widget.reactionPulseToken,
-                      enableReactionHero: false,
-                      showPrimaryActions: false,
-                    ),
                   ],
-                ],
+                ),
               ),
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+class _JumpHighlightWrapper extends StatelessWidget {
+  const _JumpHighlightWrapper({
+    required this.highlighted,
+    required this.token,
+    required this.borderRadius,
+    required this.child,
+  });
+
+  final bool highlighted;
+  final int token;
+  final BorderRadius borderRadius;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!highlighted) {
+      return child;
+    }
+    final theme = Theme.of(context);
+    return TweenAnimationBuilder<double>(
+      key: ValueKey<String>('jump-highlight-$token'),
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 2200),
+      curve: Curves.linear,
+      builder: (context, value, content) {
+        final pulse = math.sin(value * math.pi * 3).clamp(0.0, 1.0);
+        final envelope = (1 - value * 0.35).clamp(0.72, 1.0);
+        final glowAlpha = pulse * envelope;
+        final scale = 1 + 0.014 * glowAlpha;
+        return Transform.scale(
+          scale: scale,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: borderRadius,
+              boxShadow: [
+                BoxShadow(
+                  color: theme.colorScheme.primary.withValues(
+                    alpha: 0.22 * glowAlpha,
+                  ),
+                  blurRadius: 18 * glowAlpha + 2,
+                  spreadRadius: 1.5 * glowAlpha,
+                ),
+              ],
+            ),
+            child: content,
+          ),
+        );
+      },
+      child: child,
     );
   }
 }
@@ -414,6 +495,7 @@ class _CommentDetailPostCard extends StatelessWidget {
                 emojiUrls: emojiUrls,
                 onQuoteTap: onQuoteTap,
                 enableImageHero: false,
+                enableTextSelection: false,
               ),
               if (hasReactionStatus) ...[
                 const SizedBox(height: 10),
@@ -484,7 +566,9 @@ class _PostReactionBar extends StatelessWidget {
         pendingId.isNotEmpty &&
         reactions.every((item) => item.id != pendingId);
     final actionBg = theme.colorScheme.surfaceContainerHighest;
-    final actionBorder = theme.colorScheme.outlineVariant.withOpacity(0.55);
+    final actionBorder = theme.colorScheme.outlineVariant.withValues(
+      alpha: 0.55,
+    );
     final actionFg = theme.colorScheme.onSurfaceVariant;
 
     return Wrap(
@@ -505,7 +589,7 @@ class _PostReactionBar extends StatelessWidget {
           _ActionPillButton(
             onPressed: reacting ? null : onReactPressed,
             backgroundColor: reacting
-                ? theme.colorScheme.primaryContainer.withOpacity(0.6)
+                ? theme.colorScheme.primaryContainer.withValues(alpha: 0.6)
                 : actionBg,
             borderColor: reacting ? theme.colorScheme.primary : actionBorder,
             foregroundColor: reacting ? theme.colorScheme.primary : actionFg,
@@ -645,8 +729,10 @@ class _CommentInlineActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final bg = theme.colorScheme.surfaceContainerHighest.withOpacity(0.68);
-    final border = theme.colorScheme.outlineVariant.withOpacity(0.5);
+    final bg = theme.colorScheme.surfaceContainerHighest.withValues(
+      alpha: 0.68,
+    );
+    final border = theme.colorScheme.outlineVariant.withValues(alpha: 0.5);
     final fg = theme.colorScheme.onSurfaceVariant;
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -681,7 +767,7 @@ class _CommentInlineActions extends StatelessWidget {
           ),
           onPressed: reacting ? null : onReactPressed,
           backgroundColor: reacting
-              ? theme.colorScheme.primaryContainer.withOpacity(0.62)
+              ? theme.colorScheme.primaryContainer.withValues(alpha: 0.62)
               : bg,
           borderColor: reacting ? theme.colorScheme.primary : border,
           foregroundColor: reacting ? theme.colorScheme.primary : fg,
@@ -715,12 +801,12 @@ class _CommentInlineActionButton extends StatelessWidget {
       message: tooltip,
       child: Material(
         color: disabled
-            ? backgroundColor.withOpacity(0.45)
-            : backgroundColor.withOpacity(0.9),
+            ? backgroundColor.withValues(alpha: 0.45)
+            : backgroundColor.withValues(alpha: 0.9),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(10),
           side: BorderSide(
-            color: disabled ? borderColor.withOpacity(0.35) : borderColor,
+            color: disabled ? borderColor.withValues(alpha: 0.35) : borderColor,
           ),
         ),
         clipBehavior: Clip.antiAlias,
@@ -732,7 +818,7 @@ class _CommentInlineActionButton extends StatelessWidget {
               data: IconThemeData(
                 size: 17,
                 color: disabled
-                    ? foregroundColor.withOpacity(0.55)
+                    ? foregroundColor.withValues(alpha: 0.55)
                     : foregroundColor,
               ),
               child: icon,
@@ -766,11 +852,11 @@ class _ActionPillButton extends StatelessWidget {
     final disabled = onPressed == null;
     return Material(
       color: disabled
-          ? backgroundColor.withOpacity(0.45)
-          : backgroundColor.withOpacity(0.9),
+          ? backgroundColor.withValues(alpha: 0.45)
+          : backgroundColor.withValues(alpha: 0.9),
       shape: StadiumBorder(
         side: BorderSide(
-          color: disabled ? borderColor.withOpacity(0.35) : borderColor,
+          color: disabled ? borderColor.withValues(alpha: 0.35) : borderColor,
         ),
       ),
       clipBehavior: Clip.antiAlias,
@@ -785,7 +871,7 @@ class _ActionPillButton extends StatelessWidget {
                 data: IconThemeData(
                   size: 18,
                   color: disabled
-                      ? foregroundColor.withOpacity(0.55)
+                      ? foregroundColor.withValues(alpha: 0.55)
                       : foregroundColor,
                 ),
                 child: icon,
@@ -795,7 +881,7 @@ class _ActionPillButton extends StatelessWidget {
                 label,
                 style: Theme.of(context).textTheme.labelLarge?.copyWith(
                   color: disabled
-                      ? foregroundColor.withOpacity(0.55)
+                      ? foregroundColor.withValues(alpha: 0.55)
                       : foregroundColor,
                   fontWeight: FontWeight.w600,
                 ),

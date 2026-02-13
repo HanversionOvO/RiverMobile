@@ -18,6 +18,7 @@ class AccountStore extends ChangeNotifier {
       'river.active.riverside.username';
   static const String _storageKeyRiverSideCookies =
       'river.riverside.cookies.v1';
+  static const String _storageKeyGuestBrowsing = 'river.guest.browsing.v1';
   static const String _legacyStorageKeyRiverSideUserApiCredentials =
       'river.riverside.user_api_credentials.v1';
 
@@ -35,6 +36,7 @@ class AccountStore extends ChangeNotifier {
   final Map<String, String> _riverSideCookiesByUsername = <String, String>{};
 
   String? _activeRiverSideUsername;
+  bool _guestBrowsing = false;
 
   RiverSideApiClient get riverSideApiClient => _riverSideApiClient;
 
@@ -75,7 +77,9 @@ class AccountStore extends ChangeNotifier {
     }
 
     _activeRiverSideUsername = _prefs?.getString(_storageKeyActiveRiverSide);
+    _guestBrowsing = _prefs?.getBool(_storageKeyGuestBrowsing) ?? false;
     _ensureValidActiveAccount();
+    _syncGuestBrowsingFlagWithAccounts();
     await _prefs?.remove(_legacyStorageKeyRiverSideUserApiCredentials);
     notifyListeners();
   }
@@ -87,6 +91,7 @@ class AccountStore extends ChangeNotifier {
 
   bool get hasRiverSideAccount =>
       (_accounts[AccountProvider.riverSide]?.isNotEmpty ?? false);
+  bool get isGuestBrowsing => _guestBrowsing;
 
   String? get activeRiverSideUsername => _activeRiverSideUsername;
 
@@ -173,6 +178,7 @@ class AccountStore extends ChangeNotifier {
     await _applyRiverSideCookiesForUsername(target.username);
 
     _activeRiverSideUsername = target.username;
+    _guestBrowsing = false;
     await _persist();
     notifyListeners();
     return true;
@@ -185,6 +191,7 @@ class AccountStore extends ChangeNotifier {
 
     _upsertAccount(account);
     _ensureValidActiveAccount();
+    _syncGuestBrowsingFlagWithAccounts();
     await _persist();
     notifyListeners();
   }
@@ -202,6 +209,7 @@ class AccountStore extends ChangeNotifier {
       final profile = await _riverSideApiClient.fetchUserProfile(username);
       _upsertAccount(profile);
       _ensureValidActiveAccount();
+      _syncGuestBrowsingFlagWithAccounts();
       await _persist();
       notifyListeners();
       return AddAccountResult(
@@ -301,6 +309,7 @@ class AccountStore extends ChangeNotifier {
     );
 
     _ensureValidActiveAccount();
+    _syncGuestBrowsingFlagWithAccounts();
 
     final active = _activeRiverSideUsername;
     if (active == null || active.isEmpty) {
@@ -309,6 +318,16 @@ class AccountStore extends ChangeNotifier {
       await _applyRiverSideCookiesForUsername(active);
     }
 
+    await _persist();
+    notifyListeners();
+  }
+
+  Future<void> setGuestBrowsing(bool enabled) async {
+    if (_guestBrowsing == enabled) {
+      return;
+    }
+    _guestBrowsing = enabled;
+    _syncGuestBrowsingFlagWithAccounts();
     await _persist();
     notifyListeners();
   }
@@ -334,6 +353,12 @@ class AccountStore extends ChangeNotifier {
 
     if (!exists) {
       _activeRiverSideUsername = riverAccounts.first.username;
+    }
+  }
+
+  void _syncGuestBrowsingFlagWithAccounts() {
+    if (hasRiverSideAccount && _guestBrowsing) {
+      _guestBrowsing = false;
     }
   }
 
@@ -407,6 +432,7 @@ class AccountStore extends ChangeNotifier {
       _storageKeyRiverSideCookies,
       jsonEncode(_riverSideCookiesByUsername),
     );
+    await _prefs?.setBool(_storageKeyGuestBrowsing, _guestBrowsing);
   }
 
   void _upsertAccount(UserAccount account) {

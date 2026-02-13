@@ -198,6 +198,8 @@ extension RiverSideApiClientProfileMethods on RiverSideApiClient {
     }
 
     final profile = _toStringMap(user['user_profile']);
+    final userSummary = _toStringMap(decoded['user_summary']);
+    final userStat = _toStringMap(user['user_stat']);
     final usernameFromApi = (user['username'] ?? resolvedUsername)
         .toString()
         .trim();
@@ -223,6 +225,18 @@ extension RiverSideApiClientProfileMethods on RiverSideApiClient {
       title: title,
     );
 
+    int readStat(List<String> keys, {int fallback = 0}) {
+      for (final key in keys) {
+        final fromSummary = _asInt(userSummary[key]);
+        if (fromSummary != null) return fromSummary;
+        final fromUserStat = _asInt(userStat[key]);
+        if (fromUserStat != null) return fromUserStat;
+        final fromUser = _asInt(user[key]);
+        if (fromUser != null) return fromUser;
+      }
+      return fallback;
+    }
+
     return RiverSideProfileOverview(
       account: account,
       isProfileHidden: _asBool(user['profile_hidden']),
@@ -237,10 +251,13 @@ extension RiverSideApiClientProfileMethods on RiverSideApiClient {
       trustLevel: _asInt(user['trust_level']) ?? 0,
       badgeCount: _asInt(user['badge_count']) ?? 0,
       profileViewCount: _asInt(user['profile_view_count']) ?? 0,
-      topicCount: _asInt(user['topic_count']) ?? 0,
-      postCount: _asInt(user['post_count']) ?? 0,
-      likesGiven: _asInt(user['likes_given']) ?? 0,
-      likesReceived: _asInt(user['likes_received']) ?? 0,
+      topicCount: readStat(const <String>['topic_count']),
+      postCount: readStat(const <String>['post_count', 'posts_count']),
+      likesGiven: readStat(const <String>['likes_given', 'num_likes_given']),
+      likesReceived: readStat(const <String>[
+        'likes_received',
+        'num_likes_received',
+      ]),
       followersCount: _asInt(user['total_followers']) ?? 0,
       followingCount: _asInt(user['total_following']) ?? 0,
       isFollowing: readOptionalBool(const <String>[

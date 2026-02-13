@@ -1,14 +1,11 @@
-import 'dart:ui'; // 用于 ImageFilter
-
 import 'package:flutter/material.dart';
 import 'package:lottie/lottie.dart';
 import 'package:river/app/app_dependencies.dart';
-import 'package:river/core/account/account_models.dart';
+import 'package:river/core/navigation/river_page_route.dart';
 import 'package:river/core/platform/riverside_webview_support.dart';
 import 'package:river/features/home/home_shell_page.dart';
 import 'package:river/features/login/riverside_external_fallback_page.dart';
 import 'package:river/features/login/riverside_login_webview_page.dart';
-import 'package:river/core/navigation/river_page_route.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key, required this.dependencies});
@@ -21,31 +18,35 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage>
     with SingleTickerProviderStateMixin {
+  static const Color _riverSideColor = Color(0xFF12457A);
+  static const Color _qingShuiColor = Color(0xFF2174F1);
+
   bool _checkingWebView = false;
-  late AnimationController _animController;
-  late Animation<double> _fadeAnim;
-  late Animation<Offset> _slideAnim;
+  bool _enteringGuest = false;
+
+  late final AnimationController _animController;
+  late final Animation<double> _fadeAnim;
+  late final Animation<Offset> _slideAnim;
+  late final Animation<double> _scaleAnim;
 
   @override
   void initState() {
     super.initState();
-    // 初始化入场动画控制器
     _animController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1000),
+      duration: const Duration(milliseconds: 900),
     );
-
     _fadeAnim = CurvedAnimation(
       parent: _animController,
-      curve: const Interval(0.0, 0.8, curve: Curves.easeOut),
+      curve: const Interval(0.0, 0.9, curve: Curves.easeOut),
     );
-
-    _slideAnim = Tween<Offset>(begin: const Offset(0, 0.1), end: Offset.zero)
+    _slideAnim = Tween<Offset>(begin: const Offset(0, 0.06), end: Offset.zero)
         .animate(
           CurvedAnimation(parent: _animController, curve: Curves.easeOutCubic),
         );
-
-    // 启动动画
+    _scaleAnim = Tween<double>(begin: 0.94, end: 1).animate(
+      CurvedAnimation(parent: _animController, curve: Curves.easeOutBack),
+    );
     _animController.forward();
   }
 
@@ -56,19 +57,18 @@ class _LoginPageState extends State<LoginPage>
   }
 
   Future<void> _openCredentialLogin({String? detectedWebViewVersion}) async {
-    final profile = await Navigator.of(context).push<UserAccount>(
-      riverPageRoute<UserAccount>(
-        builder: (_) => RiverSideExternalFallbackPage(
-          dependencies: widget.dependencies,
-          detectedWebViewVersion: detectedWebViewVersion,
-        ),
-      ),
+    final profile = await showRiverSideCredentialLoginSheet(
+      context: context,
+      dependencies: widget.dependencies,
+      detectedWebViewVersion: detectedWebViewVersion,
     );
-
     if (!mounted || profile == null) {
       return;
     }
-
+    await widget.dependencies.accountStore.setGuestBrowsing(false);
+    if (!mounted) {
+      return;
+    }
     Navigator.of(context).pushAndRemoveUntil(
       riverPageRoute<void>(
         builder: (_) => HomeShellPage(dependencies: widget.dependencies),
@@ -78,23 +78,23 @@ class _LoginPageState extends State<LoginPage>
   }
 
   Future<void> _onRiverSideLoginPressed() async {
-    if (_checkingWebView) {
+    if (_checkingWebView || _enteringGuest) {
       return;
     }
-
+    await widget.dependencies.accountStore.setGuestBrowsing(false);
+    if (!mounted) {
+      return;
+    }
     setState(() {
       _checkingWebView = true;
     });
-
     final support = await RiverSideWebViewSupport.check();
     if (!mounted) {
       return;
     }
-
     setState(() {
       _checkingWebView = false;
     });
-
     if (support.canUseEmbeddedWebView) {
       await Navigator.of(context).push(
         riverPageRoute<void>(
@@ -104,145 +104,170 @@ class _LoginPageState extends State<LoginPage>
       );
       return;
     }
-
     await _openCredentialLogin(detectedWebViewVersion: support.detectedVersion);
+  }
+
+  Future<void> _enterAsGuest() async {
+    if (_checkingWebView || _enteringGuest) {
+      return;
+    }
+    setState(() {
+      _enteringGuest = true;
+    });
+    await widget.dependencies.accountStore.setGuestBrowsing(true);
+    if (!mounted) {
+      return;
+    }
+    Navigator.of(context).pushAndRemoveUntil(
+      riverPageRoute<void>(
+        builder: (_) => HomeShellPage(dependencies: widget.dependencies),
+      ),
+      (_) => false,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    // 定义主题色，保持原有蓝色基调但更柔和
-    final primaryColor = const Color(0xFF12457A);
-    final secondaryColor = const Color(0xFF2174F1);
     final theme = Theme.of(context);
-
     return Scaffold(
-      extendBodyBehindAppBar: true,
       body: Stack(
         children: [
-          // 1. 背景层：柔和的渐变
           Positioned.fill(
-            child: Container(
-              decoration: BoxDecoration(
+            child: DecoratedBox(
+              decoration: const BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [
-                    Colors.blue.shade50,
-                    Colors.white,
-                    Colors.blue.shade100.withOpacity(0.3),
+                  colors: <Color>[
+                    Color(0xFFEAF3FF),
+                    Color(0xFFF8FBFF),
+                    Color(0xFFE8F1FF),
                   ],
                 ),
               ),
             ),
           ),
-
-          // 2. 装饰层：右上角和左下角的模糊光晕，增加氛围感
           Positioned(
-            top: -50,
-            right: -50,
-            child: _buildBlurCircle(Colors.blue.withOpacity(0.1), 200),
+            top: -42,
+            right: -54,
+            child: _buildGlowCircle(
+              color: _qingShuiColor.withValues(alpha: 0.14),
+              size: 188,
+            ),
           ),
           Positioned(
-            bottom: 100,
-            left: -30,
-            child: _buildBlurCircle(Colors.indigo.withOpacity(0.05), 150),
+            bottom: 110,
+            left: -38,
+            child: _buildGlowCircle(
+              color: _riverSideColor.withValues(alpha: 0.10),
+              size: 170,
+            ),
           ),
-
-          // 3. 内容层
           SafeArea(
             child: FadeTransition(
               opacity: _fadeAnim,
               child: SlideTransition(
                 position: _slideAnim,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 18),
                   child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Spacer(flex: 2),
-
-                      // Logo 动画区域
-                      Hero(
-                        tag: 'login_logo',
-                        child: Container(
-                          height: 240,
-                          width: 240,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.blue.withOpacity(0.1),
-                                blurRadius: 40,
-                                offset: const Offset(0, 10),
-                              ),
-                            ],
-                          ),
-                          child: Lottie.network(
-                            'https://assets1.lottiefiles.com/packages/lf20_jcikwtux.json',
+                      const Spacer(),
+                      ScaleTransition(
+                        scale: _scaleAnim,
+                        child: SizedBox(
+                          width: 220,
+                          height: 220,
+                          child: Lottie.asset(
+                            'assets/lottie/login_welcome.json',
                             fit: BoxFit.contain,
                           ),
                         ),
                       ),
-
-                      const SizedBox(height: 24),
-
-                      // 标题
+                      const SizedBox(height: 10),
                       Text(
                         '欢迎来到 River',
-                        style: theme.textTheme.headlineMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: primaryColor,
-                          letterSpacing: 1.2,
-                        ),
                         textAlign: TextAlign.center,
+                        style: theme.textTheme.headlineSmall?.copyWith(
+                          color: _riverSideColor,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        '连接清水河畔的即时桥梁',
-                        style: theme.textTheme.bodyLarge?.copyWith(
-                          color: Colors.grey.shade600,
-                        ),
+                        '连接 RiverSide 与清水河畔',
                         textAlign: TextAlign.center,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
                       ),
-
-                      const Spacer(flex: 3),
-
-                      // 登录按钮区域
-                      Column(
-                        children: [
-                          _buildLoginButton(
-                            onPressed: _checkingWebView
-                                ? null
-                                : _onRiverSideLoginPressed,
-                            isLoading: _checkingWebView,
-                            label: '登录至 RiverSide',
-                            icon: Icons.water_drop_rounded,
-                            backgroundColor: primaryColor,
-                            textColor: Colors.white,
+                      const Spacer(flex: 2),
+                      Container(
+                        padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surface.withValues(
+                            alpha: 0.88,
                           ),
-                          const SizedBox(height: 16),
-                          _buildLoginButton(
-                            onPressed: () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: const Text('清水河畔登录接口开发中...'),
-                                  behavior: SnackBarBehavior.floating,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(10),
+                          borderRadius: BorderRadius.circular(22),
+                          border: Border.all(
+                            color: theme.colorScheme.outlineVariant.withValues(
+                              alpha: 0.35,
+                            ),
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            _buildLoginButton(
+                              label: '登录至 RiverSide',
+                              onPressed: _checkingWebView
+                                  ? null
+                                  : _onRiverSideLoginPressed,
+                              isLoading: _checkingWebView,
+                              backgroundColor: _riverSideColor,
+                              foregroundColor: Colors.white,
+                              leading: _buildAssetIcon(
+                                assetPath: 'assets/images/rs.png',
+                                fallbackIcon: Icons.public_rounded,
+                                fallbackColor: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            _buildLoginButton(
+                              label: '登录至清水河畔',
+                              onPressed: () {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('清水河畔登录接口开发中...'),
                                   ),
-                                ),
-                              );
-                            },
-                            isLoading: false,
-                            label: '登录至清水河畔',
-                            icon: Icons.school_rounded,
-                            backgroundColor: secondaryColor.withOpacity(0.1),
-                            textColor: secondaryColor,
-                            isOutlined: true, // 次要按钮使用描边或浅色背景风格
-                          ),
-                        ],
+                                );
+                              },
+                              isLoading: false,
+                              backgroundColor: _qingShuiColor,
+                              foregroundColor: Colors.white,
+                              leading: _buildAssetIcon(
+                                assetPath: 'assets/images/hp.png',
+                                fallbackIcon: Icons.school_rounded,
+                                fallbackColor: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            TextButton.icon(
+                              onPressed: _enterAsGuest,
+                              icon: _enteringGuest
+                                  ? SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: theme.colorScheme.primary,
+                                      ),
+                                    )
+                                  : const Icon(Icons.explore_outlined),
+                              label: const Text('以游客身份浏览'),
+                            ),
+                          ],
+                        ),
                       ),
-                      const SizedBox(height: 48),
                     ],
                   ),
                 ),
@@ -254,66 +279,76 @@ class _LoginPageState extends State<LoginPage>
     );
   }
 
-  // 辅助方法：构建模糊光晕背景
-  Widget _buildBlurCircle(Color color, double size) {
+  Widget _buildGlowCircle({required Color color, required double size}) {
     return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 50, sigmaY: 50),
-        child: Container(color: Colors.transparent),
+    );
+  }
+
+  Widget _buildAssetIcon({
+    required String assetPath,
+    required IconData fallbackIcon,
+    required Color fallbackColor,
+  }) {
+    return Container(
+      width: 24,
+      height: 24,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.18),
+        shape: BoxShape.circle,
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Image.asset(
+        assetPath,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) {
+          return Icon(fallbackIcon, size: 16, color: fallbackColor);
+        },
       ),
     );
   }
 
-  // 辅助方法：构建通用的登录按钮
   Widget _buildLoginButton({
+    required String label,
     required VoidCallback? onPressed,
     required bool isLoading,
-    required String label,
-    required IconData icon,
     required Color backgroundColor,
-    required Color textColor,
-    bool isOutlined = false,
+    required Color foregroundColor,
+    required Widget leading,
   }) {
-    final style = ElevatedButton.styleFrom(
-      backgroundColor: backgroundColor,
-      foregroundColor: textColor,
-      elevation: isOutlined ? 0 : 4,
-      shadowColor: isOutlined
-          ? Colors.transparent
-          : backgroundColor.withOpacity(0.4),
-      padding: const EdgeInsets.symmetric(vertical: 16),
-      shape: const StadiumBorder(), // 胶囊形状
-      minimumSize: const Size(double.infinity, 56),
-    );
-
     return SizedBox(
       width: double.infinity,
-      child: ElevatedButton(
+      child: FilledButton(
         onPressed: onPressed,
-        style: style,
+        style: FilledButton.styleFrom(
+          minimumSize: const Size(double.infinity, 52),
+          backgroundColor: backgroundColor,
+          foregroundColor: foregroundColor,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
         child: isLoading
             ? SizedBox(
-                width: 24,
-                height: 24,
+                width: 20,
+                height: 20,
                 child: CircularProgressIndicator(
-                  strokeWidth: 2.5,
-                  color: textColor,
+                  strokeWidth: 2.2,
+                  color: foregroundColor,
                 ),
               )
             : Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(icon, size: 20),
-                  const SizedBox(width: 12),
+                  leading,
+                  const SizedBox(width: 10),
                   Text(
                     label,
                     style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.5,
+                      fontSize: 15.5,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ],

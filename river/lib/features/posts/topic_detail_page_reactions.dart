@@ -254,12 +254,14 @@ class _ReactionPickerSheetState extends State<_ReactionPickerSheet>
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
           child: Material(
-            color: colors.surface.withOpacity(0.98),
+            color: colors.surface.withValues(alpha: 0.98),
             elevation: 10,
-            shadowColor: colors.shadow.withOpacity(0.22),
+            shadowColor: colors.shadow.withValues(alpha: 0.22),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(26),
-              side: BorderSide(color: colors.outlineVariant.withOpacity(0.45)),
+              side: BorderSide(
+                color: colors.outlineVariant.withValues(alpha: 0.45),
+              ),
             ),
             clipBehavior: Clip.antiAlias,
             child: Padding(
@@ -273,7 +275,7 @@ class _ReactionPickerSheetState extends State<_ReactionPickerSheet>
                       width: 44,
                       height: 4,
                       decoration: BoxDecoration(
-                        color: colors.outlineVariant.withOpacity(0.6),
+                        color: colors.outlineVariant.withValues(alpha: 0.6),
                         borderRadius: BorderRadius.circular(999),
                       ),
                     ),
@@ -437,12 +439,14 @@ class _ReactionUsersSheet extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
           child: Material(
-            color: colors.surface.withOpacity(0.98),
+            color: colors.surface.withValues(alpha: 0.98),
             elevation: 10,
-            shadowColor: colors.shadow.withOpacity(0.2),
+            shadowColor: colors.shadow.withValues(alpha: 0.2),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(26),
-              side: BorderSide(color: colors.outlineVariant.withOpacity(0.45)),
+              side: BorderSide(
+                color: colors.outlineVariant.withValues(alpha: 0.45),
+              ),
             ),
             clipBehavior: Clip.antiAlias,
             child: Padding(
@@ -456,7 +460,7 @@ class _ReactionUsersSheet extends StatelessWidget {
                       width: 44,
                       height: 4,
                       decoration: BoxDecoration(
-                        color: colors.outlineVariant.withOpacity(0.58),
+                        color: colors.outlineVariant.withValues(alpha: 0.58),
                         borderRadius: BorderRadius.circular(999),
                       ),
                     ),
@@ -470,7 +474,7 @@ class _ReactionUsersSheet extends StatelessWidget {
                           reactionId: reactionId,
                         ),
                         child: Material(
-                          color: colors.primaryContainer.withOpacity(0.9),
+                          color: colors.primaryContainer.withValues(alpha: 0.9),
                           borderRadius: BorderRadius.circular(999),
                           child: Padding(
                             padding: const EdgeInsets.symmetric(
@@ -522,7 +526,9 @@ class _ReactionUsersSheet extends StatelessWidget {
                         horizontal: 12,
                       ),
                       decoration: BoxDecoration(
-                        color: colors.surfaceContainerHighest.withOpacity(0.45),
+                        color: colors.surfaceContainerHighest.withValues(
+                          alpha: 0.45,
+                        ),
                         borderRadius: BorderRadius.circular(14),
                       ),
                       child: const Text(
@@ -579,7 +585,7 @@ class _ReactionUserTile extends StatelessWidget {
         );
       },
       child: Material(
-        color: colors.surfaceContainerHighest.withOpacity(0.45),
+        color: colors.surfaceContainerHighest.withValues(alpha: 0.45),
         borderRadius: BorderRadius.circular(14),
         child: ListTile(
           shape: RoundedRectangleBorder(

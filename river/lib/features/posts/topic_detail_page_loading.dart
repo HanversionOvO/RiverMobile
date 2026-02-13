@@ -83,6 +83,12 @@ extension _TopicDetailPageLoading on _TopicDetailPageState {
             _applyRealtimePresenceToLoadedPosts();
           }
         } else {
+          if (!_showTopicCommentsRealtimeRefreshBanner) {
+            if (hasPresenceEvent) {
+              _applyRealtimePresenceToLoadedPosts();
+            }
+            return;
+          }
           _mutateState(() {
             _hasRealtimeCommentUpdate = true;
           });
@@ -341,6 +347,42 @@ extension _TopicDetailPageLoading on _TopicDetailPageState {
       });
     }
     await _loadInitial();
+    if (!mounted) {
+      return;
+    }
+    await _jumpToLatestComment();
+  }
+
+  Future<void> _jumpToLatestComment() async {
+    if (!mounted) {
+      return;
+    }
+
+    var guard = 0;
+    while (mounted && _hasMoreComments && guard < 24) {
+      guard++;
+      await _loadMoreComments();
+      await _waitNextFrame();
+    }
+
+    if (!mounted || _comments.isEmpty) {
+      return;
+    }
+
+    var latestPostNumber = 0;
+    for (final post in _comments) {
+      if (post.postNumber > latestPostNumber) {
+        latestPostNumber = post.postNumber;
+      }
+    }
+    if (latestPostNumber <= 1) {
+      return;
+    }
+
+    await _jumpToPostNumber(
+      postNumber: latestPostNumber,
+      topicId: widget.topicId,
+    );
   }
 
   Future<void> _loadInitial() async {
@@ -558,12 +600,16 @@ extension _TopicDetailPageLoading on _TopicDetailPageState {
         return;
       }
       if (targetContext != null) {
-        Scrollable.ensureVisible(
+        await Scrollable.ensureVisible(
           targetContext,
           duration: const Duration(milliseconds: 320),
           curve: Curves.easeOutCubic,
           alignment: 0.1,
         );
+        if (!mounted) {
+          return;
+        }
+        _triggerJumpHighlight(postNumber);
         return;
       }
 
