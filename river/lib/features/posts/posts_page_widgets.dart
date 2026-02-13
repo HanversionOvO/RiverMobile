@@ -135,6 +135,10 @@ class _TopicListTabState extends State<_TopicListTab>
     }
   }
 
+  Future<void> _handleRefresh() async {
+    await _loadFirstPage();
+  }
+
   void _pinRealtimeHintAnchorToCurrentViewport() {
     if (_topics.isEmpty) {
       _realtimeHintAnchorIndex = null;
@@ -436,13 +440,15 @@ class _TopicListTabState extends State<_TopicListTab>
     return Stack(
       children: [
         RefreshIndicator(
-          onRefresh: _loadFirstPage,
-          edgeOffset: 0,
+          onRefresh: _handleRefresh,
+          notificationPredicate: (notification) => notification.depth == 0,
           child: ListView.separated(
             key: _listViewKey,
             controller: _scrollController,
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 92),
-            physics: const AlwaysScrollableScrollPhysics(),
+            physics: const BouncingScrollPhysics(
+              parent: AlwaysScrollableScrollPhysics(),
+            ),
             itemCount: _topics.length + extraHintCount + (_hasMore ? 1 : 0),
             separatorBuilder: (_, index) => const SizedBox(height: 12),
             itemBuilder: (context, index) {

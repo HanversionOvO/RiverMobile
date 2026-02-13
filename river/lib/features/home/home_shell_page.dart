@@ -21,6 +21,7 @@ class _HomeShellPageState extends State<HomeShellPage> {
 
   int _selectedTabIndex = 0;
   int _notificationsUnreadCount = 0;
+  double _postsSecondFloorProgress = 0;
   DateTime? _lastPostsTabTapAt;
   final PostsPageController _postsPageController = PostsPageController();
 
@@ -28,6 +29,8 @@ class _HomeShellPageState extends State<HomeShellPage> {
     PostsPage(
       dependencies: widget.dependencies,
       controller: _postsPageController,
+      onSecondFloorVisibilityChanged: _onPostsSecondFloorVisibilityChanged,
+      onSecondFloorProgressChanged: _onPostsSecondFloorProgressChanged,
     ),
     ComposeTopicPage(dependencies: widget.dependencies),
     NotificationsPage(
@@ -43,6 +46,27 @@ class _HomeShellPageState extends State<HomeShellPage> {
     }
     setState(() {
       _notificationsUnreadCount = value;
+    });
+  }
+
+  void _onPostsSecondFloorVisibilityChanged(bool visible) {
+    if (!mounted) {
+      return;
+    }
+    if (!visible && _postsSecondFloorProgress != 0) {
+      setState(() {
+        _postsSecondFloorProgress = 0;
+      });
+    }
+  }
+
+  void _onPostsSecondFloorProgressChanged(double progress) {
+    final next = progress.clamp(0.0, 1.0);
+    if (!mounted || (_postsSecondFloorProgress - next).abs() < 0.001) {
+      return;
+    }
+    setState(() {
+      _postsSecondFloorProgress = next;
     });
   }
 
@@ -86,33 +110,50 @@ class _HomeShellPageState extends State<HomeShellPage> {
 
   @override
   Widget build(BuildContext context) {
+    final secondFloorProgress = _selectedTabIndex == 0
+        ? _postsSecondFloorProgress
+        : 0.0;
+    final bottomOpacity = (1 - secondFloorProgress).clamp(0.0, 1.0);
+    final bottomSizeFactor = (1 - secondFloorProgress).clamp(0.0, 1.0);
     return Scaffold(
       body: IndexedStack(index: _selectedTabIndex, children: _pages),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedTabIndex,
-        onDestinationSelected: _onDestinationSelected,
-        destinations: <NavigationDestination>[
-          const NavigationDestination(
-            icon: Icon(Icons.forum_outlined),
-            selectedIcon: Icon(Icons.forum),
-            label: '\u5e16\u5b50',
+      bottomNavigationBar: ClipRect(
+        child: Align(
+          alignment: Alignment.topCenter,
+          heightFactor: bottomSizeFactor,
+          child: Opacity(
+            opacity: bottomOpacity,
+            child: IgnorePointer(
+              ignoring: secondFloorProgress > 0.001,
+              child: NavigationBar(
+                selectedIndex: _selectedTabIndex,
+                onDestinationSelected: _onDestinationSelected,
+                destinations: <NavigationDestination>[
+                  const NavigationDestination(
+                    icon: Icon(Icons.forum_outlined),
+                    selectedIcon: Icon(Icons.forum),
+                    label: '\u5e16\u5b50',
+                  ),
+                  const NavigationDestination(
+                    icon: Icon(Icons.edit_note_outlined),
+                    selectedIcon: Icon(Icons.edit_note),
+                    label: '\u53d1\u5e16',
+                  ),
+                  NavigationDestination(
+                    icon: _buildNotificationTabIcon(selected: false),
+                    selectedIcon: _buildNotificationTabIcon(selected: true),
+                    label: '\u901a\u77e5',
+                  ),
+                  const NavigationDestination(
+                    icon: Icon(Icons.person_outline),
+                    selectedIcon: Icon(Icons.person),
+                    label: '\u6211\u7684',
+                  ),
+                ],
+              ),
+            ),
           ),
-          const NavigationDestination(
-            icon: Icon(Icons.edit_note_outlined),
-            selectedIcon: Icon(Icons.edit_note),
-            label: '\u53d1\u5e16',
-          ),
-          NavigationDestination(
-            icon: _buildNotificationTabIcon(selected: false),
-            selectedIcon: _buildNotificationTabIcon(selected: true),
-            label: '\u901a\u77e5',
-          ),
-          const NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
-            label: '\u6211\u7684',
-          ),
-        ],
+        ),
       ),
     );
   }

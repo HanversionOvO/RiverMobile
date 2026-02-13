@@ -42,12 +42,300 @@ class PostsPageController {
 
 // -----------------------------------------------------------------------------
 
+class _PostsSecondFloorLayer extends StatelessWidget {
+  const _PostsSecondFloorLayer({
+    required this.progress,
+    required this.feedLabel,
+    required this.armed,
+    required this.bottomBarHeight,
+    required this.bottomNavigationReserveHeight,
+    required this.interactive,
+    required this.onClose,
+    required this.onDragUpdate,
+    required this.onDragEnd,
+  });
+
+  final double progress;
+  final String feedLabel;
+  final bool armed;
+  final double bottomBarHeight;
+  final double bottomNavigationReserveHeight;
+  final bool interactive;
+  final Future<void> Function() onClose;
+  final ValueChanged<DragUpdateDetails> onDragUpdate;
+  final ValueChanged<DragEndDetails> onDragEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final media = MediaQuery.of(context);
+    final t = progress.clamp(0.0, 1.0);
+    final topInset = media.padding.top;
+    final bottomInset = media.padding.bottom;
+    final panelHeight = (media.size.height * t).clamp(0.0, media.size.height);
+
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: IgnorePointer(
+            ignoring: !interactive,
+            child: Container(
+              color: Colors.black.withValues(alpha: lerpDouble(0.0, 0.34, t)!),
+            ),
+          ),
+        ),
+        Align(
+          alignment: Alignment.topCenter,
+          child: IgnorePointer(
+            ignoring: !interactive,
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onVerticalDragUpdate: onDragUpdate,
+              onVerticalDragEnd: onDragEnd,
+              child: SizedBox(
+                width: double.infinity,
+                height: panelHeight,
+                child: ClipRect(
+                  child: Material(
+                    color: theme.colorScheme.surface,
+                    child: Column(
+                      children: [
+                        Padding(
+                          padding: EdgeInsets.fromLTRB(
+                            16,
+                            topInset + 10,
+                            12,
+                            10,
+                          ),
+                          child: Row(
+                            children: [
+                              Text(
+                                '最近',
+                                style: theme.textTheme.headlineSmall?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const Spacer(),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.surfaceContainerHigh,
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.search_rounded,
+                                      size: 16,
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      '搜索',
+                                      style: theme.textTheme.labelLarge
+                                          ?.copyWith(
+                                            color: theme
+                                                .colorScheme
+                                                .onSurfaceVariant,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              IconButton(
+                                tooltip: '关闭',
+                                visualDensity: VisualDensity.compact,
+                                onPressed: onClose,
+                                icon: const Icon(Icons.close_rounded),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          child: ListView(
+                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                            children: [
+                              Text(
+                                '最近使用的小程序',
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              Wrap(
+                                spacing: 18,
+                                runSpacing: 18,
+                                children: List<Widget>.generate(8, (index) {
+                                  final hue = (index * 35.0) % 360;
+                                  final color = HSVColor.fromAHSV(
+                                    1,
+                                    hue,
+                                    0.45,
+                                    0.88,
+                                  ).toColor();
+                                  return SizedBox(
+                                    width: 64,
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Container(
+                                          width: 56,
+                                          height: 56,
+                                          decoration: BoxDecoration(
+                                            color: color.withValues(
+                                              alpha: 0.22,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              18,
+                                            ),
+                                          ),
+                                          child: Icon(
+                                            Icons.widgets_rounded,
+                                            color: color,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          '应用${index + 1}',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: theme.textTheme.labelSmall,
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }),
+                              ),
+                              const SizedBox(height: 24),
+                              Container(
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.surfaceContainerLow,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: theme.colorScheme.outlineVariant
+                                        .withValues(alpha: 0.25),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.tips_and_updates_rounded,
+                                      color: theme.colorScheme.primary,
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        armed ? '松手进入二楼' : '继续下拉可进入二楼',
+                                        style: theme.textTheme.bodyMedium
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Container(
+                          padding: EdgeInsets.only(
+                            bottom: bottomInset + bottomNavigationReserveHeight,
+                          ),
+                          decoration: BoxDecoration(
+                            border: Border(
+                              top: BorderSide(
+                                color: theme.colorScheme.outlineVariant
+                                    .withValues(alpha: 0.25),
+                              ),
+                            ),
+                          ),
+                          child: SizedBox(
+                            height: bottomBarHeight,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.layers_rounded,
+                                    size: 18,
+                                    color: theme.colorScheme.primary,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    '二楼',
+                                    style: theme.textTheme.titleSmall?.copyWith(
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  Text(
+                                    '当前：$feedLabel',
+                                    style: theme.textTheme.labelMedium
+                                        ?.copyWith(
+                                          color: theme
+                                              .colorScheme
+                                              .onSurfaceVariant,
+                                        ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Icon(
+                                    Icons.keyboard_arrow_up_rounded,
+                                    size: 18,
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                  const SizedBox(width: 2),
+                                  Text(
+                                    '上滑返回',
+                                    style: theme.textTheme.labelMedium
+                                        ?.copyWith(
+                                          color: theme
+                                              .colorScheme
+                                              .onSurfaceVariant,
+                                        ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// -----------------------------------------------------------------------------
+
 // -----------------------------------------------------------------------------
 class PostsPage extends StatefulWidget {
-  const PostsPage({super.key, required this.dependencies, this.controller});
+  const PostsPage({
+    super.key,
+    required this.dependencies,
+    this.controller,
+    this.onSecondFloorVisibilityChanged,
+    this.onSecondFloorProgressChanged,
+  });
 
   final AppDependencies dependencies;
   final PostsPageController? controller;
+  final ValueChanged<bool>? onSecondFloorVisibilityChanged;
+  final ValueChanged<double>? onSecondFloorProgressChanged;
 
   @override
   State<PostsPage> createState() => _PostsPageState();
@@ -58,6 +346,8 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
   static const String _presenceMessageBusChannel =
       '/presence/whos-online/online';
   static const String _presenceStateChannelName = '/whos-online/online';
+  static const double _secondFloorBottomBarHeight = 52;
+  static const double _secondFloorBottomNavReserveHeight = 64;
 
   List<RiverSideCategoryOption> _categories = [];
   bool _loadingCategories = false;
@@ -84,6 +374,11 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
   final Set<String> _onlineUsernames = <String>{};
   int _onlineUsersCount = 0;
   final GlobalKey _onlineUsersPillKey = GlobalKey();
+  late final AnimationController _secondFloorController;
+  double _secondFloorPullDistance = 0;
+  bool _secondFloorArmed = false;
+  bool _secondFloorVisibleForParent = false;
+  bool _secondFloorOpened = false;
 
   @override
   void initState() {
@@ -97,6 +392,12 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
     );
     _tabController = TabController(length: _feeds.length, vsync: this);
     _tabController.addListener(_onTabChanged);
+    _secondFloorController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 320),
+      reverseDuration: const Duration(milliseconds: 260),
+    );
+    _secondFloorController.addListener(_onSecondFloorProgressChanged);
     _loadCategories();
     _restartRealtimePolling();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -115,6 +416,11 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
     widget.controller?._detach(this);
     _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
+    _secondFloorController.removeListener(_onSecondFloorProgressChanged);
+    _secondFloorController.dispose();
+    if (_secondFloorVisibleForParent) {
+      widget.onSecondFloorVisibilityChanged?.call(false);
+    }
     super.dispose();
   }
 
@@ -123,6 +429,17 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
         .dependencies
         .settingsController
         .showPostsRealtimeRefreshBanner;
+  }
+
+  void _onSecondFloorProgressChanged() {
+    final progress = _secondFloorController.value.clamp(0.0, 1.0);
+    widget.onSecondFloorProgressChanged?.call(progress);
+    final visible = progress > 0.01;
+    if (visible == _secondFloorVisibleForParent) {
+      return;
+    }
+    _secondFloorVisibleForParent = visible;
+    widget.onSecondFloorVisibilityChanged?.call(visible);
   }
 
   void _onRefreshBannerSettingsChanged() {
@@ -623,6 +940,161 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
     _onActiveTabScrollOffsetChanged(offset);
   }
 
+  void _setSecondFloorPullDistance(double value) {
+    final screenHeight = MediaQuery.sizeOf(context).height;
+    final triggerDistance = _secondFloorTriggerDistanceForViewport();
+    final next = value.clamp(0.0, screenHeight);
+    final armed = next >= triggerDistance;
+    final changed =
+        (_secondFloorPullDistance - next).abs() > 0.1 ||
+        _secondFloorArmed != armed;
+    if (!changed || !mounted) {
+      return;
+    }
+    setState(() {
+      _secondFloorPullDistance = next;
+      _secondFloorArmed = armed;
+    });
+    if (!_secondFloorController.isAnimating) {
+      final screenHeight = MediaQuery.sizeOf(context).height;
+      final progress = (next / screenHeight).clamp(0.0, 1.0);
+      if ((_secondFloorController.value - progress).abs() > 0.001) {
+        _secondFloorController.value = progress;
+      }
+    }
+  }
+
+  double _secondFloorTriggerDistanceForViewport() {
+    final screenHeight = MediaQuery.sizeOf(context).height;
+    return screenHeight * 0.5;
+  }
+
+  Future<void> _animateSecondFloorTo(
+    double target, {
+    Curve curve = Curves.easeOutCubic,
+    Duration? duration,
+  }) async {
+    final clampedTarget = target.clamp(0.0, 1.0);
+    final distance = (clampedTarget - _secondFloorController.value).abs();
+    final computedDuration =
+        duration ??
+        Duration(
+          milliseconds: (220 + (distance * 260)).round().clamp(220, 460),
+        );
+    await _secondFloorController.animateTo(
+      clampedTarget,
+      duration: computedDuration,
+      curve: curve,
+    );
+    if (clampedTarget <= 0.0 && _secondFloorController.value != 0.0) {
+      _secondFloorController.value = 0.0;
+    } else if (clampedTarget >= 1.0 && _secondFloorController.value != 1.0) {
+      _secondFloorController.value = 1.0;
+    }
+  }
+
+  void _resetSecondFloorPullState() {
+    if (_secondFloorPullDistance == 0 && !_secondFloorArmed) {
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _secondFloorPullDistance = 0;
+      _secondFloorArmed = false;
+    });
+  }
+
+  Future<void> _openSecondFloor() async {
+    if (mounted && !_secondFloorOpened) {
+      setState(() {
+        _secondFloorOpened = true;
+      });
+    } else {
+      _secondFloorOpened = true;
+    }
+    await _animateSecondFloorTo(1);
+  }
+
+  Future<void> _closeSecondFloor() async {
+    await _animateSecondFloorTo(0);
+    if (mounted && _secondFloorOpened) {
+      setState(() {
+        _secondFloorOpened = false;
+      });
+    } else {
+      _secondFloorOpened = false;
+    }
+    _resetSecondFloorPullState();
+  }
+
+  void _onHeaderDragUpdate(DragUpdateDetails details) {
+    final delta = details.primaryDelta ?? 0;
+    if (delta.abs() < 0.1) {
+      return;
+    }
+    if (delta > 0) {
+      _setSecondFloorPullDistance(_secondFloorPullDistance + delta);
+      return;
+    }
+    if (delta < 0 && _secondFloorPullDistance > 0) {
+      _setSecondFloorPullDistance(_secondFloorPullDistance + delta);
+    }
+  }
+
+  void _onHeaderDragEnd(DragEndDetails details) {
+    if (_secondFloorPullDistance <= 0) {
+      if (_secondFloorController.value > 0 &&
+          _secondFloorController.value < 1) {
+        _resetSecondFloorPullState();
+        unawaited(
+          _animateSecondFloorTo(
+            0,
+            curve: Curves.easeOutQuart,
+            duration: const Duration(milliseconds: 280),
+          ),
+        );
+      }
+      return;
+    }
+    if (_secondFloorArmed) {
+      unawaited(_openSecondFloor());
+      return;
+    }
+    _resetSecondFloorPullState();
+    unawaited(
+      _animateSecondFloorTo(
+        0,
+        curve: Curves.easeOutQuart,
+        duration: const Duration(milliseconds: 300),
+      ),
+    );
+  }
+
+  void _onSecondFloorDragUpdate(DragUpdateDetails details) {
+    final delta = details.primaryDelta ?? 0;
+    if (delta.abs() < 0.1) {
+      return;
+    }
+    // 上滑关闭：delta < 0 => progress 下降；下滑回弹：delta > 0 => progress 上升
+    final screenHeight = MediaQuery.sizeOf(context).height;
+    final next = (_secondFloorController.value + (delta / screenHeight)).clamp(
+      0.0,
+      1.0,
+    );
+    _secondFloorController.value = next;
+  }
+
+  void _onSecondFloorDragEnd(DragEndDetails details) {
+    final shouldClose = _secondFloorController.value < 0.62;
+    if (shouldClose) {
+      unawaited(_closeSecondFloor());
+      return;
+    }
+    unawaited(_animateSecondFloorTo(1));
+  }
+
   void _onActiveTabScrollOffsetChanged(double offset) {
     final next = (offset / 96).clamp(0.0, 1.0);
     if ((_headerScrollFactor - next).abs() < 0.01 || !mounted) {
@@ -1048,43 +1520,102 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
     );
     final categoryNameMap = _buildCategoryNameMap();
 
-    return Scaffold(
-      body: Column(
-        children: [
-          _buildTopHeader(theme, easedHeaderFactor),
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: _feeds.asMap().entries.map((entry) {
-                final index = entry.key;
-                final feed = entry.value;
+    return PopScope<void>(
+      canPop: !_secondFloorOpened,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) {
+          return;
+        }
+        if (_secondFloorOpened || _secondFloorController.value > 0) {
+          unawaited(_closeSecondFloor());
+        }
+      },
+      child: Scaffold(
+        body: AnimatedBuilder(
+          animation: _secondFloorController,
+          builder: (context, _) {
+            final progress = _secondFloorController.value.clamp(0.0, 1.0);
+            final baseShift = lerpDouble(
+              0,
+              MediaQuery.sizeOf(context).height * 0.78,
+              progress,
+            )!;
+            final showSecondFloor = progress > 0.0001;
+            final secondFloorInteractive =
+                _secondFloorOpened || progress >= 0.999;
 
-                _tabKeys[index] ??= GlobalKey<_TopicListTabState>();
+            return Stack(
+              children: [
+                Transform.translate(
+                  offset: Offset(0, baseShift),
+                  child: IgnorePointer(
+                    ignoring: secondFloorInteractive,
+                    child: Column(
+                      children: [
+                        _buildTopHeader(
+                          theme,
+                          easedHeaderFactor,
+                          secondFloorProgress: progress,
+                        ),
+                        Expanded(
+                          child: TabBarView(
+                            controller: _tabController,
+                            children: _feeds.asMap().entries.map((entry) {
+                              final index = entry.key;
+                              final feed = entry.value;
 
-                return _TopicListTab(
-                  key: _tabKeys[index],
-                  dependencies: widget.dependencies,
-                  feed: feed,
-                  boardId: _selectedBoardId,
-                  categoryNameMap: categoryNameMap,
-                  filterVersion: _filterVersion,
-                  showInlineRealtimeHint:
-                      _showPostsRealtimeRefreshBanner &&
-                      _hasRealtimeTopicUpdate,
-                  onConsumeRealtimeUpdate: _consumeRealtimeTopicUpdate,
-                  onDismissRealtimeUpdate: _dismissRealtimeTopicUpdateHint,
-                  onTopicsSnapshotChanged: _onTabTopicsSnapshotChanged,
-                  onScrollOffsetChanged: (offset) {
-                    if (_tabController.index != index) {
-                      return;
-                    }
-                    _onActiveTabScrollOffsetChanged(offset);
-                  },
-                );
-              }).toList(),
-            ),
-          ),
-        ],
+                              _tabKeys[index] ??=
+                                  GlobalKey<_TopicListTabState>();
+
+                              return _TopicListTab(
+                                key: _tabKeys[index],
+                                dependencies: widget.dependencies,
+                                feed: feed,
+                                boardId: _selectedBoardId,
+                                categoryNameMap: categoryNameMap,
+                                filterVersion: _filterVersion,
+                                showInlineRealtimeHint:
+                                    _showPostsRealtimeRefreshBanner &&
+                                    _hasRealtimeTopicUpdate,
+                                onConsumeRealtimeUpdate:
+                                    _consumeRealtimeTopicUpdate,
+                                onDismissRealtimeUpdate:
+                                    _dismissRealtimeTopicUpdateHint,
+                                onTopicsSnapshotChanged:
+                                    _onTabTopicsSnapshotChanged,
+                                onScrollOffsetChanged: (offset) {
+                                  if (_tabController.index != index) {
+                                    return;
+                                  }
+                                  _onActiveTabScrollOffsetChanged(offset);
+                                },
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                IgnorePointer(
+                  ignoring: !showSecondFloor,
+                  child: _PostsSecondFloorLayer(
+                    progress: progress,
+                    feedLabel: _feeds[_tabController.index].label,
+                    armed: _secondFloorArmed,
+                    bottomBarHeight: _secondFloorBottomBarHeight,
+                    bottomNavigationReserveHeight:
+                        _secondFloorBottomNavReserveHeight,
+                    interactive: secondFloorInteractive,
+                    onClose: _closeSecondFloor,
+                    onDragUpdate: _onSecondFloorDragUpdate,
+                    onDragEnd: _onSecondFloorDragEnd,
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -1201,9 +1732,14 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildTopHeader(ThemeData theme, double t) {
+  Widget _buildTopHeader(
+    ThemeData theme,
+    double t, {
+    required double secondFloorProgress,
+  }) {
     final topInset = MediaQuery.paddingOf(context).top;
     final collapse = t.clamp(0.0, 1.0);
+    final secondFloorFade = (1 - secondFloorProgress).clamp(0.0, 1.0);
     const titleSize = 21.0;
     final subtitleVisibility = (1.0 - collapse).clamp(0.0, 1.0);
     final borderAlpha = lerpDouble(0.18, 0.26, collapse)!;
@@ -1243,110 +1779,120 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 8, 8),
-                  child: SizedBox(
-                    height: 44,
-                    child: Stack(
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.only(right: 188),
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  '帖子',
-                                  textAlign: TextAlign.left,
-                                  style: theme.textTheme.titleLarge?.copyWith(
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: -0.2,
-                                    fontSize: titleSize,
+                GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onVerticalDragUpdate: _onHeaderDragUpdate,
+                  onVerticalDragEnd: _onHeaderDragEnd,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 8, 8),
+                    child: SizedBox(
+                      height: 44,
+                      child: Stack(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(right: 188),
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '帖子',
+                                    textAlign: TextAlign.left,
+                                    style: theme.textTheme.titleLarge?.copyWith(
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: -0.2,
+                                      fontSize: titleSize,
+                                    ),
                                   ),
-                                ),
-                                ClipRect(
-                                  child: Align(
-                                    alignment: Alignment.centerLeft,
-                                    heightFactor: subtitleVisibility,
-                                    child: Opacity(
-                                      opacity: subtitleVisibility,
-                                      child: Text(
-                                        _feeds[_tabController.index].label,
-                                        style: theme.textTheme.labelMedium
-                                            ?.copyWith(
-                                              color: theme
-                                                  .colorScheme
-                                                  .onSurfaceVariant,
-                                            ),
+                                  ClipRect(
+                                    child: Align(
+                                      alignment: Alignment.centerLeft,
+                                      heightFactor: subtitleVisibility,
+                                      child: Opacity(
+                                        opacity: subtitleVisibility,
+                                        child: Text(
+                                          _feeds[_tabController.index].label,
+                                          style: theme.textTheme.labelMedium
+                                              ?.copyWith(
+                                                color: theme
+                                                    .colorScheme
+                                                    .onSurfaceVariant,
+                                              ),
+                                        ),
                                       ),
                                     ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _buildOnlineUsersPill(theme),
+                                const SizedBox(width: 8),
+                                IconButton.filledTonal(
+                                  onPressed: _openSearchPage,
+                                  tooltip: '搜索',
+                                  icon: Hero(
+                                    tag: postsSearchHeroTag,
+                                    child: const Icon(Icons.search_rounded),
                                   ),
                                 ),
                               ],
                             ),
                           ),
-                        ),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              _buildOnlineUsersPill(theme),
-                              const SizedBox(width: 8),
-                              IconButton.filledTonal(
-                                onPressed: _openSearchPage,
-                                tooltip: '搜索',
-                                icon: Hero(
-                                  tag: postsSearchHeroTag,
-                                  child: const Icon(Icons.search_rounded),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
                 SizedBox(
                   height: 52,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: TabBar(
-                            controller: _tabController,
-                            isScrollable: true,
-                            tabAlignment: TabAlignment.start,
-                            indicatorColor: theme.colorScheme.primary,
-                            labelColor: theme.colorScheme.primary,
-                            unselectedLabelColor:
-                                theme.colorScheme.onSurfaceVariant,
-                            indicatorSize: TabBarIndicatorSize.label,
-                            dividerColor: Colors.transparent,
-                            labelStyle: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 15,
+                  child: Opacity(
+                    opacity: secondFloorFade,
+                    child: IgnorePointer(
+                      ignoring: secondFloorFade <= 0.01,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: TabBar(
+                                controller: _tabController,
+                                isScrollable: true,
+                                tabAlignment: TabAlignment.start,
+                                indicatorColor: theme.colorScheme.primary,
+                                labelColor: theme.colorScheme.primary,
+                                unselectedLabelColor:
+                                    theme.colorScheme.onSurfaceVariant,
+                                indicatorSize: TabBarIndicatorSize.label,
+                                dividerColor: Colors.transparent,
+                                labelStyle: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 15,
+                                ),
+                                labelPadding: const EdgeInsets.only(right: 24),
+                                tabs: _feeds
+                                    .map((feed) => Tab(text: feed.label))
+                                    .toList(),
+                              ),
                             ),
-                            labelPadding: const EdgeInsets.only(right: 24),
-                            tabs: _feeds
-                                .map((feed) => Tab(text: feed.label))
-                                .toList(),
-                          ),
+                            Container(
+                              width: 1,
+                              height: 20,
+                              color: theme.colorScheme.outlineVariant
+                                  .withValues(alpha: 0.5),
+                              margin: const EdgeInsets.symmetric(horizontal: 8),
+                            ),
+                            _buildBoardFilterButton(theme),
+                          ],
                         ),
-                        Container(
-                          width: 1,
-                          height: 20,
-                          color: theme.colorScheme.outlineVariant.withValues(
-                            alpha: 0.5,
-                          ),
-                          margin: const EdgeInsets.symmetric(horizontal: 8),
-                        ),
-                        _buildBoardFilterButton(theme),
-                      ],
+                      ),
                     ),
                   ),
                 ),
