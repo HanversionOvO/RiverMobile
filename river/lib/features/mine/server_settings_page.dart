@@ -24,9 +24,11 @@ class ServerSettingsPage extends StatefulWidget {
 class _ServerSettingsPageState extends State<ServerSettingsPage> {
   late final TextEditingController _baseUrlController;
   late final TextEditingController _updateUrlController;
+  late final TextEditingController _miniAppsUrlController;
 
   bool _savingBaseUrl = false;
   bool _savingUpdateUrl = false;
+  bool _savingMiniAppsUrl = false;
 
   @override
   void initState() {
@@ -37,12 +39,16 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
     _updateUrlController = TextEditingController(
       text: widget.settingsController.updateManifestUrl,
     );
+    _miniAppsUrlController = TextEditingController(
+      text: widget.settingsController.miniAppsManifestUrl,
+    );
   }
 
   @override
   void dispose() {
     _baseUrlController.dispose();
     _updateUrlController.dispose();
+    _miniAppsUrlController.dispose();
     super.dispose();
   }
 
@@ -103,6 +109,34 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
     await _saveUpdateUrl();
   }
 
+  Future<void> _saveMiniAppsUrl() async {
+    if (_savingMiniAppsUrl) {
+      return;
+    }
+    FocusScope.of(context).unfocus();
+    setState(() => _savingMiniAppsUrl = true);
+    try {
+      final normalized = RiverServerConfig.normalizeUrl(
+        _miniAppsUrlController.text,
+      );
+      await _validateMiniAppsManifestUrl(normalized);
+      widget.settingsController.updateMiniAppsManifestUrl(normalized);
+      _miniAppsUrlController.text = normalized;
+      _showMessage('小程序清单链接已更新');
+    } catch (error) {
+      _showMessage('小程序清单校验失败：$error');
+    } finally {
+      if (mounted) {
+        setState(() => _savingMiniAppsUrl = false);
+      }
+    }
+  }
+
+  Future<void> _restoreDefaultMiniAppsUrl() async {
+    _miniAppsUrlController.text = RiverServerConfig.defaultMiniAppsManifestUrl;
+    await _saveMiniAppsUrl();
+  }
+
   Future<void> _validateForumBaseUrl(String baseUrl) async {
     final uri = Uri.parse('$baseUrl/about.json');
     final response = await http
@@ -137,6 +171,33 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
     final version = (decoded['version'] ?? '').toString().trim();
     if (version.isEmpty) {
       throw const FormatException('缺少 version 字段');
+    }
+  }
+
+  Future<void> _validateMiniAppsManifestUrl(String manifestUrl) async {
+    final response = await http
+        .get(
+          Uri.parse(manifestUrl),
+          headers: const <String, String>{'Accept': 'application/json'},
+        )
+        .timeout(const Duration(seconds: 10));
+    if (response.statusCode != 200) {
+      throw Exception('HTTP ${response.statusCode}');
+    }
+    final decoded = jsonDecode(response.body);
+    if (decoded is List) {
+      return;
+    }
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('返回格式异常');
+    }
+    final apps =
+        decoded['apps'] ??
+        decoded['mini_apps'] ??
+        decoded['miniApps'] ??
+        decoded['data'];
+    if (apps is! List) {
+      throw const FormatException('缺少小程序列表字段（apps）');
     }
   }
 
@@ -253,6 +314,53 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
             ),
           ),
           const SizedBox(height: 14),
+          _SettingsSection(
+            title: '小程序清单链接',
+            subtitle: '保存前会校验 JSON 与 apps 列表格式',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: _miniAppsUrlController,
+                  keyboardType: TextInputType.url,
+                  textInputAction: TextInputAction.done,
+                  maxLines: 2,
+                  minLines: 1,
+                  decoration: const InputDecoration(
+                    labelText: '清单链接',
+                    hintText: 'https://example.com/miniapps.json',
+                    prefixIcon: Icon(Icons.widgets_outlined),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: _savingMiniAppsUrl
+                          ? null
+                          : _restoreDefaultMiniAppsUrl,
+                      icon: const Icon(Icons.restart_alt_rounded),
+                      label: const Text('恢复默认'),
+                    ),
+                    FilledButton.icon(
+                      onPressed: _savingMiniAppsUrl ? null : _saveMiniAppsUrl,
+                      icon: _savingMiniAppsUrl
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.verified_rounded),
+                      label: const Text('验证并保存'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
           AnimatedBuilder(
             animation: widget.settingsController,
             builder: (context, _) {
@@ -284,6 +392,13 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
                     const SizedBox(height: 4),
                     Text(
                       '更新源：${widget.settingsController.updateManifestUrl}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '小程序：${widget.settingsController.miniAppsManifestUrl}',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),

@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>React 示例小程序</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <style>
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; background:#f7f8fc; color:#1f2937; }
+    .wrap { padding: 20px; }
+    .card { background:#fff; border-radius:16px; padding:16px; box-shadow: 0 10px 28px rgba(0,0,0,.07); margin-bottom:12px; }
+    .btn { border:0; border-radius:10px; padding:10px 14px; background:#2174F1; color:#fff; font-weight:600; margin-right:8px; margin-top:8px; cursor:pointer; }
+    pre { white-space: pre-wrap; word-break: break-word; font-size:12px; background:#f3f4f6; border-radius:10px; padding:10px; }
+    .muted { color:#6b7280; font-size:13px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script>
+    const h = React.createElement;
+
+    function App() {
+      const [count, setCount] = React.useState(0);
+      const [output, setOutput] = React.useState('等待操作...');
+
+      const call = React.useCallback(async (action, payload = {}) => {
+        if (!window.RiverMiniApp || !window.RiverMiniApp.call) {
+          setOutput('Bridge 未就绪');
+          return null;
+        }
+        try {
+          const res = await window.RiverMiniApp.call(action, payload);
+          setOutput(JSON.stringify(res, null, 2));
+          return res;
+        } catch (e) {
+          setOutput(JSON.stringify({ error: String(e) }, null, 2));
+          return null;
+        }
+      }, []);
+
+      React.useEffect(() => {
+        const handler = () => setOutput('Bridge 已就绪，欢迎测试 React 示例。');
+        window.addEventListener('river-miniapp-ready', handler);
+        return () => window.removeEventListener('river-miniapp-ready', handler);
+      }, []);
+
+      return h('div', { className: 'wrap' }, [
+        h('div', { className: 'card', key: 'c1' }, [
+          h('h3', { style: { margin: '0 0 8px' } }, 'React 示例小程序'),
+          h('div', { className: 'muted' }, '演示 React + RiverMiniApp Bridge 的基础联动'),
+          h('p', null, ['计数器：', h('b', { key: 'b' }, String(count))]),
+          h('button', { className: 'btn', onClick: () => setCount((v) => v + 1) }, '+1'),
+          h('button', { className: 'btn', onClick: () => call('getContext') }, '获取上下文'),
+          h('button', { className: 'btn', onClick: () => call('setTitle', { title: 'React 示例（已连接）' }) }, '改标题'),
+          h('button', { className: 'btn', onClick: () => call('close') }, '关闭'),
+        ]),
+        h('div', { className: 'card', key: 'c2' }, [
+          h('div', { style: { fontWeight: 700, marginBottom: 8 } }, 'Bridge 返回'),
+          h('pre', null, output),
+        ]),
+      ]);
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(h(App));
+  </script>
+</body>
+</html>
+

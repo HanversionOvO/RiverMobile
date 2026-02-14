@@ -31,6 +31,7 @@ class AppSettingsController extends ChangeNotifier {
       'app.topic_comments_realtime_refresh_banner';
   static const String _riverSideBaseUrlKey = 'app.riverside_base_url';
   static const String _updateManifestUrlKey = 'app.update_manifest_url';
+  static const String _miniAppsManifestUrlKey = 'app.mini_apps_manifest_url';
   static const String _aiProviderKey = 'app.ai_provider';
   static const String _aiBaseUrlKey = 'app.ai_base_url';
   static const String _aiModelKey = 'app.ai_model';
@@ -59,6 +60,7 @@ class AppSettingsController extends ChangeNotifier {
   bool _showTopicCommentsRealtimeRefreshBanner = true;
   String _riverSideBaseUrl = RiverServerConfig.defaultBaseUrl;
   String _updateManifestUrl = RiverServerConfig.defaultUpdateManifestUrl;
+  String _miniAppsManifestUrl = RiverServerConfig.defaultMiniAppsManifestUrl;
   AppAiProvider _aiProvider = AppAiProvider.deepseek;
   String _aiBaseUrl = defaultAiBaseUrl;
   String _aiModel = defaultAiModel;
@@ -84,6 +86,7 @@ class AppSettingsController extends ChangeNotifier {
       _showTopicCommentsRealtimeRefreshBanner;
   String get riverSideBaseUrl => _riverSideBaseUrl;
   String get updateManifestUrl => _updateManifestUrl;
+  String get miniAppsManifestUrl => _miniAppsManifestUrl;
   AppAiProvider get aiProvider => _aiProvider;
   String get aiBaseUrl => _aiBaseUrl;
   String get aiModel => _aiModel;
@@ -184,6 +187,15 @@ class AppSettingsController extends ChangeNotifier {
       }
     }
 
+    final rawMiniAppsUrl = _prefs?.getString(_miniAppsManifestUrlKey);
+    if (rawMiniAppsUrl != null && rawMiniAppsUrl.trim().isNotEmpty) {
+      try {
+        _miniAppsManifestUrl = RiverServerConfig.normalizeUrl(rawMiniAppsUrl);
+      } catch (_) {
+        _miniAppsManifestUrl = RiverServerConfig.defaultMiniAppsManifestUrl;
+      }
+    }
+
     final aiProviderRaw = _prefs?.getString(_aiProviderKey);
     if (aiProviderRaw != null) {
       for (final provider in AppAiProvider.values) {
@@ -228,6 +240,7 @@ class AppSettingsController extends ChangeNotifier {
     RiverServerConfig.instance.apply(
       baseUrl: _riverSideBaseUrl,
       updateManifestUrl: _updateManifestUrl,
+      miniAppsManifestUrl: _miniAppsManifestUrl,
     );
   }
 
@@ -362,6 +375,17 @@ class AppSettingsController extends ChangeNotifier {
     RiverServerConfig.instance.setUpdateManifestUrl(normalized);
     notifyListeners();
     unawaited(_saveUpdateManifestUrl());
+  }
+
+  void updateMiniAppsManifestUrl(String value) {
+    final normalized = RiverServerConfig.normalizeUrl(value);
+    if (_miniAppsManifestUrl == normalized) {
+      return;
+    }
+    _miniAppsManifestUrl = normalized;
+    RiverServerConfig.instance.setMiniAppsManifestUrl(normalized);
+    notifyListeners();
+    unawaited(_saveMiniAppsManifestUrl());
   }
 
   void updateAiProvider(AppAiProvider value) {
@@ -552,6 +576,11 @@ class AppSettingsController extends ChangeNotifier {
   Future<void> _saveUpdateManifestUrl() async {
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs!.setString(_updateManifestUrlKey, _updateManifestUrl);
+  }
+
+  Future<void> _saveMiniAppsManifestUrl() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_miniAppsManifestUrlKey, _miniAppsManifestUrl);
   }
 
   Future<void> _saveAiProvider() async {

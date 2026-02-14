@@ -7,10 +7,14 @@ import 'package:flutter/material.dart';
 import 'package:river/app/app_dependencies.dart';
 import 'package:river/core/categories/riverside_category_utils.dart';
 import 'package:river/core/categories/riverside_category_store.dart';
+import 'package:river/core/mini_apps/river_mini_app_install_store.dart';
+import 'package:river/core/mini_apps/river_mini_app_models.dart';
+import 'package:river/core/mini_apps/river_mini_app_repository.dart';
 import 'package:river/core/network/riverside_api_client.dart';
 import 'package:river/core/network/riverside_message_bus_models.dart';
 import 'package:river/core/network/riverside_topic_models.dart';
 import 'package:river/core/realtime/riverside_message_bus_poller.dart';
+import 'package:river/features/mini_apps/mini_app_webview_page.dart';
 import 'package:river/features/mine/riverside_profile_sheet.dart';
 import 'package:river/features/search/search_page.dart';
 import 'package:river/core/widgets/riverside_category_picker_sheet.dart';
@@ -46,6 +50,14 @@ class _PostsSecondFloorLayer extends StatelessWidget {
   const _PostsSecondFloorLayer({
     required this.progress,
     required this.feedLabel,
+    required this.miniApps,
+    required this.onlineMiniApps,
+    required this.loadingMiniApps,
+    required this.miniAppsError,
+    required this.onOpenMiniApp,
+    required this.onOpenMiniAppSearch,
+    required this.onOpenMiniAppManage,
+    required this.onRefreshMiniApps,
     required this.bottomBarHeight,
     required this.bottomNavigationReserveHeight,
     required this.interactive,
@@ -56,6 +68,14 @@ class _PostsSecondFloorLayer extends StatelessWidget {
 
   final double progress;
   final String feedLabel;
+  final List<RiverMiniAppEntry> miniApps;
+  final List<RiverMiniAppEntry> onlineMiniApps;
+  final bool loadingMiniApps;
+  final String? miniAppsError;
+  final ValueChanged<RiverMiniAppEntry> onOpenMiniApp;
+  final VoidCallback onOpenMiniAppSearch;
+  final VoidCallback onOpenMiniAppManage;
+  final VoidCallback onRefreshMiniApps;
   final double bottomBarHeight;
   final double bottomNavigationReserveHeight;
   final bool interactive;
@@ -132,6 +152,12 @@ class _PostsSecondFloorLayer extends StatelessWidget {
                                   ),
                                 ),
                                 const Spacer(),
+                                IconButton(
+                                  tooltip: '搜索小程序',
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: onOpenMiniAppSearch,
+                                  icon: const Icon(Icons.search_rounded),
+                                ),
                                 IconButton(
                                   tooltip: '关闭',
                                   visualDensity: VisualDensity.compact,
@@ -225,63 +251,133 @@ class _PostsSecondFloorLayer extends StatelessWidget {
                                     fontWeight: FontWeight.w700,
                                   ),
                                 ),
-                                const SizedBox(height: 10),
-                                LayoutBuilder(
-                                  builder: (context, constraints) {
-                                    const spacing = 10.0;
-                                    final itemWidth =
-                                        (constraints.maxWidth - spacing * 3) /
-                                        4;
-                                    final miniApps = const [
-                                      _SecondFloorMiniAppItem(
-                                        icon: Icons.explore_outlined,
-                                        label: '发现',
-                                      ),
-                                      _SecondFloorMiniAppItem(
-                                        icon: Icons.chat_bubble_outline_rounded,
-                                        label: '消息',
-                                      ),
-                                      _SecondFloorMiniAppItem(
-                                        icon:
-                                            Icons.insert_chart_outlined_rounded,
-                                        label: '统计',
-                                      ),
-                                      _SecondFloorMiniAppItem(
-                                        icon: Icons.palette_outlined,
-                                        label: '主题',
-                                      ),
-                                      _SecondFloorMiniAppItem(
-                                        icon: Icons.book_outlined,
-                                        label: '草稿',
-                                      ),
-                                      _SecondFloorMiniAppItem(
-                                        icon: Icons.task_alt_rounded,
-                                        label: '待办',
-                                      ),
-                                      _SecondFloorMiniAppItem(
-                                        icon: Icons.image_outlined,
-                                        label: '图集',
-                                      ),
-                                      _SecondFloorMiniAppItem(
-                                        icon: Icons.more_horiz_rounded,
-                                        label: '更多',
-                                      ),
-                                    ];
-                                    return Wrap(
-                                      spacing: spacing,
-                                      runSpacing: spacing,
-                                      children: miniApps
-                                          .map(
-                                            (item) => SizedBox(
-                                              width: itemWidth,
-                                              height: itemWidth * 0.95,
-                                              child: item,
-                                            ),
-                                          )
-                                          .toList(growable: false),
-                                    );
-                                  },
+                                const SizedBox(height: 6),
+                                Text(
+                                  '长按小程序可排序或删除',
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
                                 ),
+                                const SizedBox(height: 10),
+                                if (loadingMiniApps && miniApps.isEmpty)
+                                  const Padding(
+                                    padding: EdgeInsets.symmetric(vertical: 18),
+                                    child: Center(
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2.2,
+                                      ),
+                                    ),
+                                  )
+                                else if ((miniAppsError ?? '').isNotEmpty &&
+                                    miniApps.isEmpty)
+                                  Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color:
+                                          theme.colorScheme.surfaceContainerLow,
+                                      borderRadius: BorderRadius.circular(14),
+                                      border: Border.all(
+                                        color: theme.colorScheme.outlineVariant
+                                            .withValues(alpha: 0.4),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            miniAppsError!,
+                                            style: theme.textTheme.bodySmall
+                                                ?.copyWith(
+                                                  color: theme
+                                                      .colorScheme
+                                                      .onSurfaceVariant,
+                                                ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        OutlinedButton.icon(
+                                          onPressed: onRefreshMiniApps,
+                                          icon: const Icon(
+                                            Icons.refresh_rounded,
+                                            size: 16,
+                                          ),
+                                          label: const Text('重试'),
+                                        ),
+                                      ],
+                                    ),
+                                  )
+                                else if (miniApps.isEmpty)
+                                  Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color:
+                                          theme.colorScheme.surfaceContainerLow,
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          Icons.widgets_outlined,
+                                          color: theme
+                                              .colorScheme
+                                              .onSurfaceVariant,
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Text(
+                                            onlineMiniApps.isEmpty
+                                                ? '暂无可用小程序，请先检查小程序清单地址。'
+                                                : '暂无已添加小程序，请点击右上角搜索并添加。',
+                                            style: theme.textTheme.bodySmall
+                                                ?.copyWith(
+                                                  color: theme
+                                                      .colorScheme
+                                                      .onSurfaceVariant,
+                                                ),
+                                          ),
+                                        ),
+                                        IconButton(
+                                          tooltip: '刷新',
+                                          onPressed: onRefreshMiniApps,
+                                          icon: const Icon(
+                                            Icons.refresh_rounded,
+                                            size: 18,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  )
+                                else
+                                  LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      const spacing = 10.0;
+                                      final itemWidth =
+                                          (constraints.maxWidth - spacing * 3) /
+                                          4;
+                                      return Wrap(
+                                        spacing: spacing,
+                                        runSpacing: spacing,
+                                        children: miniApps
+                                            .map(
+                                              (item) => SizedBox(
+                                                width: itemWidth,
+                                                height: itemWidth * 0.95,
+                                                child: _SecondFloorMiniAppItem(
+                                                  icon: Icons.widgets_outlined,
+                                                  iconUrl: item.iconUrl,
+                                                  label: item.name,
+                                                  tooltip: item.description,
+                                                  onTap: () =>
+                                                      onOpenMiniApp(item),
+                                                  onLongPress:
+                                                      onOpenMiniAppManage,
+                                                ),
+                                              ),
+                                            )
+                                            .toList(growable: false),
+                                      );
+                                    },
+                                  ),
                               ],
                             ),
                           ),
@@ -402,36 +498,239 @@ class _SecondFloorQuickChip extends StatelessWidget {
 }
 
 class _SecondFloorMiniAppItem extends StatelessWidget {
-  const _SecondFloorMiniAppItem({required this.icon, required this.label});
+  const _SecondFloorMiniAppItem({
+    required this.icon,
+    required this.label,
+    this.iconUrl = '',
+    this.tooltip = '',
+    this.onTap,
+    this.onLongPress,
+  });
 
   final IconData icon;
   final String label;
+  final String iconUrl;
+  final String tooltip;
+  final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerLow,
+    final avatarUrl = iconUrl.trim();
+    final initials = label.trim().isEmpty ? 'A' : label.trim().substring(0, 1);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        onLongPress: onLongPress,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.22),
-        ),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: 22, color: theme.colorScheme.primary),
-          const SizedBox(height: 7),
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.labelMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+        child: Ink(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.22),
             ),
           ),
-        ],
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (avatarUrl.isEmpty)
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary.withValues(alpha: 0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(icon, size: 18, color: theme.colorScheme.primary),
+                )
+              else
+                ClipOval(
+                  child: Image.network(
+                    avatarUrl,
+                    width: 28,
+                    height: 28,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, errorObject, stackTraceObject) =>
+                        Container(
+                          width: 28,
+                          height: 28,
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.primary.withValues(
+                              alpha: 0.15,
+                            ),
+                            shape: BoxShape.circle,
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            initials,
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.primary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                  ),
+                ),
+              const SizedBox(height: 7),
+              Tooltip(
+                message: tooltip.trim().isEmpty ? label : tooltip,
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OnlineMiniAppSearchTile extends StatelessWidget {
+  const _OnlineMiniAppSearchTile({
+    required this.app,
+    required this.installed,
+    required this.installing,
+    required this.onOpen,
+    required this.onInstall,
+  });
+
+  final RiverMiniAppEntry app;
+  final bool installed;
+  final bool installing;
+  final VoidCallback onOpen;
+  final VoidCallback onInstall;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final iconUrl = app.iconUrl.trim();
+    final initials = app.name.trim().isEmpty ? 'A' : app.name.trim()[0];
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: installed ? onOpen : onInstall,
+        child: Ink(
+          padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.24),
+            ),
+          ),
+          child: Row(
+            children: [
+              if (iconUrl.isEmpty)
+                CircleAvatar(
+                  radius: 18,
+                  backgroundColor: theme.colorScheme.primary.withValues(
+                    alpha: 0.14,
+                  ),
+                  child: Text(
+                    initials,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                )
+              else
+                ClipOval(
+                  child: Image.network(
+                    iconUrl,
+                    width: 36,
+                    height: 36,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, errorObject, stackTraceObject) =>
+                        CircleAvatar(
+                          radius: 18,
+                          backgroundColor: theme.colorScheme.primary.withValues(
+                            alpha: 0.14,
+                          ),
+                          child: Text(
+                            initials,
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              color: theme.colorScheme.primary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                  ),
+                ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      app.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    if (app.description.trim().isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        app.description,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (installing)
+                const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2.2),
+                )
+              else if (installed)
+                FilledButton.tonal(
+                  onPressed: onOpen,
+                  style: FilledButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 2,
+                    ),
+                  ),
+                  child: const Text('打开'),
+                )
+              else
+                FilledButton.tonalIcon(
+                  onPressed: onInstall,
+                  style: FilledButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 2,
+                    ),
+                  ),
+                  icon: const Icon(Icons.add_rounded, size: 16),
+                  label: const Text('添加'),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -496,6 +795,15 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
   bool _secondFloorArmed = false;
   bool _secondFloorVisibleForParent = false;
   bool _secondFloorOpened = false;
+  final RiverMiniAppRepository _miniAppRepository = RiverMiniAppRepository();
+  final RiverMiniAppInstallStore _miniAppInstallStore =
+      RiverMiniAppInstallStore();
+  List<RiverMiniAppEntry> _miniApps = const <RiverMiniAppEntry>[];
+  List<RiverMiniAppEntry> _onlineMiniApps = const <RiverMiniAppEntry>[];
+  final Set<String> _installingMiniAppIds = <String>{};
+  bool _loadingMiniApps = false;
+  String? _miniAppsError;
+  String _lastMiniAppsManifestUrl = '';
 
   @override
   void initState() {
@@ -515,7 +823,11 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
       reverseDuration: const Duration(milliseconds: 260),
     );
     _secondFloorController.addListener(_onSecondFloorProgressChanged);
+    _lastMiniAppsManifestUrl =
+        widget.dependencies.settingsController.miniAppsManifestUrl;
     _loadCategories();
+    unawaited(_loadInstalledMiniApps());
+    unawaited(_loadMiniApps(forceRefresh: false));
     _restartRealtimePolling();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -560,6 +872,12 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
   }
 
   void _onRefreshBannerSettingsChanged() {
+    final nextMiniAppsManifestUrl =
+        widget.dependencies.settingsController.miniAppsManifestUrl;
+    if (nextMiniAppsManifestUrl != _lastMiniAppsManifestUrl) {
+      _lastMiniAppsManifestUrl = nextMiniAppsManifestUrl;
+      unawaited(_loadMiniApps(forceRefresh: true));
+    }
     if (!mounted) {
       return;
     }
@@ -593,6 +911,7 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
       _knownUserPreviewsByUsername.clear();
     });
     _loadCategories();
+    unawaited(_loadMiniApps(forceRefresh: true));
     unawaited(_scrollToTopAndRefresh());
     _restartRealtimePolling();
   }
@@ -1042,6 +1361,748 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
   Future<void> _scrollToTopAndRefresh() async {
     final key = _tabKeys[_tabController.index];
     key?.currentState?.scrollToTopAndRefresh();
+  }
+
+  Future<void> _loadInstalledMiniApps() async {
+    final installed = await _miniAppInstallStore.loadInstalledApps();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _miniApps = _mergeInstalledWithCatalog(
+        installed: installed,
+        catalog: _onlineMiniApps,
+      );
+    });
+  }
+
+  List<RiverMiniAppEntry> _mergeInstalledWithCatalog({
+    required List<RiverMiniAppEntry> installed,
+    required List<RiverMiniAppEntry> catalog,
+  }) {
+    if (installed.isEmpty) {
+      return const <RiverMiniAppEntry>[];
+    }
+    if (catalog.isEmpty) {
+      return List<RiverMiniAppEntry>.unmodifiable(installed);
+    }
+    final catalogById = <String, RiverMiniAppEntry>{
+      for (final item in catalog) item.id: item,
+    };
+    final merged =
+        installed
+            .map((item) {
+              final fromCatalog = catalogById[item.id];
+              if (fromCatalog == null) {
+                return item;
+              }
+              return fromCatalog.copyWith(
+                localEntryFilePath: item.localEntryFilePath,
+                installedAtMillis: item.installedAtMillis,
+                order: item.order,
+              );
+            })
+            .toList(growable: false)
+          ..sort((a, b) {
+            final order = a.order.compareTo(b.order);
+            if (order != 0) {
+              return order;
+            }
+            return a.name.compareTo(b.name);
+          });
+    return List<RiverMiniAppEntry>.unmodifiable(merged);
+  }
+
+  Future<void> _loadMiniApps({required bool forceRefresh}) async {
+    if (_loadingMiniApps || !mounted) {
+      return;
+    }
+    setState(() {
+      _loadingMiniApps = true;
+      _miniAppsError = null;
+    });
+    try {
+      final manifest = await _miniAppRepository.load(
+        manifestUrl: widget.dependencies.settingsController.miniAppsManifestUrl,
+        cookieHeader: _activeCookieHeader(),
+        forceRefresh: forceRefresh,
+      );
+      if (!mounted) {
+        return;
+      }
+      final catalog = List<RiverMiniAppEntry>.unmodifiable(manifest.entries);
+      setState(() {
+        _onlineMiniApps = catalog;
+        _miniApps = _mergeInstalledWithCatalog(
+          installed: _miniApps,
+          catalog: catalog,
+        );
+        _loadingMiniApps = false;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _loadingMiniApps = false;
+        _miniAppsError = '$error';
+      });
+    }
+  }
+
+  Future<void> _installMiniApp(RiverMiniAppEntry app) async {
+    if (_installingMiniAppIds.contains(app.id)) {
+      return;
+    }
+    setState(() {
+      _installingMiniAppIds.add(app.id);
+    });
+    try {
+      final installed = await _miniAppInstallStore.install(
+        app: app,
+        cookieHeader: _activeCookieHeader(),
+      );
+      if (!mounted) {
+        return;
+      }
+      final next = <String, RiverMiniAppEntry>{
+        for (final item in _miniApps) item.id: item,
+      };
+      next[installed.id] = installed;
+      final merged = _mergeInstalledWithCatalog(
+        installed: next.values.toList(growable: false),
+        catalog: _onlineMiniApps,
+      );
+      setState(() {
+        _miniApps = merged;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('已添加 ${installed.name}'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      final raw = '$error';
+      final hint = raw.toLowerCase().contains('connection closed while receiving data')
+          ? '\n请检查小程序服务器是否稳定在线，并重试。'
+          : '';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('添加小程序失败：$raw$hint'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _installingMiniAppIds.remove(app.id);
+        });
+      }
+    }
+  }
+
+  Future<void> _openMiniAppSearchSheet() async {
+    final theme = Theme.of(context);
+    final controller = TextEditingController();
+    Timer? debounce;
+    var loading = false;
+    var query = '';
+    var results = <RiverMiniAppEntry>[];
+    final localInstallingIds = <String>{};
+    BuildContext? sheetContext;
+
+    Future<void> search(StateSetter setModalState, String raw) async {
+      final q = raw.trim();
+      query = q;
+      if (q.isEmpty) {
+        if (sheetContext?.mounted != true) {
+          return;
+        }
+        setModalState(() {
+          loading = false;
+          results = const <RiverMiniAppEntry>[];
+        });
+        return;
+      }
+      if (sheetContext?.mounted != true) {
+        return;
+      }
+      setModalState(() => loading = true);
+      try {
+        final found = await _miniAppRepository.search(
+          manifestUrl:
+              widget.dependencies.settingsController.miniAppsManifestUrl,
+          query: q,
+          cookieHeader: _activeCookieHeader(),
+        );
+        if (!mounted || query != q || sheetContext?.mounted != true) {
+          return;
+        }
+        setModalState(() {
+          loading = false;
+          results = found;
+        });
+      } catch (_) {
+        if (!mounted || query != q || sheetContext?.mounted != true) {
+          return;
+        }
+        setModalState(() {
+          loading = false;
+          results = const <RiverMiniAppEntry>[];
+        });
+      }
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      requestFocus: false,
+      backgroundColor: theme.colorScheme.surface,
+      builder: (context) {
+        sheetContext = context;
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final installedIds = _miniApps.map((item) => item.id).toSet();
+            final recommended =
+                _onlineMiniApps
+                    .where((item) => item.enabled)
+                    .toList(growable: false)
+                  ..sort((a, b) {
+                    final aInstalled = installedIds.contains(a.id);
+                    final bInstalled = installedIds.contains(b.id);
+                    if (aInstalled != bInstalled) {
+                      return aInstalled ? 1 : -1;
+                    }
+                    final orderCmp = a.order.compareTo(b.order);
+                    if (orderCmp != 0) {
+                      return orderCmp;
+                    }
+                    return a.name.compareTo(b.name);
+                  });
+            final recommendedApps = recommended.take(6).toList(growable: false);
+            final hasSearchText = query.trim().isNotEmpty;
+
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                16,
+                8,
+                16,
+                12 + MediaQuery.paddingOf(context).bottom,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '搜索小程序',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: '刷新在线清单',
+                        onPressed: () {
+                          unawaited(_loadMiniApps(forceRefresh: true));
+                        },
+                        icon: const Icon(Icons.refresh_rounded),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: controller,
+                    autofocus: false,
+                    onChanged: (value) {
+                      setModalState(() {
+                        query = value.trim();
+                        if (query.isEmpty) {
+                          loading = false;
+                          results = const <RiverMiniAppEntry>[];
+                        }
+                      });
+                      debounce?.cancel();
+                      debounce = Timer(const Duration(milliseconds: 280), () {
+                        unawaited(search(setModalState, value));
+                      });
+                    },
+                    decoration: const InputDecoration(
+                      hintText: '输入关键字搜索并添加',
+                      prefixIcon: Icon(Icons.search_rounded),
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Flexible(
+                    child: !hasSearchText
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '推荐小程序',
+                                style: theme.textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              if (recommendedApps.isEmpty)
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(14),
+                                  decoration: BoxDecoration(
+                                    color:
+                                        theme.colorScheme.surfaceContainerLow,
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                  child: Text(
+                                    '暂无推荐小程序',
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                )
+                              else
+                                Expanded(
+                                  child: ListView.separated(
+                                    itemCount: recommendedApps.length,
+                                    separatorBuilder: (context, index) =>
+                                        const SizedBox(height: 8),
+                                    itemBuilder: (context, index) {
+                                      final item = recommendedApps[index];
+                                      final installed = installedIds.contains(
+                                        item.id,
+                                      );
+                                      final installing = localInstallingIds
+                                          .contains(item.id);
+                                      return _OnlineMiniAppSearchTile(
+                                        app: item,
+                                        installed: installed,
+                                        installing: installing,
+                                        onOpen: () {
+                                          Navigator.of(context).pop();
+                                          unawaited(_openMiniApp(item));
+                                        },
+                                        onInstall: () async {
+                                          if (installing || installed) {
+                                            return;
+                                          }
+                                          if (sheetContext?.mounted != true) {
+                                            return;
+                                          }
+                                          setModalState(() {
+                                            localInstallingIds.add(item.id);
+                                          });
+                                          await _installMiniApp(item);
+                                          if (!mounted ||
+                                              sheetContext?.mounted != true) {
+                                            return;
+                                          }
+                                          setModalState(() {
+                                            localInstallingIds.remove(item.id);
+                                          });
+                                        },
+                                      );
+                                    },
+                                  ),
+                                ),
+                            ],
+                          )
+                        : loading
+                        ? const Center(
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(vertical: 28),
+                              child: CircularProgressIndicator(),
+                            ),
+                          )
+                        : results.isEmpty
+                        ? Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.surfaceContainerLow,
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Text(
+                              '暂无搜索结果',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          )
+                        : ListView.separated(
+                            shrinkWrap: true,
+                            itemCount: results.length,
+                            separatorBuilder: (_, _) =>
+                                const SizedBox(height: 8),
+                            itemBuilder: (context, index) {
+                              final item = results[index];
+                              final installed = installedIds.contains(item.id);
+                              final installing = localInstallingIds.contains(
+                                item.id,
+                              );
+                              return _OnlineMiniAppSearchTile(
+                                app: item,
+                                installed: installed,
+                                installing: installing,
+                                onOpen: () {
+                                  Navigator.of(context).pop();
+                                  unawaited(_openMiniApp(item));
+                                },
+                                onInstall: () async {
+                                  if (installing || installed) {
+                                    return;
+                                  }
+                                  if (sheetContext?.mounted != true) {
+                                    return;
+                                  }
+                                  setModalState(() {
+                                    localInstallingIds.add(item.id);
+                                  });
+                                  await _installMiniApp(item);
+                                  if (!mounted ||
+                                      sheetContext?.mounted != true) {
+                                    return;
+                                  }
+                                  setModalState(() {
+                                    localInstallingIds.remove(item.id);
+                                  });
+                                },
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    debounce?.cancel();
+    Future<void>.delayed(const Duration(milliseconds: 200), () {
+      controller.dispose();
+    });
+  }
+
+  Future<void> _openMiniAppManageSheet() async {
+    if (_miniApps.isEmpty) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('暂无可管理的小程序'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final draft = List<RiverMiniAppEntry>.from(_miniApps);
+    var changed = false;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final maxHeight = MediaQuery.sizeOf(context).height * 0.78;
+            return SizedBox(
+              height: maxHeight,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '管理我的小程序',
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          child: const Text('完成'),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                    child: Container(
+                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                      decoration: BoxDecoration(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerLow,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.outlineVariant.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 32,
+                            height: 32,
+                            decoration: BoxDecoration(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.primary.withValues(alpha: 0.14),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            alignment: Alignment.center,
+                            child: Icon(
+                              Icons.apps_rounded,
+                              size: 18,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              '共 ${draft.length} 个，拖动右侧手柄调整顺序，点击删除按钮移除',
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: ReorderableListView.builder(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                      itemCount: draft.length,
+                      onReorder: (oldIndex, newIndex) {
+                        setModalState(() {
+                          if (newIndex > oldIndex) {
+                            newIndex -= 1;
+                          }
+                          final item = draft.removeAt(oldIndex);
+                          draft.insert(newIndex, item);
+                          changed = true;
+                        });
+                      },
+                      itemBuilder: (context, index) {
+                        final item = draft[index];
+                        return Container(
+                          key: ValueKey('mini_app_manage_${item.id}'),
+                          margin: const EdgeInsets.only(bottom: 8),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.surface,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .outlineVariant
+                                  .withValues(alpha: 0.24),
+                            ),
+                          ),
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.fromLTRB(
+                              12,
+                              8,
+                              8,
+                              8,
+                            ),
+                            leading: CircleAvatar(
+                              radius: 16,
+                              backgroundColor: Theme.of(
+                                context,
+                              ).colorScheme.primary.withValues(alpha: 0.12),
+                              child: Text(
+                                item.name.trim().isEmpty
+                                    ? 'A'
+                                    : item.name.trim()[0],
+                                style: Theme.of(context).textTheme.labelLarge
+                                    ?.copyWith(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.primary,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                              ),
+                            ),
+                            title: Text(
+                              item.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle: Text(
+                              item.description.trim().isEmpty
+                                  ? item.id
+                                  : item.description,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton.filledTonal(
+                                  tooltip: '删除',
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: () async {
+                                    final confirmed = await showDialog<bool>(
+                                      context: context,
+                                      builder: (context) => AlertDialog(
+                                        title: const Text('删除小程序'),
+                                        content: Text('确定删除“${item.name}”吗？'),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () => Navigator.of(
+                                              context,
+                                            ).pop(false),
+                                            child: const Text('取消'),
+                                          ),
+                                          FilledButton(
+                                            onPressed: () =>
+                                                Navigator.of(context).pop(true),
+                                            child: const Text('删除'),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                    if (confirmed != true) {
+                                      return;
+                                    }
+                                    await _miniAppInstallStore
+                                        .removeInstalledById(item.id);
+                                    if (!context.mounted) {
+                                      return;
+                                    }
+                                    setModalState(() {
+                                      draft.removeWhere(
+                                        (it) => it.id == item.id,
+                                      );
+                                      changed = true;
+                                    });
+                                    if (draft.isEmpty && context.mounted) {
+                                      Navigator.of(context).pop();
+                                    }
+                                  },
+                                  icon: const Icon(
+                                    Icons.delete_outline_rounded,
+                                    size: 18,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                ReorderableDragStartListener(
+                                  index: index,
+                                  child: Container(
+                                    width: 34,
+                                    height: 34,
+                                    decoration: BoxDecoration(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .surfaceContainerHighest
+                                          .withValues(alpha: 0.7),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    alignment: Alignment.center,
+                                    child: const Icon(
+                                      Icons.drag_indicator_rounded,
+                                      size: 20,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (!mounted || !changed) {
+      return;
+    }
+    await _miniAppInstallStore.reorderInstalledByIds(
+      draft.map((item) => item.id).toList(growable: false),
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _miniApps = List<RiverMiniAppEntry>.unmodifiable(draft);
+    });
+  }
+
+  Future<void> _openMiniApp(RiverMiniAppEntry app) async {
+    if (app.requiresAuth) {
+      final username = widget.dependencies.accountStore.activeRiverSideUsername;
+      final cookie = _activeCookieHeader() ?? '';
+      if (username == null || username.isEmpty || cookie.isEmpty) {
+        if (!mounted) {
+          return;
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('该小程序需要先登录 RiverSide 账号'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+    }
+
+    await Navigator.of(context).push(
+      PageRouteBuilder<void>(
+        transitionDuration: const Duration(milliseconds: 360),
+        reverseTransitionDuration: const Duration(milliseconds: 260),
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            MiniAppWebViewPage(dependencies: widget.dependencies, miniApp: app),
+        transitionsBuilder: (_, animation, secondaryAnimation, child) {
+          final slide = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+            reverseCurve: Curves.easeInCubic,
+          );
+          final fade = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOut,
+            reverseCurve: Curves.easeIn,
+          );
+          return FadeTransition(
+            opacity: Tween<double>(begin: 0.7, end: 1).animate(fade),
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, 1),
+                end: Offset.zero,
+              ).animate(slide),
+              child: child,
+            ),
+          );
+        },
+      ),
+    );
   }
 
   void _onTabChanged() {
@@ -1719,6 +2780,22 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
                   child: _PostsSecondFloorLayer(
                     progress: progress,
                     feedLabel: _feeds[_tabController.index].label,
+                    miniApps: _miniApps,
+                    onlineMiniApps: _onlineMiniApps,
+                    loadingMiniApps: _loadingMiniApps,
+                    miniAppsError: _miniAppsError,
+                    onOpenMiniApp: (app) {
+                      unawaited(_openMiniApp(app));
+                    },
+                    onOpenMiniAppSearch: () {
+                      unawaited(_openMiniAppSearchSheet());
+                    },
+                    onOpenMiniAppManage: () {
+                      unawaited(_openMiniAppManageSheet());
+                    },
+                    onRefreshMiniApps: () {
+                      unawaited(_loadMiniApps(forceRefresh: true));
+                    },
                     bottomBarHeight: _secondFloorBottomBarHeight,
                     bottomNavigationReserveHeight:
                         _secondFloorBottomNavReserveHeight,

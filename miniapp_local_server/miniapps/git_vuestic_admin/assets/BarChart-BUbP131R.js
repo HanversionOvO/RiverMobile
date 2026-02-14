@@ -1,0 +1,2 @@
+import{a as t}from"./index-5hc-tclp.js";import{C as o,p as r,a as e,b as s,B as p,L as n,c as i}from"./Dashboard-DTYRInFq.js";import{d as l,b as m,f as u,u as c}from"./index-oECMSn3i.js";import"./useProjects-BcusEAJz.js";import"./ProjectStatusBadge.vue_vue_type_script_setup_true_lang-C2r1XN6z.js";const b=l({__name:"BarChart",props:{data:{},options:{}},setup(_){return o.register(r,e,s,p,n,i),(a,d)=>(m(),u(c(t),{data:a.data,options:a.options},null,8,["data","options"]))}});export{b as default};
+//# sourceMappingURL=BarChart-BUbP131R.js.map

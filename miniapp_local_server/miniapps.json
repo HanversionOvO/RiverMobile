@@ -1,0 +1,158 @@
+{
+  "version": "1.0.0",
+  "updated_at": "2026-02-14T04:49:59.423538+00:00",
+  "apps": [
+    {
+      "id": "local.hello",
+      "name": "本地示例",
+      "version": "1.0.0",
+      "url": "./miniapps/hello/index.html",
+      "icon": "./miniapps/hello/icon.jpg",
+      "package_url": "./packages/local.hello.zip",
+      "package_sha256": "75e99e67bfbe7c7a2b8bf7e2c1ceb331bce7086cc14d7beab1463df6ad232b6d",
+      "description": "本地小程序联调示例",
+      "requires_auth": false,
+      "enabled": true,
+      "order": 1,
+      "bridge_version": "1.0.0",
+      "tags": [
+        "本地",
+        "测试"
+      ]
+    },
+    {
+      "id": "local.vue_demo",
+      "name": "Vue 示例",
+      "version": "1.0.0",
+      "url": "./miniapps/vue_demo/index.html",
+      "icon": "./miniapps/vue_demo/icon.jpg",
+      "package_url": "./packages/local.vue_demo.zip",
+      "package_sha256": "428d16ca210118e908a3d2ff6631c60b53f52233b9e60cd36405656e9746418b",
+      "description": "Vue 3 示例小程序",
+      "requires_auth": false,
+      "enabled": true,
+      "order": 2,
+      "bridge_version": "1.0.0",
+      "tags": [
+        "Vue",
+        "示例"
+      ]
+    },
+    {
+      "id": "local.react_demo",
+      "name": "React 示例",
+      "version": "1.0.0",
+      "url": "./miniapps/react_demo/index.html",
+      "icon": "./miniapps/react_demo/icon.jpg",
+      "package_url": "./packages/local.react_demo.zip",
+      "package_sha256": "b1571c2e8069038455bc0917b354e22f9e3c03bb8d1df7e25e4c5cf6fcca86f7",
+      "description": "React 18 示例小程序",
+      "requires_auth": false,
+      "enabled": true,
+      "order": 3,
+      "bridge_version": "1.0.0",
+      "tags": [
+        "React",
+        "示例"
+      ]
+    },
+    {
+      "id": "official.vue_starter_demo",
+      "name": "Vue官方例程",
+      "version": "1.0.0",
+      "url": "./miniapps/vue_official_starter/index.html",
+      "icon": "./miniapps/vue_official_starter/icon.ico",
+      "description": "基于 create-vue 官方脚手架创建的示例小程序",
+      "requires_auth": false,
+      "enabled": true,
+      "order": 4,
+      "bridge_version": "1.0.0",
+      "tags": [
+        "Vue",
+        "官方",
+        "脚手架"
+      ],
+      "package_url": "./packages/official.vue_starter_demo.zip",
+      "package_sha256": "45ae94a25ef0aa26190ea270fb539a92f483955d82d1a4a54fefbde9fc26df07"
+    },
+    {
+      "id": "official.react_starter_demo",
+      "name": "React官方例程",
+      "version": "1.0.0",
+      "url": "./miniapps/react_official_starter/index.html",
+      "icon": "./miniapps/react_official_starter/icon.png",
+      "description": "基于 create-react-app 官方脚手架创建的示例小程序",
+      "requires_auth": false,
+      "enabled": true,
+      "order": 5,
+      "bridge_version": "1.0.0",
+      "tags": [
+        "React",
+        "官方",
+        "脚手架"
+      ],
+      "package_url": "./packages/official.react_starter_demo.zip",
+      "package_sha256": "d8953981bab11e03d4ffca9ceb6181091349ed4e8687c9fd3a41e48fb00573d0"
+    },
+    {
+      "id": "official.react_vite_starter_demo",
+      "name": "React官方例程(Vite)",
+      "version": "1.0.0",
+      "url": "./miniapps/react_vite_official_starter/index.html",
+      "icon": "./miniapps/react_vite_official_starter/icon.svg",
+      "description": "基于 create-vite 官方脚手架创建的 React 示例小程序",
+      "requires_auth": false,
+      "enabled": true,
+      "order": 6,
+      "bridge_version": "1.0.0",
+      "tags": [
+        "React",
+        "Vite",
+        "官方",
+        "脚手架"
+      ],
+      "package_url": "./packages/official.react_vite_starter_demo.zip",
+      "package_sha256": "38b61b6739a54fe388468a2150557d76471d14271dccd820dce4ba21b632fa14"
+    },
+    {
+      "id": "git.vuestic_admin",
+      "name": "Vuestic Admin",
+      "version": "1.0.0",
+      "url": "./miniapps/git_vuestic_admin/index.html",
+      "icon": "./miniapps/git_vuestic_admin/icon.png",
+      "description": "来自 GitHub 的现代化 Vue 管理后台模板",
+      "requires_auth": false,
+      "enabled": true,
+      "order": 7,
+      "bridge_version": "1.0.0",
+      "tags": [
+        "Vue",
+        "GitHub",
+        "后台",
+        "Dashboard"
+      ],
+      "package_url": "./packages/git.vuestic_admin.zip",
+      "package_sha256": "a94fce52a4c3fa92e19050f0bbb0aa0ca80564c5628b5d6fb8d157bb82a93ff9"
+    },
+    {
+      "id": "git.doocs_md",
+      "name": "Doocs Markdown",
+      "version": "1.0.0",
+      "url": "./miniapps/git_doocs_md/index.html",
+      "icon": "./miniapps/git_doocs_md/icon.png",
+      "description": "GitHub 热门项目：微信 Markdown 编辑器",
+      "requires_auth": false,
+      "enabled": true,
+      "order": 8,
+      "bridge_version": "1.0.0",
+      "tags": [
+        "Vue",
+        "GitHub",
+        "Markdown",
+        "工具"
+      ],
+      "package_url": "./packages/git.doocs_md.zip",
+      "package_sha256": "0545025f946562fc3c399c07b0012f343312b91d968e428a3db593f46ba261d4"
+    }
+  ]
+}

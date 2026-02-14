@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:river/core/mini_apps/river_mini_app_install_store.dart';
 import 'package:river/core/storage/app_cache_service.dart';
 import 'package:river/features/mine/widgets/mine_settings_app_bar.dart';
 
@@ -17,11 +18,19 @@ class _StorageSettingsPageState extends State<StorageSettingsPage> {
   bool _loading = true;
   final Set<String> _busyIds = <String>{};
   CacheOverview _overview = const CacheOverview(totalBytes: 0, categories: []);
+  final RiverMiniAppInstallStore _miniAppInstallStore =
+      RiverMiniAppInstallStore();
+  RiverMiniAppStorageOverview _miniAppOverview =
+      const RiverMiniAppStorageOverview(
+        totalBytes: 0,
+        appCount: 0,
+        items: <RiverMiniAppStorageItem>[],
+      );
 
   @override
   void initState() {
     super.initState();
-    _refreshCache();
+    _refreshAll();
   }
 
   bool _isBusy(String key) => _busyIds.contains(key);
@@ -40,16 +49,22 @@ class _StorageSettingsPageState extends State<StorageSettingsPage> {
     }
   }
 
-  Future<void> _refreshCache({bool showLoading = true}) async {
+  Future<void> _refreshAll({bool showLoading = true}) async {
     if (showLoading) {
       setState(() => _loading = true);
     }
-    final overview = await AppCacheService.loadCacheOverview();
+    final result = await Future.wait<dynamic>([
+      AppCacheService.loadCacheOverview(),
+      _miniAppInstallStore.loadStorageOverview(),
+    ]);
+    final overview = result[0] as CacheOverview;
+    final miniAppOverview = result[1] as RiverMiniAppStorageOverview;
     if (!mounted) {
       return;
     }
     setState(() {
       _overview = overview;
+      _miniAppOverview = miniAppOverview;
       _loading = false;
     });
   }
@@ -75,7 +90,7 @@ class _StorageSettingsPageState extends State<StorageSettingsPage> {
 
     await _runBusy('tool_clear_all', () async {
       await AppCacheService.clearCache();
-      await _refreshCache(showLoading: false);
+      await _refreshAll(showLoading: false);
       if (!mounted) {
         return;
       }
@@ -95,7 +110,7 @@ class _StorageSettingsPageState extends State<StorageSettingsPage> {
 
     await _runBusy('category_${category.id}', () async {
       await AppCacheService.clearCategory(category.id);
-      await _refreshCache(showLoading: false);
+      await _refreshAll(showLoading: false);
       if (!mounted) {
         return;
       }
@@ -120,11 +135,53 @@ class _StorageSettingsPageState extends State<StorageSettingsPage> {
       for (final id in category.categoryIds) {
         await AppCacheService.clearCategory(id);
       }
-      await _refreshCache(showLoading: false);
+      await _refreshAll(showLoading: false);
       if (!mounted) {
         return;
       }
       _showDone('已清理${category.title}');
+    });
+  }
+
+  Future<void> _handleClearMiniApps() async {
+    if (_miniAppOverview.appCount <= 0) {
+      _showDone('暂无小程序可清理');
+      return;
+    }
+    final confirmed = await _confirmClearDialog(
+      title: '清理全部小程序',
+      message:
+          '将删除已安装的 ${_miniAppOverview.appCount} 个小程序及本地资源（约 ${_formatBytes(_miniAppOverview.totalBytes)}），确认继续吗？',
+    );
+    if (confirmed != true) {
+      return;
+    }
+
+    await _runBusy('miniapp_clear_all', () async {
+      await _miniAppInstallStore.clearAllInstalled();
+      await _refreshAll(showLoading: false);
+      if (!mounted) {
+        return;
+      }
+      _showDone('已清理小程序数据');
+    });
+  }
+
+  Future<void> _handleRemoveMiniApp(RiverMiniAppStorageItem item) async {
+    final confirmed = await _confirmClearDialog(
+      title: '删除小程序',
+      message: '确定删除“${item.appName}”及其本地资源吗？',
+    );
+    if (confirmed != true) {
+      return;
+    }
+    await _runBusy('miniapp_${item.appId}', () async {
+      await _miniAppInstallStore.removeInstalledById(item.appId);
+      await _refreshAll(showLoading: false);
+      if (!mounted) {
+        return;
+      }
+      _showDone('已删除${item.appName}');
     });
   }
 
@@ -348,7 +405,7 @@ class _StorageSettingsPageState extends State<StorageSettingsPage> {
         heroTagPrefix: 'mine_settings_storage',
       ),
       body: RefreshIndicator(
-        onRefresh: _refreshCache,
+        onRefresh: _refreshAll,
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
           children: [
@@ -361,7 +418,7 @@ class _StorageSettingsPageState extends State<StorageSettingsPage> {
                 categories: categories,
                 categoryColor: (id) => _categoryColor(id, context),
                 formatBytes: _formatBytes,
-                onRefresh: _loading ? null : _refreshCache,
+                onRefresh: _loading ? null : _refreshAll,
               ),
             ),
             const SizedBox(height: 14),
@@ -423,6 +480,184 @@ class _StorageSettingsPageState extends State<StorageSettingsPage> {
             ),
             const SizedBox(height: 14),
             _SettingsSection(
+              title: '小程序管理',
+              subtitle: '已安装小程序与本地资源',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surface,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: theme.colorScheme.outlineVariant,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 15,
+                          backgroundColor: theme.colorScheme.primary.withValues(
+                            alpha: 0.16,
+                          ),
+                          child: Icon(
+                            Icons.widgets_rounded,
+                            size: 16,
+                            color: theme.colorScheme.primary,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '已安装 ${_miniAppOverview.appCount} 个',
+                                style: theme.textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              Text(
+                                '占用 ${_formatBytes(_miniAppOverview.totalBytes)}',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        FilledButton.tonalIcon(
+                          onPressed: _loading ? null : _handleClearMiniApps,
+                          icon: _isBusy('miniapp_clear_all')
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.delete_sweep_outlined,
+                                  size: 16,
+                                ),
+                          label: const Text('清空'),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  if (_miniAppOverview.items.isEmpty)
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surface,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: theme.colorScheme.outlineVariant,
+                        ),
+                      ),
+                      child: Text(
+                        '暂无已安装小程序',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    )
+                  else
+                    Column(
+                      children: _miniAppOverview.items
+                          .map((item) {
+                            final installedAt = item.installedAtMillis <= 0
+                                ? '未知时间'
+                                : _formatDateTime(
+                                    DateTime.fromMillisecondsSinceEpoch(
+                                      item.installedAtMillis,
+                                    ),
+                                  );
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.surface,
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(
+                                    color: theme.colorScheme.outlineVariant,
+                                  ),
+                                ),
+                                child: ListTile(
+                                  contentPadding: const EdgeInsets.fromLTRB(
+                                    12,
+                                    6,
+                                    8,
+                                    6,
+                                  ),
+                                  leading: CircleAvatar(
+                                    radius: 14,
+                                    backgroundColor: theme.colorScheme.primary
+                                        .withValues(alpha: 0.12),
+                                    child: Icon(
+                                      Icons.widgets_outlined,
+                                      size: 15,
+                                      color: theme.colorScheme.primary,
+                                    ),
+                                  ),
+                                  title: Text(
+                                    item.appName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  subtitle: Text(
+                                    '安装于 $installedAt',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        _formatBytes(item.bytes),
+                                        style: theme.textTheme.labelMedium
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w700,
+                                              color: theme.colorScheme.primary,
+                                            ),
+                                      ),
+                                      IconButton(
+                                        tooltip: '删除',
+                                        onPressed:
+                                            _isBusy('miniapp_${item.appId}')
+                                            ? null
+                                            : () => _handleRemoveMiniApp(item),
+                                        icon: _isBusy('miniapp_${item.appId}')
+                                            ? const SizedBox(
+                                                width: 14,
+                                                height: 14,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                    ),
+                                              )
+                                            : const Icon(
+                                                Icons.delete_outline_rounded,
+                                              ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          })
+                          .toList(growable: false),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            _SettingsSection(
               title: '管理工具',
               subtitle: '多维清理与分析工具',
               child: GridView.count(
@@ -463,7 +698,7 @@ class _StorageSettingsPageState extends State<StorageSettingsPage> {
                     color: theme.colorScheme.tertiary,
                     title: '刷新统计',
                     subtitle: '实时重算缓存',
-                    onTap: _refreshCache,
+                    onTap: _refreshAll,
                   ),
                   _ToolCard(
                     icon: Icons.memory_rounded,

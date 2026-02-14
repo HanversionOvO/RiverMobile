@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>本地示例小程序</title>
+  <style>
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f6f7fb; color: #1f2937; }
+    .wrap { padding: 20px; }
+    .card { background: #fff; border-radius: 16px; padding: 16px; box-shadow: 0 6px 20px rgba(0,0,0,.06); margin-bottom: 14px; }
+    button { border: 0; border-radius: 12px; padding: 10px 14px; background: #12457A; color: #fff; font-weight: 600; margin-right: 10px; margin-top: 8px; }
+    pre { white-space: pre-wrap; word-break: break-all; font-size: 12px; background: #f3f4f6; border-radius: 10px; padding: 10px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h3 style="margin:0 0 8px;">本地示例小程序</h3>
+      <div>用于验证 River MiniApp 引擎与 JS Bridge。</div>
+      <button id="btnContext">获取上下文</button>
+      <button id="btnAuth">获取登录态</button>
+      <button id="btnTitle">改标题</button>
+      <button id="btnCopy">复制文本</button>
+      <button id="btnClose">关闭</button>
+    </div>
+    <div class="card">
+      <div style="font-weight:700;margin-bottom:8px;">返回结果</div>
+      <pre id="out">等待调用...</pre>
+    </div>
+  </div>
+  <script>
+    const out = document.getElementById('out');
+    function log(v){ out.textContent = typeof v === 'string' ? v : JSON.stringify(v, null, 2); }
+    async function call(action, payload){
+      if (!window.RiverMiniApp || !window.RiverMiniApp.call){
+        log('Bridge 未就绪，请稍后');
+        return;
+      }
+      try {
+        const res = await window.RiverMiniApp.call(action, payload || {});
+        log(res);
+      } catch (e) {
+        log({error: String(e)});
+      }
+    }
+    document.getElementById('btnContext').onclick = () => call('getContext');
+    document.getElementById('btnAuth').onclick = () => call('getAuth');
+    document.getElementById('btnTitle').onclick = () => call('setTitle', { title: '本地示例（已改）' });
+    document.getElementById('btnCopy').onclick = () => call('copyText', { text: '来自本地小程序的复制文本' });
+    document.getElementById('btnClose').onclick = () => call('close');
+    window.addEventListener('river-miniapp-ready', () => log('Bridge 已就绪，可点击按钮测试')); 
+  </script>
+</body>
+</html>

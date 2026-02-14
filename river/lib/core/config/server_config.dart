@@ -6,17 +6,26 @@ class RiverServerConfig {
   static const String defaultBaseUrl = 'https://river-side.cc';
   static const String defaultUpdateManifestUrl =
       'https://gitee.com/hanversion/river-mobile-update/raw/master/updater.json';
+  static const String defaultMiniAppsManifestUrl =
+      '$defaultBaseUrl/miniapps.json';
 
   String _baseUrl = defaultBaseUrl;
   String _updateManifestUrl = defaultUpdateManifestUrl;
+  String _miniAppsManifestUrl = defaultMiniAppsManifestUrl;
 
   String get baseUrl => _baseUrl;
   String get updateManifestUrl => _updateManifestUrl;
+  String get miniAppsManifestUrl => _miniAppsManifestUrl;
   String get host => Uri.parse(_baseUrl).host.toLowerCase();
 
-  void apply({required String baseUrl, required String updateManifestUrl}) {
+  void apply({
+    required String baseUrl,
+    required String updateManifestUrl,
+    required String miniAppsManifestUrl,
+  }) {
     _baseUrl = normalizeBaseUrl(baseUrl);
     _updateManifestUrl = normalizeUrl(updateManifestUrl);
+    _miniAppsManifestUrl = normalizeUrl(miniAppsManifestUrl);
   }
 
   void updateBaseUrl(String value) {
@@ -25,6 +34,10 @@ class RiverServerConfig {
 
   void setUpdateManifestUrl(String value) {
     _updateManifestUrl = normalizeUrl(value);
+  }
+
+  void setMiniAppsManifestUrl(String value) {
+    _miniAppsManifestUrl = normalizeUrl(value);
   }
 
   static String normalizeBaseUrl(String input) {

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Debug build: allow cleartext http for local mini-app development -->
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
+

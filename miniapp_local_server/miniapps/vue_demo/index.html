@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Vue 示例小程序</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <style>
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; background:#f7f8fc; color:#1f2937; }
+    .wrap { padding: 20px; }
+    .card { background:#fff; border-radius:16px; padding:16px; box-shadow: 0 10px 28px rgba(0,0,0,.07); margin-bottom:12px; }
+    .btn { border:0; border-radius:10px; padding:10px 14px; background:#12457A; color:#fff; font-weight:600; margin-right:8px; margin-top:8px; }
+    pre { white-space: pre-wrap; word-break: break-word; font-size:12px; background:#f3f4f6; border-radius:10px; padding:10px; }
+    .muted { color:#6b7280; font-size:13px; }
+  </style>
+</head>
+<body>
+  <div id="app" class="wrap">
+    <div class="card">
+      <h3 style="margin:0 0 8px;">Vue 示例小程序</h3>
+      <div class="muted">演示 Vue + RiverMiniApp Bridge 的基础联动</div>
+      <p>计数器：<b>{{ count }}</b></p>
+      <button class="btn" @click="count++">+1</button>
+      <button class="btn" @click="getContext">获取上下文</button>
+      <button class="btn" @click="setTitle">改标题</button>
+      <button class="btn" @click="closeMiniApp">关闭</button>
+    </div>
+    <div class="card">
+      <div style="font-weight:700; margin-bottom:8px;">Bridge 返回</div>
+      <pre>{{ output }}</pre>
+    </div>
+  </div>
+  <script>
+    const { createApp } = Vue;
+    createApp({
+      data() {
+        return {
+          count: 0,
+          output: '等待操作...',
+        };
+      },
+      methods: {
+        async call(action, payload = {}) {
+          if (!window.RiverMiniApp || !window.RiverMiniApp.call) {
+            this.output = 'Bridge 未就绪';
+            return null;
+          }
+          try {
+            const res = await window.RiverMiniApp.call(action, payload);
+            this.output = JSON.stringify(res, null, 2);
+            return res;
+          } catch (e) {
+            this.output = JSON.stringify({ error: String(e) }, null, 2);
+            return null;
+          }
+        },
+        getContext() { this.call('getContext'); },
+        setTitle() { this.call('setTitle', { title: 'Vue 示例（已连接）' }); },
+        closeMiniApp() { this.call('close'); },
+      },
+      mounted() {
+        window.addEventListener('river-miniapp-ready', () => {
+          this.output = 'Bridge 已就绪，欢迎测试 Vue 示例。';
+        });
+      },
+    }).mount('#app');
+  </script>
+</body>
+</html>
+

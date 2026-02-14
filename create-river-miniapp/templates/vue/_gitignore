@@ -1,0 +1,4 @@
+node_modules
+dist
+miniapp_output
+.DS_Store

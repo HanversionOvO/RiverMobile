@@ -1,0 +1,30 @@
+{
+  "name": "create-river-miniapp",
+  "version": "0.1.0",
+  "description": "Scaffold River mini-app projects with html/vue/react templates",
+  "bin": {
+    "create-river-miniapp": "./bin/create-river-miniapp.js"
+  },
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "templates",
+    "README.md"
+  ],
+  "scripts": {
+    "start": "node ./bin/create-river-miniapp.js --help"
+  },
+  "keywords": [
+    "miniapp",
+    "river",
+    "scaffold",
+    "vue",
+    "react",
+    "html"
+  ],
+  "license": "MIT"
+}
