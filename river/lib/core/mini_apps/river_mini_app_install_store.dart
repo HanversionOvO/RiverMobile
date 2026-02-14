@@ -1,9 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math' as math;
-import 'dart:typed_data';
 
-import 'package:archive/archive_io.dart';
+import 'package:archive/archive.dart';
+import 'package:background_downloader/background_downloader.dart';
+import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:river/core/config/server_config.dart';
 import 'package:river/core/mini_apps/river_mini_app_models.dart';
@@ -94,7 +94,7 @@ class RiverMiniAppInstallStore {
       }
       await appDir.create(recursive: true);
 
-      await extractFileToDisk(zipFile.path, appDir.path);
+      await _extractZipToDirectory(zipFile: zipFile, outputDir: appDir);
 
       final entryFile = await _resolveEntryFile(app: app, appDir: appDir);
       if (entryFile == null || !await entryFile.exists()) {
@@ -285,6 +285,52 @@ class RiverMiniAppInstallStore {
     return htmlFiles.first;
   }
 
+  Future<void> _extractZipToDirectory({
+    required File zipFile,
+    required Directory outputDir,
+  }) async {
+    final bytes = await zipFile.readAsBytes();
+    if (bytes.isEmpty) {
+      throw Exception('安装包为空');
+    }
+    final archive = ZipDecoder().decodeBytes(bytes, verify: true);
+    if (archive.isEmpty) {
+      final head = bytes
+          .take(8)
+          .map((e) => e.toRadixString(16).padLeft(2, '0'))
+          .join(' ');
+      throw Exception('安装包解压后为空(len=${bytes.length}, head=$head)');
+    }
+
+    for (final item in archive) {
+      final rawName = item.name.trim();
+      if (rawName.isEmpty) {
+        continue;
+      }
+      final normalized = rawName.replaceAll('\\', '/');
+      if (normalized.startsWith('/') || normalized.contains('../')) {
+        continue;
+      }
+      final targetPath = normalized
+          .split('/')
+          .where((segment) => segment.isNotEmpty)
+          .join(Platform.pathSeparator);
+      if (targetPath.isEmpty) {
+        continue;
+      }
+      final fullPath =
+          '${outputDir.path}${Platform.pathSeparator}$targetPath';
+      if (item.isFile) {
+        final outFile = File(fullPath);
+        await outFile.parent.create(recursive: true);
+        final data = item.content as List<int>;
+        await outFile.writeAsBytes(data, flush: true);
+      } else {
+        await Directory(fullPath).create(recursive: true);
+      }
+    }
+  }
+
   String _entryPathFromUrl(String sourceUrl) {
     final uri = Uri.tryParse(sourceUrl.trim());
     if (uri == null) {
@@ -320,393 +366,182 @@ class RiverMiniAppInstallStore {
     required Map<String, String> headers,
     required String appId,
   }) async {
-    final tempRoot = await getTemporaryDirectory();
-    final downloadDir = Directory(
-      '${tempRoot.path}${Platform.pathSeparator}mini_app_downloads',
-    );
-    await downloadDir.create(recursive: true);
     final baseName = _safeSegment(appId);
-    final finalFile = File(
-      '${downloadDir.path}${Platform.pathSeparator}$baseName.zip',
+    final filename = '$baseName.zip';
+    final task = DownloadTask(
+      taskId: 'miniapp.$baseName.${DateTime.now().microsecondsSinceEpoch}',
+      url: packageUri.toString(),
+      filename: filename,
+      directory: 'mini_app_downloads',
+      baseDirectory: BaseDirectory.temporary,
+      headers: headers,
+      updates: Updates.statusAndProgress,
+      retries: _downloadMaxRetries + 4,
+      allowPause: true,
+      requiresWiFi: false,
+      priority: 5,
     );
-    final partFile = File(
-      '${downloadDir.path}${Platform.pathSeparator}$baseName.zip.part',
-    );
-    await _safeDeleteFile(finalFile);
-    await _safeDeleteFile(partFile);
 
+    final expectedPath = await task.filePath();
+    final targetFile = File(expectedPath);
+    await _safeDeleteFile(targetFile);
+
+    TaskStatusUpdate? result;
     Object? primaryError;
     try {
-      await _downloadPackageFileWhole(
-        packageUri: packageUri,
-        headers: headers,
-        partFile: partFile,
-        maxRetries: _downloadMaxRetries + 2,
+      result = await FileDownloader().download(
+        task,
+        onStatus: (_) {},
+        onProgress: (_) {},
       );
-      await _safeDeleteFile(finalFile);
-      await partFile.rename(finalFile.path);
-      return finalFile;
     } catch (error) {
       primaryError = error;
     }
 
-    Object? fallbackError;
-    try {
-      final fallback = await _downloadPackageFileChunked(
-        packageUri: packageUri,
-        headers: headers,
-        partFile: partFile,
-        finalFile: finalFile,
-      );
-      if (fallback != null) {
-        return fallback;
+    if (result != null && result.status == TaskStatus.complete) {
+      if (await targetFile.exists() && await _isValidZipArchive(targetFile)) {
+        return targetFile;
       }
-    } catch (error) {
-      fallbackError = error;
+      primaryError = Exception('下载完成但文件不是有效ZIP');
+    } else if (result != null) {
+      final code = result.responseStatusCode == null
+          ? ''
+          : ' http=${result.responseStatusCode}';
+      final reason = result.exception?.description ?? 'unknown';
+      primaryError = Exception('下载失败(${result.status.name})$code: $reason');
+    } else {
+      primaryError ??= Exception('下载失败：未知错误');
     }
+
+    final fallbackFile = await _downloadByHttpDirect(
+      packageUri: packageUri,
+      headers: headers,
+      targetFile: targetFile,
+    );
+    if (fallbackFile != null && await _isValidZipArchive(fallbackFile)) {
+      return fallbackFile;
+    }
+
+    final length = await _fileLengthOrNull(targetFile);
+    final head = await _fileHeadHex(targetFile);
     throw Exception(
-      '下载小程序失败：整包下载失败：$primaryError；分片兜底失败：${fallbackError ?? "unknown"}',
+      '下载失败：primary=$primaryError；fallback=http-direct-failed；len=$length；head=$head',
     );
   }
 
-  Future<File?> _downloadPackageFileChunked({
+  Future<File?> _downloadByHttpDirect({
     required Uri packageUri,
     required Map<String, String> headers,
-    required File partFile,
-    required File finalFile,
+    required File targetFile,
   }) async {
-    try {
-      await _safeDeleteFile(finalFile);
-      await _safeDeleteFile(partFile);
-
-      const chunkSize = 64 * 1024;
-      const perChunkMaxRetries = 6;
-
-      var downloaded = 0;
-      int? totalSize;
-      final sink = partFile.openWrite(mode: FileMode.write);
-      try {
-        while (true) {
-          if (totalSize != null && downloaded >= totalSize) {
-            break;
-          }
-          final start = downloaded;
-          final end = totalSize == null
-              ? start + chunkSize - 1
-              : math.min(start + chunkSize - 1, totalSize - 1);
-          final requestedLength = end - start + 1;
-
-          _RangeChunkResult? chunk;
-          Object? chunkError;
-          for (var attempt = 1; attempt <= perChunkMaxRetries; attempt++) {
-            try {
-              chunk = await _downloadRangeChunk(
-                packageUri: packageUri,
-                headers: headers,
-                start: start,
-                end: end,
-              );
-              chunkError = null;
-              break;
-            } catch (error) {
-              chunkError = error;
-              if (attempt >= perChunkMaxRetries) {
-                break;
-              }
-              await Future<void>.delayed(
-                Duration(milliseconds: 180 * attempt),
-              );
-            }
-          }
-
-          if (chunk == null) {
-            throw Exception('分片下载失败($start-$end)：$chunkError');
-          }
-          if (chunk.bytes.isEmpty) {
-            throw Exception('分片返回空数据($start-$end)');
-          }
-
-          final chunkStart = chunk.start ?? start;
-          final chunkEnd = chunk.end ?? (chunkStart + chunk.bytes.length - 1);
-          final serverLength = chunkEnd - chunkStart + 1;
-          if (serverLength <= 0 || chunk.bytes.length != serverLength) {
-            throw Exception(
-              '分片长度异常($chunkStart-$chunkEnd, bytes=${chunk.bytes.length})',
-            );
-          }
-          if (chunkStart != start) {
-            throw Exception('分片起始偏移不匹配(期望$start, 实际$chunkStart)');
-          }
-
-          if (chunk.totalSize != null) {
-            totalSize = chunk.totalSize;
-          }
-
-          sink.add(chunk.bytes);
-          downloaded += chunk.bytes.length;
-
-          if (totalSize == null && chunk.bytes.length < requestedLength) {
-            // 服务器未知总长度场景：最后一片会小于请求长度。
-            totalSize = downloaded;
-          }
-          if (totalSize != null && downloaded >= totalSize) {
-            break;
-          }
-        }
-      } finally {
-        await sink.close();
-      }
-
-      if (downloaded <= 0) {
-        await _safeDeleteFile(partFile);
-        return null;
-      }
-      await _safeDeleteFile(finalFile);
-      await partFile.rename(finalFile.path);
-      return finalFile;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  Future<void> _downloadPackageFileWhole({
-    required Uri packageUri,
-    required Map<String, String> headers,
-    required File partFile,
-    int maxRetries = 4,
-  }) async {
-    Object? lastError;
+    const maxRetries = 5;
     for (var attempt = 1; attempt <= maxRetries; attempt++) {
-      final ioClient = HttpClient()
-        ..connectionTimeout = const Duration(seconds: 35)
-        ..idleTimeout = const Duration(seconds: 20)
-        ..autoUncompress = false
-        ..maxConnectionsPerHost = 2;
+      final client = http.Client();
       try {
-        var existingLength = 0;
-        if (await partFile.exists()) {
-          existingLength = await partFile.length();
-        }
-
-        final request = await ioClient.getUrl(packageUri).timeout(
-          const Duration(seconds: 35),
+        await _safeDeleteFile(targetFile);
+        final request = http.Request('GET', packageUri);
+        request.headers.addAll(headers);
+        request.headers.removeWhere(
+          (key, _) => key.toLowerCase() == HttpHeaders.rangeHeader,
         );
-        headers.forEach((key, value) {
-          if (key.toLowerCase() == HttpHeaders.rangeHeader) {
-            return;
-          }
-          request.headers.set(key, value);
-        });
-        request.headers.set(HttpHeaders.acceptEncodingHeader, 'identity');
-        if (existingLength > 0) {
-          request.headers.set(HttpHeaders.rangeHeader, 'bytes=$existingLength-');
-        }
-        request.persistentConnection = false;
-        final response = await request.close().timeout(
-          const Duration(seconds: 35),
+        request.headers[HttpHeaders.acceptEncodingHeader] = 'identity';
+
+        final streamed = await client.send(request).timeout(
+          const Duration(seconds: 30),
         );
-        if (response.statusCode == HttpStatus.requestedRangeNotSatisfiable) {
-          final total = _parseContentRangeTotal(
-            response.headers.value(HttpHeaders.contentRangeHeader),
-          );
-          await response.drain<void>();
-          if (total != null && existingLength >= total) {
-            return;
-          }
-          await _safeDeleteFile(partFile);
-          throw Exception('HTTP ${HttpStatus.requestedRangeNotSatisfiable}');
-        }
-        if (response.statusCode < 200 || response.statusCode >= 300) {
-          throw Exception('HTTP ${response.statusCode}');
+        if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
+          throw Exception('HTTP ${streamed.statusCode}');
         }
 
-        var fileMode = FileMode.write;
-        int? expectedTotal;
-        final statusCode = response.statusCode;
-        if (statusCode == HttpStatus.partialContent) {
-          final rangeStart = _parseContentRangeStart(
-            response.headers.value(HttpHeaders.contentRangeHeader),
-          );
-          expectedTotal = _parseContentRangeTotal(
-            response.headers.value(HttpHeaders.contentRangeHeader),
-          );
-          if (rangeStart == null) {
-            throw Exception('整包续传缺少 Content-Range');
-          }
-          if (existingLength > 0 && rangeStart == existingLength) {
-            fileMode = FileMode.append;
-          } else if (rangeStart == 0) {
-            await _safeDeleteFile(partFile);
-            existingLength = 0;
-            fileMode = FileMode.write;
-          } else {
-            throw Exception('整包续传偏移不匹配(期望$existingLength, 实际$rangeStart)');
-          }
-        } else {
-          if (existingLength > 0) {
-            // 服务端未接受 Range，回退为从头覆盖。
-            await _safeDeleteFile(partFile);
-            existingLength = 0;
-          }
-          if (response.contentLength > 0) {
-            expectedTotal = response.contentLength + existingLength;
-          }
-          fileMode = FileMode.write;
-        }
-
-        final sink = partFile.openWrite(mode: fileMode);
+        var received = 0;
+        final sink = targetFile.openWrite(mode: FileMode.write);
         try {
-          await for (final chunk in response.timeout(
+          await for (final chunk in streamed.stream.timeout(
             const Duration(seconds: 120),
           )) {
             sink.add(chunk);
+            received += chunk.length;
           }
         } finally {
           await sink.close();
         }
 
-        final actual = await partFile.length();
-        if (actual <= 0) {
-          throw Exception('整包下载为空');
+        final expected = int.tryParse(streamed.headers['content-length'] ?? '');
+        if (expected != null && expected > 0 && received < expected) {
+          throw Exception('下载不完整($received/$expected)');
         }
-        if (expectedTotal != null && expectedTotal > 0 && actual < expectedTotal) {
-          throw Exception('整包下载不完整($actual/$expectedTotal)');
+        if (received <= 0 || !await targetFile.exists()) {
+          throw Exception('下载为空');
         }
-        return;
-      } catch (error) {
-        lastError = error;
+        return targetFile;
+      } catch (_) {
         if (attempt >= maxRetries) {
           break;
         }
-        await Future<void>.delayed(Duration(milliseconds: 260 * attempt));
+        await Future<void>.delayed(Duration(milliseconds: 220 * attempt));
       } finally {
-        ioClient.close(force: true);
+        client.close();
       }
-    }
-    throw Exception('整包下载失败：$lastError');
-  }
-
-  Future<_RangeChunkResult> _downloadRangeChunk({
-    required Uri packageUri,
-    required Map<String, String> headers,
-    required int start,
-    required int end,
-  }) async {
-    final ioClient = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 25)
-      ..idleTimeout = const Duration(seconds: 15)
-      ..autoUncompress = false
-      ..maxConnectionsPerHost = 2;
-    try {
-      final request = await ioClient.getUrl(packageUri);
-      headers.forEach((key, value) {
-        request.headers.set(key, value);
-      });
-      request.headers.set(HttpHeaders.rangeHeader, 'bytes=$start-$end');
-      request.headers.set(HttpHeaders.acceptEncodingHeader, 'identity');
-      request.persistentConnection = false;
-
-      final response = await request.close().timeout(
-        const Duration(seconds: 25),
-      );
-      if (response.statusCode == HttpStatus.requestedRangeNotSatisfiable) {
-        await response.drain<void>();
-        throw Exception('HTTP ${HttpStatus.requestedRangeNotSatisfiable}');
-      }
-      if (response.statusCode != HttpStatus.partialContent &&
-          response.statusCode != HttpStatus.ok) {
-        throw Exception('HTTP ${response.statusCode}');
-      }
-
-      if (response.statusCode == HttpStatus.ok && start > 0) {
-        throw Exception('服务器不支持断点续传');
-      }
-
-      int? actualStart;
-      int? actualEnd;
-      int? totalSize;
-      if (response.statusCode == HttpStatus.partialContent) {
-        final contentRangeRaw = response.headers.value(
-          HttpHeaders.contentRangeHeader,
-        );
-        actualStart = _parseContentRangeStart(contentRangeRaw);
-        actualEnd = _parseContentRangeEnd(contentRangeRaw);
-        totalSize = _parseContentRangeTotal(contentRangeRaw);
-        if (actualStart == null || actualEnd == null) {
-          throw Exception('响应缺少有效 Content-Range');
-        }
-      }
-
-      final builder = BytesBuilder(copy: false);
-      await for (final chunk in response.timeout(const Duration(seconds: 40))) {
-        builder.add(chunk);
-      }
-      final bytes = builder.takeBytes();
-      if (response.statusCode == HttpStatus.ok) {
-        final knownTotal = response.contentLength > 0
-            ? response.contentLength
-            : bytes.length;
-        return _RangeChunkResult(
-          bytes: bytes,
-          start: 0,
-          end: bytes.isEmpty ? null : bytes.length - 1,
-          totalSize: knownTotal,
-        );
-      }
-      return _RangeChunkResult(
-        bytes: bytes,
-        start: actualStart,
-        end: actualEnd,
-        totalSize: totalSize,
-      );
-    } finally {
-      ioClient.close(force: true);
-    }
-  }
-
-  int? _parseContentRangeStart(String? rawHeader) {
-    final raw = rawHeader?.trim() ?? '';
-    if (raw.isEmpty) {
-      return null;
-    }
-    final match = RegExp(r'^bytes\s+(\d+)-(\d+)/(\d+|\*)$').firstMatch(raw);
-    if (match == null) {
-      return null;
-    }
-    return int.tryParse(match.group(1)!);
-  }
-
-  int? _parseContentRangeTotal(String? rawHeader) {
-    final raw = rawHeader?.trim() ?? '';
-    if (raw.isEmpty) {
-      return null;
-    }
-    final fullMatch =
-        RegExp(r'^bytes\s+(\d+)-(\d+)/(\d+|\*)$').firstMatch(raw);
-    if (fullMatch != null) {
-      final totalRaw = fullMatch.group(3)!;
-      if (totalRaw == '*') {
-        return null;
-      }
-      return int.tryParse(totalRaw);
-    }
-    final unsatisfied = RegExp(r'^bytes\s+\*/(\d+)$').firstMatch(raw);
-    if (unsatisfied != null) {
-      return int.tryParse(unsatisfied.group(1)!);
     }
     return null;
   }
 
-  int? _parseContentRangeEnd(String? rawHeader) {
-    final raw = rawHeader?.trim() ?? '';
-    if (raw.isEmpty) {
+  Future<bool> _isValidZipArchive(File file) async {
+    try {
+      if (!await file.exists()) {
+        return false;
+      }
+      final length = await file.length();
+      if (length < 4) {
+        return false;
+      }
+      final raf = await file.open();
+      late final List<int> head;
+      try {
+        head = await raf.read(4);
+      } finally {
+        await raf.close();
+      }
+      if (head.length < 4 || head[0] != 0x50 || head[1] != 0x4b) {
+        return false;
+      }
+      final bytes = await file.readAsBytes();
+      final archive = ZipDecoder().decodeBytes(bytes, verify: true);
+      return archive.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<int?> _fileLengthOrNull(File file) async {
+    try {
+      if (!await file.exists()) {
+        return null;
+      }
+      return await file.length();
+    } catch (_) {
       return null;
     }
-    final match = RegExp(r'^bytes\s+(\d+)-(\d+)/(\d+|\*)$').firstMatch(raw);
-    if (match == null) {
-      return null;
+  }
+
+  Future<String> _fileHeadHex(File file, [int count = 12]) async {
+    try {
+      if (!await file.exists()) {
+        return 'missing';
+      }
+      final raf = await file.open();
+      try {
+        final bytes = await raf.read(count);
+        if (bytes.isEmpty) {
+          return 'empty';
+        }
+        return bytes.map((e) => e.toRadixString(16).padLeft(2, '0')).join(' ');
+      } finally {
+        await raf.close();
+      }
+    } catch (_) {
+      return 'unreadable';
     }
-    return int.tryParse(match.group(2)!);
   }
 
   Future<void> _safeDeleteFile(File file) async {
@@ -718,20 +553,6 @@ class RiverMiniAppInstallStore {
       // ignore
     }
   }
-}
-
-class _RangeChunkResult {
-  const _RangeChunkResult({
-    required this.bytes,
-    required this.start,
-    required this.end,
-    required this.totalSize,
-  });
-
-  final Uint8List bytes;
-  final int? start;
-  final int? end;
-  final int? totalSize;
 }
 
 class RiverMiniAppStorageOverview {
