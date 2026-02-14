@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:river/app/app_settings_controller.dart';
 import 'package:river/features/mine/widgets/mine_settings_app_bar.dart';
 
 class AboutPage extends StatefulWidget {
-  const AboutPage({super.key});
+  const AboutPage({super.key, required this.settingsController});
+
+  final AppSettingsController settingsController;
 
   @override
   State<AboutPage> createState() => _AboutPageState();
@@ -11,6 +14,8 @@ class AboutPage extends StatefulWidget {
 
 class _AboutPageState extends State<AboutPage> {
   String _version = '';
+  int _devTapCount = 0;
+  DateTime? _lastDevTapAt;
 
   @override
   void initState() {
@@ -22,6 +27,41 @@ class _AboutPageState extends State<AboutPage> {
     final info = await PackageInfo.fromPlatform();
     if (mounted) {
       setState(() => _version = info.version);
+    }
+  }
+
+  void _onVersionTap() {
+    final now = DateTime.now();
+    final last = _lastDevTapAt;
+    _lastDevTapAt = now;
+
+    if (widget.settingsController.developerModeEnabled) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('开发者模式已开启')));
+      return;
+    }
+
+    if (last == null || now.difference(last).inSeconds > 2) {
+      _devTapCount = 1;
+    } else {
+      _devTapCount += 1;
+    }
+
+    final remain = 8 - _devTapCount;
+    if (remain <= 0) {
+      widget.settingsController.updateDeveloperModeEnabled(true);
+      _devTapCount = 0;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('开发者模式已开启')));
+      return;
+    }
+
+    if (remain <= 4) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('再点击 $remain 次开启开发者模式')));
     }
   }
 
@@ -71,9 +111,21 @@ class _AboutPageState extends State<AboutPage> {
               ),
             ),
             const SizedBox(height: 8),
-            Text(
-              'Version $_version',
-              style: theme.textTheme.bodyMedium?.copyWith(color: Colors.grey),
+            InkWell(
+              borderRadius: BorderRadius.circular(10),
+              onTap: _onVersionTap,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                child: Text(
+                  'Version $_version',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: Colors.grey,
+                  ),
+                ),
+              ),
             ),
             const SizedBox(height: 32),
             const Padding(

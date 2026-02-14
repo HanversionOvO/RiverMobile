@@ -5,6 +5,8 @@ class RiverMiniAppEntry {
     required this.url,
     this.version = '',
     this.packageUrl = '',
+    this.packageSha256 = '',
+    this.packageBytes = 0,
     this.iconUrl = '',
     this.description = '',
     this.tags = const <String>[],
@@ -21,6 +23,8 @@ class RiverMiniAppEntry {
   final String url;
   final String version;
   final String packageUrl;
+  final String packageSha256;
+  final int packageBytes;
   final String iconUrl;
   final String description;
   final List<String> tags;
@@ -39,6 +43,8 @@ class RiverMiniAppEntry {
     String? url,
     String? version,
     String? packageUrl,
+    String? packageSha256,
+    int? packageBytes,
     String? iconUrl,
     String? description,
     List<String>? tags,
@@ -55,6 +61,8 @@ class RiverMiniAppEntry {
       url: url ?? this.url,
       version: version ?? this.version,
       packageUrl: packageUrl ?? this.packageUrl,
+      packageSha256: packageSha256 ?? this.packageSha256,
+      packageBytes: packageBytes ?? this.packageBytes,
       iconUrl: iconUrl ?? this.iconUrl,
       description: description ?? this.description,
       tags: tags ?? this.tags,
@@ -74,6 +82,8 @@ class RiverMiniAppEntry {
       'url': url,
       'version': version,
       'package_url': packageUrl,
+      'package_sha256': packageSha256,
+      'package_bytes': packageBytes,
       'icon': iconUrl,
       'description': description,
       'tags': tags,
@@ -100,6 +110,12 @@ class RiverMiniAppEntry {
       url: '${json['url'] ?? ''}'.trim(),
       version: '${json['version'] ?? ''}'.trim(),
       packageUrl: '${json['package_url'] ?? json['packageUrl'] ?? ''}'.trim(),
+      packageSha256: '${json['package_sha256'] ?? json['packageSha256'] ?? ''}'
+          .trim()
+          .toLowerCase(),
+      packageBytes: _readInt(
+        json['package_bytes'] ?? json['package_size'] ?? json['packageSize'],
+      ),
       iconUrl: '${json['icon'] ?? json['icon_url'] ?? ''}'.trim(),
       description: '${json['description'] ?? ''}'.trim(),
       tags: tags,

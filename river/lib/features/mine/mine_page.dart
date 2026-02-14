@@ -12,6 +12,7 @@ import 'package:river/features/login/riverside_login_webview_page.dart';
 import 'package:river/features/mine/about_page.dart';
 import 'package:river/features/mine/appearance_settings_page.dart';
 import 'package:river/features/mine/ai_settings_page.dart';
+import 'package:river/features/mine/developer_settings_page.dart';
 import 'package:river/features/mine/feedback_webview_page.dart';
 import 'package:river/features/mine/notifications_push_settings_page.dart';
 import 'package:river/features/mine/riverside_account_settings_page.dart';
@@ -247,9 +248,22 @@ class _MinePageState extends State<MinePage> {
   }
 
   void _openAboutPage() {
-    Navigator.of(
-      context,
-    ).push(riverPageRoute<void>(builder: (_) => const AboutPage()));
+    Navigator.of(context).push(
+      riverPageRoute<void>(
+        builder: (_) => AboutPage(
+          settingsController: widget.dependencies.settingsController,
+        ),
+      ),
+    );
+  }
+
+  void _openDeveloperSettings() {
+    Navigator.of(context).push(
+      riverPageRoute<void>(
+        builder: (_) =>
+            DeveloperSettingsPage(dependencies: widget.dependencies),
+      ),
+    );
   }
 
   void _openFeedbackPage() {
@@ -443,9 +457,11 @@ class _MinePageState extends State<MinePage> {
       animation: Listenable.merge(<Listenable>[
         widget.dependencies.accountStore,
         updateChecker,
+        widget.dependencies.settingsController,
       ]),
       builder: (context, _) {
         final account = _activeAccount;
+        final settingsController = widget.dependencies.settingsController;
         final hasUpdate = updateChecker.hasUpdate;
         final subtitle = _buildVersionSubtitle(updateChecker);
         final isChecking = _isCheckingVersion || updateChecker.isChecking;
@@ -527,6 +543,21 @@ class _MinePageState extends State<MinePage> {
                               ),
                             ],
                           ),
+                          if (settingsController.developerModeEnabled) ...[
+                            const SizedBox(height: 24),
+                            _SectionTitle(title: '开发者模式'),
+                            _SettingsCard(
+                              children: [
+                                _SettingsTile(
+                                  icon: Icons.developer_mode_rounded,
+                                  title: '开发者设置',
+                                  subtitle: '退出模式与安装本地小程序',
+                                  heroTagPrefix: 'mine_settings_developer',
+                                  onTap: _openDeveloperSettings,
+                                ),
+                              ],
+                            ),
+                          ],
                           const SizedBox(height: 24),
                           _SectionTitle(title: '其他'),
                           _SettingsCard(

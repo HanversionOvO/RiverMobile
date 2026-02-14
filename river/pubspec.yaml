@@ -56,7 +56,8 @@ dependencies:
   share_plus: ^11.1.0
   google_mlkit_barcode_scanning: ^0.14.1
   archive: ^4.0.7
-  background_downloader: ^9.5.2
+  crypto: ^3.0.6
+  file_picker: ^10.3.3
 
 dev_dependencies:
   flutter_test:

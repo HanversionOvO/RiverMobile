@@ -63,6 +63,26 @@ def _absolutize_url(value: str, base_url: str) -> str:
     return f"{base_url}/{text}"
 
 
+def _package_meta_from_url(value: str) -> dict[str, Any]:
+    text = (value or "").strip()
+    if not text:
+        return {}
+    if text.startswith("http://") or text.startswith("https://"):
+        return {}
+    rel = text[1:] if text.startswith("/") else text
+    file_path = (ROOT_DIR / rel).resolve()
+    root = ROOT_DIR.resolve()
+    if root not in file_path.parents and file_path != root:
+        return {}
+    if not file_path.exists() or not file_path.is_file():
+        return {}
+    stat = file_path.stat()
+    return {
+        "package_bytes": int(stat.st_size),
+        "package_mtime": int(stat.st_mtime),
+    }
+
+
 def _normalize_manifest(base_url: str) -> dict[str, Any]:
     raw = _load_manifest()
     apps: list[dict[str, Any]] = []
@@ -73,7 +93,11 @@ def _normalize_manifest(base_url: str) -> dict[str, Any]:
         app["url"] = _absolutize_url(str(app.get("url", "")), base_url)
         app["icon"] = _absolutize_url(str(app.get("icon", "")), base_url)
         if "package_url" in app:
-            app["package_url"] = _absolutize_url(str(app.get("package_url", "")), base_url)
+            package_url = str(app.get("package_url", ""))
+            app["package_url"] = _absolutize_url(package_url, base_url)
+            package_meta = _package_meta_from_url(package_url)
+            for key, value in package_meta.items():
+                app[key] = value
         apps.append(app)
     return {
         "version": str(raw.get("version", "1.0.0")),
@@ -119,6 +143,14 @@ class MiniAppRequestHandler(SimpleHTTPRequestHandler):
     def do_OPTIONS(self) -> None:
         self.send_response(HTTPStatus.NO_CONTENT)
         self.end_headers()
+
+    def do_HEAD(self) -> None:
+        parsed = urlparse(self.path)
+        path = parsed.path
+        if path.startswith("/packages/"):
+            self._serve_package(path, head_only=True)
+            return
+        super().do_HEAD()
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
@@ -204,7 +236,7 @@ class MiniAppRequestHandler(SimpleHTTPRequestHandler):
         sys.stdout.write(text)
         _append_request_log(text)
 
-    def _serve_package(self, request_path: str) -> None:
+    def _serve_package(self, request_path: str, *, head_only: bool = False) -> None:
         rel = request_path.lstrip("/")
         file_path = (ROOT_DIR / rel).resolve()
         root = ROOT_DIR.resolve()
@@ -242,6 +274,17 @@ class MiniAppRequestHandler(SimpleHTTPRequestHandler):
             self.send_header("Cache-Control", "no-store")
             self.send_header("Connection", "close")
             self.end_headers()
+            if head_only:
+                self.log_message(
+                    'PKG "%s" %s range=%s-%s/%s sent=%s (HEAD)',
+                    rel,
+                    int(status),
+                    start,
+                    end,
+                    file_size,
+                    0,
+                )
+                return
 
             sent = 0
             with file_path.open("rb") as f:
@@ -256,7 +299,6 @@ class MiniAppRequestHandler(SimpleHTTPRequestHandler):
                     self.wfile.write(chunk)
                     remain -= len(chunk)
                     sent += len(chunk)
-                self.wfile.flush()
             self.log_message(
                 'PKG "%s" %s range=%s-%s/%s sent=%s',
                 rel,

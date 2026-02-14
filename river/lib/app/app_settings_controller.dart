@@ -38,6 +38,7 @@ class AppSettingsController extends ChangeNotifier {
   static const String _aiApiKeyKey = 'app.ai_api_key';
   static const String _aiSystemPromptKey = 'app.ai_system_prompt';
   static const String _aiTemperatureKey = 'app.ai_temperature';
+  static const String _developerModeEnabledKey = 'app.developer_mode_enabled';
 
   static const Color defaultSeedColor = Color(0xFF12457A);
   static const String defaultAiBaseUrl =
@@ -67,6 +68,7 @@ class AppSettingsController extends ChangeNotifier {
   String _aiApiKey = '';
   String _aiSystemPrompt = defaultAiSystemPrompt;
   double _aiTemperature = 0.7;
+  bool _developerModeEnabled = false;
 
   SharedPreferences? _prefs;
 
@@ -93,6 +95,7 @@ class AppSettingsController extends ChangeNotifier {
   String get aiApiKey => _aiApiKey;
   String get aiSystemPrompt => _aiSystemPrompt;
   double get aiTemperature => _aiTemperature;
+  bool get developerModeEnabled => _developerModeEnabled;
   bool get aiConfigured =>
       _aiBaseUrl.trim().isNotEmpty &&
       _aiModel.trim().isNotEmpty &&
@@ -236,6 +239,8 @@ class AppSettingsController extends ChangeNotifier {
     if (aiTemperatureRaw != null) {
       _aiTemperature = _clampAiTemperature(aiTemperatureRaw);
     }
+
+    _developerModeEnabled = _prefs?.getBool(_developerModeEnabledKey) ?? false;
 
     RiverServerConfig.instance.apply(
       baseUrl: _riverSideBaseUrl,
@@ -448,6 +453,15 @@ class AppSettingsController extends ChangeNotifier {
     unawaited(_saveAiTemperature());
   }
 
+  void updateDeveloperModeEnabled(bool value) {
+    if (_developerModeEnabled == value) {
+      return;
+    }
+    _developerModeEnabled = value;
+    notifyListeners();
+    unawaited(_saveDeveloperModeEnabled());
+  }
+
   String? _mapLegacyFontPresetToFamily(String? presetName) {
     switch (presetName) {
       case 'system':
@@ -611,5 +625,10 @@ class AppSettingsController extends ChangeNotifier {
   Future<void> _saveAiTemperature() async {
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs!.setDouble(_aiTemperatureKey, _aiTemperature);
+  }
+
+  Future<void> _saveDeveloperModeEnabled() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_developerModeEnabledKey, _developerModeEnabled);
   }
 }

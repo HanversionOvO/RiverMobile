@@ -83,6 +83,14 @@ class _PostsSecondFloorLayer extends StatelessWidget {
   final ValueChanged<DragUpdateDetails> onDragUpdate;
   final ValueChanged<DragEndDetails> onDragEnd;
 
+  bool _isLocalDevelopmentMiniApp(RiverMiniAppEntry item) {
+    if (item.localEntryFilePath.trim().isEmpty) {
+      return false;
+    }
+    final id = item.id.trim().toLowerCase();
+    return item.packageUrl.trim().isEmpty || id.startsWith('local.');
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -367,6 +375,10 @@ class _PostsSecondFloorLayer extends StatelessWidget {
                                                   iconUrl: item.iconUrl,
                                                   label: item.name,
                                                   tooltip: item.description,
+                                                  isDevelopment:
+                                                      _isLocalDevelopmentMiniApp(
+                                                        item,
+                                                      ),
                                                   onTap: () =>
                                                       onOpenMiniApp(item),
                                                   onLongPress:
@@ -501,6 +513,7 @@ class _SecondFloorMiniAppItem extends StatelessWidget {
   const _SecondFloorMiniAppItem({
     required this.icon,
     required this.label,
+    this.isDevelopment = false,
     this.iconUrl = '',
     this.tooltip = '',
     this.onTap,
@@ -509,6 +522,7 @@ class _SecondFloorMiniAppItem extends StatelessWidget {
 
   final IconData icon;
   final String label;
+  final bool isDevelopment;
   final String iconUrl;
   final String tooltip;
   final VoidCallback? onTap;
@@ -533,60 +547,103 @@ class _SecondFloorMiniAppItem extends StatelessWidget {
               color: theme.colorScheme.outlineVariant.withValues(alpha: 0.22),
             ),
           ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+          child: Stack(
             children: [
-              if (avatarUrl.isEmpty)
-                Container(
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.primary.withValues(alpha: 0.15),
-                    shape: BoxShape.circle,
-                  ),
-                  alignment: Alignment.center,
-                  child: Icon(icon, size: 18, color: theme.colorScheme.primary),
-                )
-              else
-                ClipOval(
-                  child: Image.network(
-                    avatarUrl,
-                    width: 28,
-                    height: 28,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, errorObject, stackTraceObject) =>
-                        Container(
+              Positioned.fill(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    if (avatarUrl.isEmpty)
+                      Container(
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primary.withValues(
+                            alpha: 0.15,
+                          ),
+                          shape: BoxShape.circle,
+                        ),
+                        alignment: Alignment.center,
+                        child: Icon(
+                          icon,
+                          size: 18,
+                          color: theme.colorScheme.primary,
+                        ),
+                      )
+                    else
+                      ClipOval(
+                        child: Image.network(
+                          avatarUrl,
                           width: 28,
                           height: 28,
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.primary.withValues(
-                              alpha: 0.15,
-                            ),
-                            shape: BoxShape.circle,
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            initials,
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: theme.colorScheme.primary,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
+                          fit: BoxFit.cover,
+                          errorBuilder:
+                              (context, errorObject, stackTraceObject) =>
+                                  Container(
+                                    width: 28,
+                                    height: 28,
+                                    decoration: BoxDecoration(
+                                      color: theme.colorScheme.primary.withValues(
+                                        alpha: 0.15,
+                                      ),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    alignment: Alignment.center,
+                                    child: Text(
+                                      initials,
+                                      style: theme.textTheme.labelSmall
+                                          ?.copyWith(
+                                            color: theme.colorScheme.primary,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
+                                  ),
                         ),
-                  ),
-                ),
-              const SizedBox(height: 7),
-              Tooltip(
-                message: tooltip.trim().isEmpty ? label : tooltip,
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
+                      ),
+                    const SizedBox(height: 7),
+                    Tooltip(
+                      message: tooltip.trim().isEmpty ? label : tooltip,
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
+              if (isDevelopment)
+                Positioned(
+                  right: 6,
+                  bottom: 6,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.tertiaryContainer,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: theme.colorScheme.tertiary.withValues(
+                          alpha: 0.35,
+                        ),
+                      ),
+                    ),
+                    child: Text(
+                      '开发版',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onTertiaryContainer,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 9,
+                        height: 1.1,
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
@@ -790,6 +847,7 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
   final Set<String> _onlineUsernames = <String>{};
   int _onlineUsersCount = 0;
   final GlobalKey _onlineUsersPillKey = GlobalKey();
+  StreamSubscription<int>? _miniAppsChangedSubscription;
   late final AnimationController _secondFloorController;
   double _secondFloorPullDistance = 0;
   bool _secondFloorArmed = false;
@@ -825,6 +883,13 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
     _secondFloorController.addListener(_onSecondFloorProgressChanged);
     _lastMiniAppsManifestUrl =
         widget.dependencies.settingsController.miniAppsManifestUrl;
+    _miniAppsChangedSubscription = RiverMiniAppInstallStore.installedAppsChanged
+        .listen((_) {
+          if (!mounted) {
+            return;
+          }
+          unawaited(_loadInstalledMiniApps());
+        });
     _loadCategories();
     unawaited(_loadInstalledMiniApps());
     unawaited(_loadMiniApps(forceRefresh: false));
@@ -845,6 +910,8 @@ class _PostsPageState extends State<PostsPage> with TickerProviderStateMixin {
     widget.controller?._detach(this);
     _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
+    _miniAppsChangedSubscription?.cancel();
+    _miniAppsChangedSubscription = null;
     _secondFloorController.removeListener(_onSecondFloorProgressChanged);
     _secondFloorController.dispose();
     if (_secondFloorVisibleForParent) {

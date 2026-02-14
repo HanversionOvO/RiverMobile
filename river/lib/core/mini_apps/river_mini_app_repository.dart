@@ -183,6 +183,13 @@ class RiverMiniAppRepository {
             ),
             manifestUri,
           ),
+          packageSha256: _readString(
+            map['package_sha256'],
+            fallback: _readString(map['packageSha256']),
+          ).toLowerCase(),
+          packageBytes: _readInt(
+            map['package_bytes'] ?? map['package_size'] ?? map['packageSize'],
+          ),
           iconUrl: iconUrl,
           description: _readString(
             map['description'],
